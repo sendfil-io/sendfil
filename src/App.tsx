@@ -1,8 +1,8 @@
-import React, { useState } from "react"
+import * as React from "react"
 //import reactLogo from './assets/react.svg'
 //import viteLogo from '/vite.svg'
 import './App.css'
-import WalletModal from './components/WalletModal'
+import { ConnectButton } from '@rainbow-me/rainbowkit'
 
 interface Recipient {
   address: string
@@ -10,14 +10,12 @@ interface Recipient {
 }
 
 export default function App() {
-  const [recipients, setRecipients] = useState<Recipient[]>([
+  const [recipients, setRecipients] = React.useState<Recipient[]>([
     { address: "", amount: "" },
     { address: "", amount: "" },
     { address: "", amount: "" },
     { address: "", amount: "" },
   ])
-
-  const [isModalOpen, setIsModalOpen] = useState(false)
 
   const addRecipient = () => {
     setRecipients([...recipients, { address: "", amount: "" }])
@@ -40,12 +38,7 @@ export default function App() {
         <div className="w-12 h-12 bg-blue-500 rounded-full flex items-center justify-center mb-4">
           <span className="text-white text-2xl font-bold">ƒ</span>
         </div>
-        <button
-          onClick={() => setIsModalOpen(true)}
-          className="w-full bg-blue-500 hover:bg-blue-600 text-white rounded-md py-2 mb-4"
-        >
-          Connect Wallet
-        </button>
+        <ConnectButton />
       </div>
 
       {/* Main Content */}
@@ -103,8 +96,6 @@ export default function App() {
           + Add receiver
         </button>
       </div>
-
-      <WalletModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
     </div>
   )
 }

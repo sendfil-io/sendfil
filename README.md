@@ -1,5 +1,4 @@
-# Overview:
-SendFIL is a work-in-progress. Stay tuned for more updates.
+# SendFIL
 
 # React + TypeScript + Vite
 
@@ -51,3 +50,21 @@ export default tseslint.config({
   },
 })
 ```
+
+## Supported Wallets
+- MetaMask
+- WalletConnect
+- Brave Wallet (via injected)
+
+## Environment Setup
+1. Copy `.env.example` to `.env.local` and fill in your values:
+   - `VITE_WALLETCONNECT_PROJECT_ID` (from WalletConnect Cloud)
+   - `VITE_RPC_URL` (Filecoin mainnet RPC endpoint)
+
+## Running the App
+```sh
+npm install
+npm run dev
+```
+
+Open [http://localhost:5173/](http://localhost:5173/) in your browser.

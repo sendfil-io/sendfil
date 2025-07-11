@@ -57,6 +57,44 @@ button:focus-visible {
   outline: 4px auto -webkit-focus-ring-color;
 }
 
+/* Hide the original 'Ethereum' text and replace with 'Filecoin' */
+.rainbowkit-modal-footer span {
+  visibility: hidden;
+}
+.rainbowkit-modal-footer span::after {
+  content: 'Filecoin wallets?';
+  visibility: visible;
+  color: inherit;
+}
+
+/* Change the Learn More link to point to Filecoin wallet docs */
+.rainbowkit-modal-footer a {
+  pointer-events: auto;
+  cursor: pointer;
+}
+.rainbowkit-modal-footer a[href] {
+  visibility: hidden;
+}
+.rainbowkit-modal-footer a[href]::after {
+  content: 'Learn More';
+  visibility: visible;
+  color: #2563eb;
+  text-decoration: underline;
+  cursor: pointer;
+  /* Set the new link */
+  display: inline-block;
+}
+.rainbowkit-modal-footer a[href]::after {
+  content: 'Learn More';
+  visibility: visible;
+  color: #2563eb;
+  text-decoration: underline;
+  cursor: pointer;
+  display: inline-block;
+}
+
+/* Use JavaScript to update the href at runtime */
+
 @media (prefers-color-scheme: light) {
   :root {
     color: #213547;
