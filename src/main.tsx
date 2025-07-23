@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import './index.css';
 import App from './App';
 import Web3Provider from './providers/Web3Provider';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 // Patch RainbowKit modal footer link to Filecoin docs
 function patchRainbowKitFooterLink() {
@@ -22,10 +23,14 @@ function patchRainbowKitFooterLink() {
 
 patchRainbowKitFooterLink();
 
+const queryClient = new QueryClient();
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <Web3Provider>
-      <App />
-    </Web3Provider>
+    <QueryClientProvider client={queryClient}>
+      <Web3Provider>
+        <App />
+      </Web3Provider>
+    </QueryClientProvider>
   </React.StrictMode>
 );
