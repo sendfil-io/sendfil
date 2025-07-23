@@ -28,6 +28,7 @@
     "eslint-config-airbnb-typescript": "^18.0.0",
     "eslint-config-prettier": "latest",
     "eslint-plugin-prettier": "latest",
+    "jsdom": "^26.1.0",
     "msw": "^2.10.4",
     "postcss": "^8.4.38",
     "prettier": "^3.2.5",
