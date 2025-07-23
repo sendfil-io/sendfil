@@ -3,6 +3,7 @@ import * as React from "react"
 //import viteLogo from '/vite.svg'
 import './App.css'
 import { ConnectButton } from '@rainbow-me/rainbowkit'
+import { calculateFeeRows } from './utils/fee'
 
 interface Recipient {
   address: string
@@ -29,6 +30,15 @@ export default function App() {
     const newRecipients = [...recipients]
     newRecipients[index] = { ...newRecipients[index], [field]: value }
     setRecipients(newRecipients)
+  }
+
+  const handleReview = () => {
+    const rows = calculateFeeRows(
+      recipients
+        .filter(r => r.address && r.amount)
+        .map(r => ({ address: r.address, amount: Number(r.amount) }))
+    )
+    console.log('recipients with fees', rows)
   }
 
   return (
@@ -94,6 +104,12 @@ export default function App() {
           onClick={addRecipient}
         >
           + Add receiver
+        </button>
+        <button
+          className="mt-4 text-white bg-blue-500 hover:bg-blue-600 rounded-md p-2"
+          onClick={handleReview}
+        >
+          Review Batch
         </button>
       </div>
     </div>
