@@ -60,6 +60,9 @@ export default tseslint.config({
 1. Copy `.env.example` to `.env.local` and fill in your values:
    - `VITE_WALLETCONNECT_PROJECT_ID` (from WalletConnect Cloud)
    - `VITE_RPC_URL` (Filecoin mainnet RPC endpoint)
+   - `VITE_GLIF_RPC_URL_PRIMARY` (primary GLIF RPC endpoint)
+   - `VITE_GLIF_RPC_URL_FALLBACK` (fallback GLIF RPC endpoint)
+   - `VITE_GLIF_RPC_TIMEOUT_MS` (timeout in milliseconds for GLIF RPC requests)
 
 ## Running the App
 ```sh
