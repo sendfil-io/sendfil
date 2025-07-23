@@ -23,7 +23,12 @@ function patchRainbowKitFooterLink() {
 
 patchRainbowKitFooterLink();
 
-const queryClient = new QueryClient();
+// Enable context sharing so that multiple QueryClientProvider instances can
+// share the same QueryClient across React roots. This helps avoid duplicated
+// caches when using microfrontends or embedding the app elsewhere.
+const queryClient = new QueryClient({
+  contextSharing: true,
+});
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
