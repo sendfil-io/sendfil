@@ -71,3 +71,17 @@ npm run dev
 ```
 
 Open [http://localhost:5173/](http://localhost:5173/) in your browser.
+
+## Linting and Testing
+
+Run ESLint:
+
+```sh
+npm run lint
+```
+
+Execute unit tests with Vitest:
+
+```sh
+npm test
+```
