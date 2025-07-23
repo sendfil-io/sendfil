@@ -4,7 +4,9 @@ import { WagmiProvider } from 'wagmi';
 import { wagmiConfig } from '../lib/wagmi';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  contextSharing: true,
+});
 
 export default function Web3Provider({ children }: { children: React.ReactNode }) {
   return (

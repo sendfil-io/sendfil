@@ -27,5 +27,5 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <Web3Provider>
       <App />
     </Web3Provider>
-  </React.StrictMode>
+  </React.StrictMode>,
 );
