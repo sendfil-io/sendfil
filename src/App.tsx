@@ -44,19 +44,70 @@ export default function App() {
   };
 
   const handleDownloadTemplate = () => {
-    const csvContent = `receiverAddress,value
-f1cj...,3.3`
-    
-    const blob = new Blob([csvContent], { type: 'text/csv' })
-    const url = window.URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = 'sendfil-template.csv'
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-    window.URL.revokeObjectURL(url)
-  }
+    try {
+      console.log('Download template button clicked');
+      
+      // Method 1: Try to fetch the actual file from public directory
+      fetch('/sendfil-template.csv')
+        .then(response => {
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+          return response.blob();
+        })
+        .then(blob => {
+          console.log('Successfully fetched template file');
+          
+          // Create download link
+          const url = window.URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = 'sendfil-template.csv';
+          link.style.display = 'none';
+          
+          document.body.appendChild(link);
+          console.log('Triggering download from file...');
+          link.click();
+          
+          // Clean up
+          setTimeout(() => {
+            document.body.removeChild(link);
+            window.URL.revokeObjectURL(url);
+            console.log('Download cleanup completed');
+          }, 1000);
+        })
+        .catch(error => {
+          console.log('Failed to fetch file, using fallback method:', error);
+          
+          // Fallback: Use hardcoded content (temporary until file is properly served)
+          const csvContent = `receiverAddress,value
+f1cj...,3.3`;
+          
+          const blob = new Blob([csvContent], { 
+            type: 'text/csv;charset=utf-8;' 
+          });
+          
+          const url = window.URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = 'sendfil-template.csv';
+          link.style.display = 'none';
+          
+          document.body.appendChild(link);
+          console.log('Triggering fallback download...');
+          link.click();
+          
+          setTimeout(() => {
+            document.body.removeChild(link);
+            window.URL.revokeObjectURL(url);
+            console.log('Fallback download cleanup completed');
+          }, 1000);
+        });
+        
+    } catch (error) {
+      console.error('Error in download template:', error);
+    }
+  };
 
   return (
     <div className="h-screen w-full bg-white flex">
