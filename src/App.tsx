@@ -1,45 +1,45 @@
-import * as React from "react"
+import * as React from 'react';
 //import reactLogo from './assets/react.svg'
 //import viteLogo from '/vite.svg'
-import './App.css'
-import { ConnectButton } from '@rainbow-me/rainbowkit'
-import { calculateFeeRows } from './utils/fee'
+import './App.css';
+import { CustomConnectButton } from './components/CustomConnectButton';
+import { calculateFeeRows } from './utils/fee';
 
 interface Recipient {
-  address: string
-  amount: string
+  address: string;
+  amount: string;
 }
 
 export default function App() {
   const [recipients, setRecipients] = React.useState<Recipient[]>([
-    { address: "", amount: "" },
-    { address: "", amount: "" },
-    { address: "", amount: "" },
-    { address: "", amount: "" },
-  ])
+    { address: '', amount: '' },
+    { address: '', amount: '' },
+    { address: '', amount: '' },
+    { address: '', amount: '' },
+  ]);
 
   const addRecipient = () => {
-    setRecipients([...recipients, { address: "", amount: "" }])
-  }
+    setRecipients([...recipients, { address: '', amount: '' }]);
+  };
 
   const removeRecipient = (index: number) => {
-    setRecipients(recipients.filter((_, i) => i !== index))
-  }
+    setRecipients(recipients.filter((_, i) => i !== index));
+  };
 
   const updateRecipient = (index: number, field: keyof Recipient, value: string) => {
-    const newRecipients = [...recipients]
-    newRecipients[index] = { ...newRecipients[index], [field]: value }
-    setRecipients(newRecipients)
-  }
+    const newRecipients = [...recipients];
+    newRecipients[index] = { ...newRecipients[index], [field]: value };
+    setRecipients(newRecipients);
+  };
 
   const handleReview = () => {
     const rows = calculateFeeRows(
       recipients
-        .filter(r => r.address && r.amount)
-        .map(r => ({ address: r.address, amount: Number(r.amount) }))
-    )
-    console.log('recipients with fees', rows)
-  }
+        .filter((r) => r.address && r.amount)
+        .map((r) => ({ address: r.address, amount: Number(r.amount) })),
+    );
+    console.log('recipients with fees', rows);
+  };
 
   return (
     <div className="h-screen w-full bg-white flex">
@@ -48,7 +48,7 @@ export default function App() {
         <div className="w-12 h-12 bg-blue-500 rounded-full flex items-center justify-center mb-4">
           <span className="text-white text-2xl font-bold">ƒ</span>
         </div>
-        <ConnectButton />
+        <CustomConnectButton />
       </div>
 
       {/* Main Content */}
@@ -77,7 +77,7 @@ export default function App() {
                 <input
                   placeholder="f1..."
                   value={recipient.address}
-                  onChange={(e) => updateRecipient(index, "address", e.target.value)}
+                  onChange={(e) => updateRecipient(index, 'address', e.target.value)}
                   className="w-full p-2 border rounded-md bg-gray-100"
                 />
               </div>
@@ -86,11 +86,14 @@ export default function App() {
                   type="number"
                   placeholder="0"
                   value={recipient.amount}
-                  onChange={(e) => updateRecipient(index, "amount", e.target.value)}
+                  onChange={(e) => updateRecipient(index, 'amount', e.target.value)}
                   className="w-full p-2 border rounded-md bg-gray-100"
                 />
                 {recipients.length > 1 && (
-                  <button onClick={() => removeRecipient(index)} className="text-gray-500 hover:text-gray-700 bg-gray-100 rounded-md p-2">
+                  <button
+                    onClick={() => removeRecipient(index)}
+                    className="text-gray-500 hover:text-gray-700 bg-gray-100 rounded-md p-2"
+                  >
                     ×
                   </button>
                 )}
@@ -113,5 +116,5 @@ export default function App() {
         </button>
       </div>
     </div>
-  )
+  );
 }
