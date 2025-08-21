@@ -4,6 +4,7 @@ import * as React from "react"
 import './App.css'
 import { ConnectButton } from '@rainbow-me/rainbowkit'
 import { calculateFeeRows } from './utils/fee'
+import F4TestComponent from './components/F4TestComponent'
 
 interface Recipient {
   address: string
@@ -41,6 +42,21 @@ export default function App() {
     console.log('recipients with fees', rows)
   }
 
+  const handleDownloadTemplate = () => {
+    const csvContent = `receiverAddress,value
+f1cj...,3.3`
+    
+    const blob = new Blob([csvContent], { type: 'text/csv' })
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'sendfil-template.csv'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
+  }
+
   return (
     <div className="h-screen w-full bg-white flex">
       {/* Sidebar */}
@@ -62,7 +78,10 @@ export default function App() {
           <button className="bg-blue-500 hover:bg-blue-600 text-white rounded-md px-4 py-2">
             Import configuration
           </button>
-          <button className="bg-gray-100 text-blue-500 rounded-md px-4 py-2">
+          <button 
+            className="bg-gray-100 text-blue-500 rounded-md px-4 py-2"
+            onClick={handleDownloadTemplate}
+          >
             Download Template
           </button>
         </div>
@@ -111,6 +130,11 @@ export default function App() {
         >
           Review Batch
         </button>
+        
+        {/* Temporary F4 Test Component */}
+        <div className="mt-8 border-t pt-8">
+          <F4TestComponent />
+        </div>
       </div>
     </div>
   )
