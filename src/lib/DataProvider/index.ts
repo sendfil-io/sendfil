@@ -18,7 +18,7 @@ export const getNonce = (address: string) =>
 
 /** Filecoin.ChainHead – useful for health checks */
 export const getChainHead = () =>
-  callRpc<{ Height: number; Cids: { '/': string }[] }>('Filecoin.ChainHead');
+  callRpc<{ Height: number; Cids: { '/': string }[] }>('Filecoin.ChainHead'); 
 
 /** Filecoin.GasEstimateMessageGas - Estimate gas for a message */
 export const estimateGas = (message: FilecoinMessage, spec?: any) =>

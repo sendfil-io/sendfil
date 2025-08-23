@@ -178,7 +178,7 @@ f1cj...,3.3`;
         </div>
 
         {/* Main Content */}
-        <div className="flex-1 p-8 flex flex-col">
+        <div className="flex-1 p-8 flex flex-col bg-white">
           <div className="mb-8">
             <h1 className="text-2xl font-semibold mb-1">SendFIL</h1>
             <p className="text-gray-600 text-sm">Transfer FIL to one or many recipients.</p>
@@ -290,80 +290,90 @@ f1cj...,3.3`;
                     </div>
                   )}
 
+                  {/* Spacing */}
+                  {csvData.length > 0 && <div className="mb-6" />}
+
                   {/* Manual Input Section or Recipients Display */}
                   {(showManualInput || csvData.length > 0) && (
                     <>
-                      <div className="grid grid-cols-[1fr,auto] gap-x-4 gap-y-3">
-                        <div className="font-medium">Receiver</div>
-                        <div className="font-medium">FIL Amount</div>
+                      <div className="bg-white rounded-lg border border-gray-200 p-6">
+                        <h3 className="text-lg font-semibold mb-4 text-gray-800">
+                          {showManualInput ? 'Manual Recipients' : 'CSV Recipients'}
+                        </h3>
+                        <div className="grid grid-cols-[1fr,auto] gap-x-4 gap-y-3">
+                          <div className="font-medium text-gray-700">Receiver</div>
+                          <div className="font-medium text-gray-700">FIL Amount</div>
 
-                        {showManualInput
-                          ? // Manual input mode
-                            recipients.map((recipient, index) => (
-                              <React.Fragment key={index}>
-                                <div className="relative">
-                                  <input
-                                    placeholder="f1..."
-                                    value={recipient.address}
-                                    onChange={(e) =>
-                                      updateRecipient(index, 'address', e.target.value)
-                                    }
-                                    className="w-full p-2 border rounded-md bg-gray-100"
-                                  />
-                                </div>
-                                <div className="relative flex items-center gap-2">
-                                  <input
-                                    type="number"
-                                    placeholder="0"
-                                    value={recipient.amount}
-                                    onChange={(e) =>
-                                      updateRecipient(index, 'amount', e.target.value)
-                                    }
-                                    className="w-full p-2 border rounded-md bg-gray-100"
-                                  />
-                                  {recipients.length > 1 && (
-                                    <button
-                                      onClick={() => removeRecipient(index)}
-                                      className="text-gray-500 hover:text-gray-700 bg-gray-100 rounded-md p-2"
-                                    >
-                                      ×
-                                    </button>
-                                  )}
-                                </div>
-                              </React.Fragment>
-                            ))
-                          : // CSV display mode - show loaded recipients
-                            recipients.map((recipient, index) => (
-                              <React.Fragment key={index}>
-                                <div className="p-2 bg-gray-50 rounded-md text-sm font-mono">
-                                  {recipient.address}
-                                </div>
-                                <div className="p-2 bg-gray-50 rounded-md text-sm text-right">
-                                  {recipient.amount} FIL
-                                </div>
-                              </React.Fragment>
-                            ))}
+                          {showManualInput
+                            ? // Manual input mode
+                              recipients.map((recipient, index) => (
+                                <React.Fragment key={index}>
+                                  <div className="relative">
+                                    <input
+                                      placeholder="f1..."
+                                      value={recipient.address}
+                                      onChange={(e) =>
+                                        updateRecipient(index, 'address', e.target.value)
+                                      }
+                                      className="w-full p-2 border rounded-md bg-gray-100"
+                                    />
+                                  </div>
+                                  <div className="relative flex items-center gap-2">
+                                    <input
+                                      type="number"
+                                      placeholder="0"
+                                      value={recipient.amount}
+                                      onChange={(e) =>
+                                        updateRecipient(index, 'amount', e.target.value)
+                                      }
+                                      className="w-full p-2 border rounded-md bg-gray-100"
+                                    />
+                                    {recipients.length > 1 && (
+                                      <button
+                                        onClick={() => removeRecipient(index)}
+                                        className="text-gray-500 hover:text-gray-700 bg-gray-100 rounded-md p-2"
+                                      >
+                                        ×
+                                      </button>
+                                    )}
+                                  </div>
+                                </React.Fragment>
+                              ))
+                            : // CSV display mode - show loaded recipients
+                              recipients.map((recipient, index) => (
+                                <React.Fragment key={index}>
+                                  <div className="p-3 bg-blue-50 border border-blue-200 rounded-md text-sm font-mono text-blue-900 break-all">
+                                    {recipient.address}
+                                  </div>
+                                  <div className="p-3 bg-green-50 border border-green-200 rounded-md text-sm text-right font-medium text-green-900">
+                                    {recipient.amount} FIL
+                                  </div>
+                                </React.Fragment>
+                              ))}
+                        </div>
+
+                        {showManualInput && (
+                          <button
+                            className="mt-4 text-blue-500 hover:text-blue-600 bg-gray-100 rounded-md p-2"
+                            onClick={addRecipient}
+                          >
+                            + Add receiver
+                          </button>
+                        )}
                       </div>
-
-                      {showManualInput && (
-                        <button
-                          className="mt-4 text-blue-500 hover:text-blue-600 bg-gray-100 rounded-md p-2"
-                          onClick={addRecipient}
-                        >
-                          + Add receiver
-                        </button>
-                      )}
                     </>
                   )}
 
                   {/* Review Button - only show when we have valid recipients */}
                   {recipients.length > 0 && csvErrors.length === 0 && (
-                    <button
-                      className="mt-4 text-white bg-blue-500 hover:bg-blue-600 rounded-md p-2"
-                      onClick={handleReview}
-                    >
-                      Review Batch ({recipients.length} recipients)
-                    </button>
+                    <div className="mt-6">
+                      <button
+                        className="w-full text-white bg-blue-500 hover:bg-blue-600 rounded-md py-3 px-4 font-medium text-lg"
+                        onClick={handleReview}
+                      >
+                        Review Batch ({recipients.length} recipients)
+                      </button>
+                    </div>
                   )}
                 </>
               ) : (
