@@ -6,6 +6,7 @@ import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { CustomConnectButton } from './components/CustomConnectButton';
 import NetworkBanner from './components/NetworkBanner';
 import CSVUpload, { CSVRecipient, CSVUploadResult } from './components/CSVUpload';
+import TransactionTest from './components/TransactionTest';
 import { useAccount } from 'wagmi';
 import { calculateFeeRows } from './utils/fee';
 
@@ -21,6 +22,7 @@ export default function App() {
   const [csvErrors, setCsvErrors] = React.useState<string[]>([]);
   const [csvWarnings, setCsvWarnings] = React.useState<string[]>([]);
   const [showManualInput, setShowManualInput] = React.useState(false);
+  const [activeTab, setActiveTab] = React.useState<'send' | 'test'>('send');
 
   // Initialize manual input with empty recipients when switching to manual mode
   React.useEffect(() => {
@@ -182,150 +184,190 @@ f1cj...,3.3`;
             <p className="text-gray-600 text-sm">Transfer FIL to one or many recipients.</p>
           </div>
 
+          {/* Tab Navigation */}
+          <div className="flex border-b border-gray-200 mb-6">
+            <button
+              onClick={() => setActiveTab('send')}
+              className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${
+                activeTab === 'send'
+                  ? 'border-blue-500 text-blue-600 bg-white'
+                  : 'border-transparent bg-gray-100 text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Send FIL
+            </button>
+            <button
+              onClick={() => setActiveTab('test')}
+              className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${
+                activeTab === 'test'
+                  ? 'border-blue-500 text-blue-600 bg-white'
+                  : 'border-transparent bg-gray-100 text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Transaction Testing
+            </button>
+          </div>
+
           {/* Show main interface only when wallet is connected */}
           {isConnected ? (
             <>
-              <div className="flex gap-3 mb-8">
-                <button className="bg-blue-500 hover:bg-blue-600 text-white rounded-md px-4 py-2">
-                  Import configuration
-                </button>
-                <button
-                  className="bg-gray-100 text-blue-500 rounded-md px-4 py-2"
-                  onClick={handleDownloadTemplate}
-                >
-                  Download Template
-                </button>
-                <button
-                  className="bg-gray-100 text-gray-700 rounded-md px-4 py-2"
-                  onClick={() => setShowManualInput(!showManualInput)}
-                >
-                  {showManualInput ? 'Use CSV Upload' : 'Manual Input'}
-                </button>
-              </div>
-
-              {/* CSV Upload Section */}
-              {!showManualInput && csvData.length === 0 && (
-                <div className="mb-8">
-                  <CSVUpload onUpload={handleCSVUpload} onReset={handleCSVReset} disabled={false} />
-                </div>
-              )}
-
-              {/* CSV Validation Messages */}
-              {(csvErrors.length > 0 || csvWarnings.length > 0) && (
-                <div className="mb-6 space-y-2">
-                  {csvErrors.length > 0 && (
-                    <div className="bg-red-50 border border-red-200 rounded-md p-4">
-                      <h4 className="font-semibold text-red-800 mb-2">Errors:</h4>
-                      <ul className="text-sm text-red-700 space-y-1">
-                        {csvErrors.map((error, index) => (
-                          <li key={index}>• {error}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                  {csvWarnings.length > 0 && (
-                    <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4">
-                      <h4 className="font-semibold text-yellow-800 mb-2">Warnings:</h4>
-                      <ul className="text-sm text-yellow-700 space-y-1">
-                        {csvWarnings.map((warning, index) => (
-                          <li key={index}>• {warning}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* CSV Data Summary */}
-              {csvData.length > 0 && csvErrors.length === 0 && (
-                <div className="mb-6 bg-green-50 border border-green-200 rounded-md p-4">
-                  <h4 className="font-semibold text-green-800 mb-2">
-                    ✅ Successfully loaded {csvData.length} recipients
-                  </h4>
-                  <div className="text-sm text-green-700 mb-3">
-                    Total amount:{' '}
-                    {recipients.reduce((sum, r) => sum + parseFloat(r.amount || '0'), 0).toFixed(6)}{' '}
-                    FIL
-                  </div>
-                  <button
-                    onClick={handleCSVReset}
-                    className="text-sm text-green-600 hover:text-green-800 underline"
-                  >
-                    Upload different file
-                  </button>
-                </div>
-              )}
-
-              {/* Manual Input Section or Recipients Display */}
-              {(showManualInput || csvData.length > 0) && (
+              {activeTab === 'send' ? (
                 <>
-                  <div className="grid grid-cols-[1fr,auto] gap-x-4 gap-y-3">
-                    <div className="font-medium">Receiver</div>
-                    <div className="font-medium">FIL Amount</div>
-
-                    {showManualInput
-                      ? // Manual input mode
-                        recipients.map((recipient, index) => (
-                          <React.Fragment key={index}>
-                            <div className="relative">
-                              <input
-                                placeholder="f1..."
-                                value={recipient.address}
-                                onChange={(e) => updateRecipient(index, 'address', e.target.value)}
-                                className="w-full p-2 border rounded-md bg-gray-100"
-                              />
-                            </div>
-                            <div className="relative flex items-center gap-2">
-                              <input
-                                type="number"
-                                placeholder="0"
-                                value={recipient.amount}
-                                onChange={(e) => updateRecipient(index, 'amount', e.target.value)}
-                                className="w-full p-2 border rounded-md bg-gray-100"
-                              />
-                              {recipients.length > 1 && (
-                                <button
-                                  onClick={() => removeRecipient(index)}
-                                  className="text-gray-500 hover:text-gray-700 bg-gray-100 rounded-md p-2"
-                                >
-                                  ×
-                                </button>
-                              )}
-                            </div>
-                          </React.Fragment>
-                        ))
-                      : // CSV display mode - show loaded recipients
-                        recipients.map((recipient, index) => (
-                          <React.Fragment key={index}>
-                            <div className="p-2 bg-gray-50 rounded-md text-sm font-mono">
-                              {recipient.address}
-                            </div>
-                            <div className="p-2 bg-gray-50 rounded-md text-sm text-right">
-                              {recipient.amount} FIL
-                            </div>
-                          </React.Fragment>
-                        ))}
+                  <div className="flex gap-3 mb-8">
+                    <button className="bg-blue-500 hover:bg-blue-600 text-white rounded-md px-4 py-2">
+                      Import configuration
+                    </button>
+                    <button
+                      className="bg-gray-100 text-blue-500 rounded-md px-4 py-2"
+                      onClick={handleDownloadTemplate}
+                    >
+                      Download Template
+                    </button>
+                    <button
+                      className="bg-gray-100 text-gray-700 rounded-md px-4 py-2"
+                      onClick={() => setShowManualInput(!showManualInput)}
+                    >
+                      {showManualInput ? 'Use CSV Upload' : 'Manual Input'}
+                    </button>
                   </div>
 
-                  {showManualInput && (
+                  {/* CSV Upload Section */}
+                  {!showManualInput && csvData.length === 0 && (
+                    <div className="mb-8">
+                      <CSVUpload
+                        onUpload={handleCSVUpload}
+                        onReset={handleCSVReset}
+                        disabled={false}
+                      />
+                    </div>
+                  )}
+
+                  {/* CSV Validation Messages */}
+                  {(csvErrors.length > 0 || csvWarnings.length > 0) && (
+                    <div className="mb-6 space-y-2">
+                      {csvErrors.length > 0 && (
+                        <div className="bg-red-50 border border-red-200 rounded-md p-4">
+                          <h4 className="font-semibold text-red-800 mb-2">Errors:</h4>
+                          <ul className="text-sm text-red-700 space-y-1">
+                            {csvErrors.map((error, index) => (
+                              <li key={index}>• {error}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {csvWarnings.length > 0 && (
+                        <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4">
+                          <h4 className="font-semibold text-yellow-800 mb-2">Warnings:</h4>
+                          <ul className="text-sm text-yellow-700 space-y-1">
+                            {csvWarnings.map((warning, index) => (
+                              <li key={index}>• {warning}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* CSV Data Summary */}
+                  {csvData.length > 0 && csvErrors.length === 0 && (
+                    <div className="mb-6 bg-green-50 border border-green-200 rounded-md p-4">
+                      <h4 className="font-semibold text-green-800 mb-2">
+                        ✅ Successfully loaded {csvData.length} recipients
+                      </h4>
+                      <div className="text-sm text-green-700 mb-3">
+                        Total amount:{' '}
+                        {recipients
+                          .reduce((sum, r) => sum + parseFloat(r.amount || '0'), 0)
+                          .toFixed(6)}{' '}
+                        FIL
+                      </div>
+                      <button
+                        onClick={handleCSVReset}
+                        className="text-sm text-green-600 hover:text-green-800 underline"
+                      >
+                        Upload different file
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Manual Input Section or Recipients Display */}
+                  {(showManualInput || csvData.length > 0) && (
+                    <>
+                      <div className="grid grid-cols-[1fr,auto] gap-x-4 gap-y-3">
+                        <div className="font-medium">Receiver</div>
+                        <div className="font-medium">FIL Amount</div>
+
+                        {showManualInput
+                          ? // Manual input mode
+                            recipients.map((recipient, index) => (
+                              <React.Fragment key={index}>
+                                <div className="relative">
+                                  <input
+                                    placeholder="f1..."
+                                    value={recipient.address}
+                                    onChange={(e) =>
+                                      updateRecipient(index, 'address', e.target.value)
+                                    }
+                                    className="w-full p-2 border rounded-md bg-gray-100"
+                                  />
+                                </div>
+                                <div className="relative flex items-center gap-2">
+                                  <input
+                                    type="number"
+                                    placeholder="0"
+                                    value={recipient.amount}
+                                    onChange={(e) =>
+                                      updateRecipient(index, 'amount', e.target.value)
+                                    }
+                                    className="w-full p-2 border rounded-md bg-gray-100"
+                                  />
+                                  {recipients.length > 1 && (
+                                    <button
+                                      onClick={() => removeRecipient(index)}
+                                      className="text-gray-500 hover:text-gray-700 bg-gray-100 rounded-md p-2"
+                                    >
+                                      ×
+                                    </button>
+                                  )}
+                                </div>
+                              </React.Fragment>
+                            ))
+                          : // CSV display mode - show loaded recipients
+                            recipients.map((recipient, index) => (
+                              <React.Fragment key={index}>
+                                <div className="p-2 bg-gray-50 rounded-md text-sm font-mono">
+                                  {recipient.address}
+                                </div>
+                                <div className="p-2 bg-gray-50 rounded-md text-sm text-right">
+                                  {recipient.amount} FIL
+                                </div>
+                              </React.Fragment>
+                            ))}
+                      </div>
+
+                      {showManualInput && (
+                        <button
+                          className="mt-4 text-blue-500 hover:text-blue-600 bg-gray-100 rounded-md p-2"
+                          onClick={addRecipient}
+                        >
+                          + Add receiver
+                        </button>
+                      )}
+                    </>
+                  )}
+
+                  {/* Review Button - only show when we have valid recipients */}
+                  {recipients.length > 0 && csvErrors.length === 0 && (
                     <button
-                      className="mt-4 text-blue-500 hover:text-blue-600 bg-gray-100 rounded-md p-2"
-                      onClick={addRecipient}
+                      className="mt-4 text-white bg-blue-500 hover:bg-blue-600 rounded-md p-2"
+                      onClick={handleReview}
                     >
-                      + Add receiver
+                      Review Batch ({recipients.length} recipients)
                     </button>
                   )}
                 </>
-              )}
-
-              {/* Review Button - only show when we have valid recipients */}
-              {recipients.length > 0 && csvErrors.length === 0 && (
-                <button
-                  className="mt-4 text-white bg-blue-500 hover:bg-blue-600 rounded-md p-2"
-                  onClick={handleReview}
-                >
-                  Review Batch ({recipients.length} recipients)
-                </button>
+              ) : (
+                <TransactionTest />
               )}
             </>
           ) : (
