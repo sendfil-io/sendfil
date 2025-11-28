@@ -1,4 +1,5 @@
 # SendFIL
+SendFIL is a batch payout tool that sends FIL from a single‑signer (f1 or f4/0x) or multisig (f2) to multiple recipients across f1/f2/f3/f4/0x address types.
 
 # React + TypeScript + Vite
 
