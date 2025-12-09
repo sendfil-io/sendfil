@@ -2,13 +2,18 @@ import * as React from 'react';
 //import reactLogo from './assets/react.svg'
 //import viteLogo from '/vite.svg'
 import './App.css';
-import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { CustomConnectButton } from './components/CustomConnectButton';
 import NetworkBanner from './components/NetworkBanner';
 import CSVUpload, { CSVRecipient, CSVUploadResult } from './components/CSVUpload';
 import TransactionTest from './components/TransactionTest';
-import { useAccount } from 'wagmi';
+import ReviewTransactionModal, {
+  TransactionState,
+  GasEstimate,
+} from './components/ReviewTransactionModal';
+import { useAccount, useBalance } from 'wagmi';
 import { calculateFeeRows } from './utils/fee';
+import { buildBatchTransaction, attoFilToFil } from './lib/transaction/messageBuilder';
+import { getBalance, getNonce } from './lib/DataProvider';
 
 interface Recipient {
   address: string;
@@ -16,13 +21,23 @@ interface Recipient {
 }
 
 export default function App() {
-  const { isConnected } = useAccount();
+  const { isConnected, address } = useAccount();
+  const { data: balanceData } = useBalance({ address });
   const [recipients, setRecipients] = React.useState<Recipient[]>([]);
   const [csvData, setCsvData] = React.useState<CSVRecipient[]>([]);
   const [csvErrors, setCsvErrors] = React.useState<string[]>([]);
   const [csvWarnings, setCsvWarnings] = React.useState<string[]>([]);
   const [showManualInput, setShowManualInput] = React.useState(false);
   const [activeTab, setActiveTab] = React.useState<'send' | 'test'>('send');
+
+  // Review Modal State
+  const [isReviewModalOpen, setIsReviewModalOpen] = React.useState(false);
+  const [transactionState, setTransactionState] = React.useState<TransactionState>('review');
+  const [gasEstimate, setGasEstimate] = React.useState<GasEstimate | undefined>(undefined);
+  const [isEstimatingGas, setIsEstimatingGas] = React.useState(false);
+  const [gasEstimationError, setGasEstimationError] = React.useState<string | undefined>(undefined);
+  const [transactionHash, setTransactionHash] = React.useState<string | undefined>(undefined);
+  const [transactionError, setTransactionError] = React.useState<string | undefined>(undefined);
 
   // Initialize manual input with empty recipients when switching to manual mode
   React.useEffect(() => {
@@ -73,29 +88,101 @@ export default function App() {
     setRecipients(newRecipients);
   };
 
-  const handleReview = () => {
-    const rows = calculateFeeRows(
-      recipients
-        .filter((r) => r.address && r.amount)
-        .map((r) => ({ address: r.address, amount: Number(r.amount) })),
-    );
+  // Calculate fee and totals for the modal
+  const validRecipients = recipients
+    .filter((r) => r.address && r.amount)
+    .map((r) => ({ address: r.address, amount: Number(r.amount) }));
 
-    console.log('recipients with fees', rows);
+  const recipientTotal = validRecipients.reduce((sum, r) => sum + r.amount, 0);
 
-    // Calculate totals for display
-    const recipientTotal = recipients.reduce((sum, r) => sum + parseFloat(r.amount || '0'), 0);
-    const feeTotal = rows.slice(recipients.length).reduce((sum, r) => sum + r.amount, 0);
-    const grandTotal = recipientTotal + feeTotal;
+  // Calculate fee (safely handle empty recipients)
+  const feeTotal = React.useMemo(() => {
+    if (validRecipients.length === 0) return 0;
+    try {
+      const rows = calculateFeeRows(validRecipients);
+      return rows.slice(validRecipients.length).reduce((sum, r) => sum + r.amount, 0);
+    } catch {
+      return 0;
+    }
+  }, [validRecipients]);
 
-    // For now, just alert with the preview - later this will be a proper modal
-    alert(`Batch Review:
-    
-Recipients: ${recipients.length}
-Recipient Total: ${recipientTotal.toFixed(6)} FIL
-Fee (1%): ${feeTotal.toFixed(6)} FIL
-Grand Total: ${grandTotal.toFixed(6)} FIL
+  // Get wallet balance in FIL
+  const walletBalance = balanceData ? Number(balanceData.formatted) : 0;
+  const estimatedNetworkFee = gasEstimate?.estimatedFeeInFil || 0;
+  const insufficientBalance = walletBalance < recipientTotal + feeTotal + estimatedNetworkFee;
 
-Check console for full details.`);
+  const handleReview = async () => {
+    if (validRecipients.length === 0) {
+      alert('Please add at least one recipient');
+      return;
+    }
+
+    // Reset modal state
+    setTransactionState('review');
+    setGasEstimate(undefined);
+    setGasEstimationError(undefined);
+    setTransactionHash(undefined);
+    setTransactionError(undefined);
+    setIsReviewModalOpen(true);
+
+    // Start gas estimation
+    if (address) {
+      setIsEstimatingGas(true);
+      try {
+        // Get all recipients including fee rows
+        const allRecipients = calculateFeeRows(validRecipients);
+
+        const batchResult = await buildBatchTransaction({
+          recipients: allRecipients,
+          senderAddress: address,
+          startingNonce: await getNonce(address),
+        });
+
+        setGasEstimate({
+          gasLimit: batchResult.estimatedGas.GasLimit,
+          gasFeeCap: batchResult.estimatedGas.GasFeeCap,
+          gasPremium: batchResult.estimatedGas.GasPremium,
+          estimatedFeeInFil: attoFilToFil(batchResult.feeEstimate),
+        });
+      } catch (error) {
+        console.error('Gas estimation failed:', error);
+        setGasEstimationError(
+          error instanceof Error ? error.message : 'Failed to estimate gas',
+        );
+      } finally {
+        setIsEstimatingGas(false);
+      }
+    }
+  };
+
+  const handleCloseReviewModal = () => {
+    // Only allow closing in certain states
+    if (transactionState === 'signing') {
+      return; // Don't allow closing while signing
+    }
+    setIsReviewModalOpen(false);
+  };
+
+  const handleConfirmTransaction = async () => {
+    setTransactionState('signing');
+    setTransactionError(undefined);
+
+    try {
+      // TODO: Implement actual transaction execution with wagmi
+      // For now, simulate the flow
+      setTransactionState('pending');
+
+      // Simulate transaction delay
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+
+      // Simulate success (replace with actual transaction logic)
+      setTransactionHash('bafy2bzaced...example');
+      setTransactionState('confirmed');
+    } catch (error) {
+      console.error('Transaction failed:', error);
+      setTransactionError(error instanceof Error ? error.message : 'Transaction failed');
+      setTransactionState('failed');
+    }
   };
 
   const handleDownloadTemplate = () => {
@@ -393,6 +480,26 @@ f1cj...,3.3`;
           )}
         </div>
       </div>
+
+      {/* Review Transaction Modal */}
+      <ReviewTransactionModal
+        isOpen={isReviewModalOpen}
+        onClose={handleCloseReviewModal}
+        onConfirm={handleConfirmTransaction}
+        recipients={validRecipients}
+        validationErrors={csvErrors}
+        validationWarnings={csvWarnings}
+        recipientTotal={recipientTotal}
+        feeTotal={feeTotal}
+        gasEstimate={gasEstimate}
+        isEstimatingGas={isEstimatingGas}
+        gasEstimationError={gasEstimationError}
+        walletBalance={walletBalance}
+        insufficientBalance={insufficientBalance}
+        transactionState={transactionState}
+        transactionHash={transactionHash}
+        transactionError={transactionError}
+      />
     </div>
   );
 }
