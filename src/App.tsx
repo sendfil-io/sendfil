@@ -13,7 +13,7 @@ import ReviewTransactionModal, {
 import { useAccount, useBalance } from 'wagmi';
 import { calculateFeeRows } from './utils/fee';
 import { buildBatchTransaction, attoFilToFil } from './lib/transaction/messageBuilder';
-import { getBalance, getNonce } from './lib/DataProvider';
+import { getNonce } from './lib/DataProvider';
 
 interface Recipient {
   address: string;
