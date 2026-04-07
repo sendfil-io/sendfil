@@ -55,19 +55,19 @@ export interface TipSet {
   Cids: Array<{ '/': string }>;
   Blocks: Array<{
     Miner: string;
-    Ticket: any;
-    ElectionProof: any;
-    BeaconEntries: any[];
-    WinPostedProof: any[];
+    Ticket: unknown;
+    ElectionProof: unknown;
+    BeaconEntries: unknown[];
+    WinPostedProof: unknown[];
     Parents: Array<{ '/': string }>;
     ParentWeight: string;
     Height: number;
     ParentStateRoot: { '/': string };
     ParentMessageReceipts: { '/': string };
     Messages: { '/': string };
-    BLSAggregate: any;
+    BLSAggregate: unknown;
     Timestamp: number;
-    BlockSig: any;
+    BlockSig: unknown;
     ForkSignaling: number;
     ParentBaseFee: string;
   }>;

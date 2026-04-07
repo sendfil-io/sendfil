@@ -67,8 +67,8 @@ export default tseslint.config({
 
 ## Running the App
 ```sh
-npm install
-npm run dev
+yarn install
+yarn dev
 ```
 
 Open [http://localhost:5173/](http://localhost:5173/) in your browser.
@@ -78,11 +78,23 @@ Open [http://localhost:5173/](http://localhost:5173/) in your browser.
 Run ESLint:
 
 ```sh
-npm run lint
+yarn lint
 ```
 
 Execute unit tests with Vitest:
 
 ```sh
-npm test
+yarn test
+```
+
+Run a typecheck:
+
+```sh
+yarn typecheck
+```
+
+Create a production build:
+
+```sh
+yarn build
 ```

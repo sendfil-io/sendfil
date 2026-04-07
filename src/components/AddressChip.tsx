@@ -28,7 +28,7 @@ const AddressChip: React.FC = () => {
   if (!address) return null;
 
   // Determine network prefix based on chainId
-  const networkPrefix = chainId === 3141 ? 't' : 'f';
+  const networkPrefix = chainId === 314159 ? 't' : 'f';
   const f4Address = toF4(address, networkPrefix);
   
   const displayAddress = showF4 ? f4Address : address;

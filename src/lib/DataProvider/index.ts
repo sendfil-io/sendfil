@@ -4,7 +4,6 @@ import type {
   SignedMessage,
   MessageReceipt,
   TipSet,
-  GasEstimate,
   TransactionStatus,
 } from './types';
 
@@ -21,7 +20,7 @@ export const getChainHead = () =>
   callRpc<{ Height: number; Cids: { '/': string }[] }>('Filecoin.ChainHead'); 
 
 /** Filecoin.GasEstimateMessageGas - Estimate gas for a message */
-export const estimateGas = (message: FilecoinMessage, spec?: any) =>
+export const estimateGas = (message: FilecoinMessage, spec?: unknown) =>
   callRpc<FilecoinMessage>('Filecoin.GasEstimateMessageGas', [message, spec, []]);
 
 /** Filecoin.MpoolPush - Submit signed message to mempool */
@@ -33,7 +32,7 @@ export const searchMessage = (cid: { '/': string }) =>
   callRpc<{
     Message: { '/': string };
     Receipt: MessageReceipt;
-    ReturnDec: any;
+    ReturnDec: unknown;
     TipSet: { '/': string };
     Height: number;
   } | null>('Filecoin.StateSearchMsg', [null, cid, -1, true]);

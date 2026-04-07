@@ -7,7 +7,6 @@ import {
 import {
   buildMulticallBatch,
   convertRecipientsToBatch,
-  MULTICALL3_ADDRESS,
   type ErrorMode,
 } from './multicall';
 

@@ -1,6 +1,5 @@
 import type {
   FilecoinMessage,
-  BatchRecipient,
   BatchTransactionRequest,
   BatchTransactionResult,
   GasEstimate,

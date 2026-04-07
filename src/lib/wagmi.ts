@@ -6,7 +6,7 @@ import {
 import { createConfig, http } from 'wagmi';
 import { filecoin } from 'viem/chains';
 
-const chains = [filecoin];
+const chains = [filecoin] as const;
 const projectId = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID!;
 
 export const wagmiConfig = createConfig({

@@ -323,7 +323,6 @@ f1cj...,3.3`;
                     <div className="mb-8">
                       <CSVUpload
                         onUpload={handleCSVUpload}
-                        onReset={handleCSVReset}
                         disabled={false}
                       />
                     </div>
