@@ -15,12 +15,12 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# Cursor-specific files
+# Local AI / editor config (do not commit)
 .cursor/
+.claude/
 
 # Misc
 .DS_Store
-DevSpecs/
 
-# Dev Specs
+# Local-only specs (not in repo)
 DevSpecs/
