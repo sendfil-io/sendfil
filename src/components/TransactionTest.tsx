@@ -12,7 +12,7 @@ import { convertEthToF4 } from '../utils/addressConverter';
 interface TestResult {
   type: 'success' | 'error' | 'info';
   message: string;
-  data?: any;
+  data?: unknown;
 }
 
 export const TransactionTest: React.FC = () => {
@@ -285,9 +285,9 @@ export const TransactionTest: React.FC = () => {
                 }`}
               >
                 <div className="font-medium">{result.message}</div>
-                {result.data && (
+                {result.data !== undefined && (
                   <pre className="mt-2 text-xs overflow-x-auto">
-                    {JSON.stringify(result.data, null, 2)}
+                    {JSON.stringify(result.data, null, 2) ?? ''}
                   </pre>
                 )}
               </div>

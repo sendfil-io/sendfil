@@ -20,7 +20,6 @@ export const CustomConnectButton: React.FC = () => {
       {({
         account,
         chain,
-        openAccountModal,
         openChainModal,
         openConnectModal,
         authenticationStatus,

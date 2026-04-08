@@ -6,45 +6,45 @@ describe('toF4', () => {
     const ethAddress = '0xe764Acf02D8B7c21d2B6A8f0a96C78541e0DC3fd' as `0x${string}`;
     const f4Address = toF4(ethAddress, 'f');
     
-    // The f4 address should start with 'f4' and be longer than the original
-    expect(f4Address).toMatch(/^f4/);
+    // The delegated mainnet address should start with 'f410f'
+    expect(f4Address).toMatch(/^f410f/);
     expect(f4Address.length).toBeGreaterThan(ethAddress.length);
     
-    // Should be a valid f4 address format (f4 + number + base32 chars)
-    expect(f4Address).toMatch(/^f4[0-9]+[a-z2-7]+$/);
+    // Should be a valid delegated address format (f410f + base32 chars)
+    expect(f4Address).toMatch(/^f410f[a-z2-7]+$/);
   });
 
   it('should convert EVM address to t4 address on testnet', () => {
     const ethAddress = '0xe764Acf02D8B7c21d2B6A8f0a96C78541e0DC3fd' as `0x${string}`;
     const t4Address = toF4(ethAddress, 't');
     
-    // The t4 address should start with 't4' for testnet
-    expect(t4Address).toMatch(/^t4/);
+    // The delegated testnet address should start with 't410f'
+    expect(t4Address).toMatch(/^t410f/);
     expect(t4Address.length).toBeGreaterThan(ethAddress.length);
     
-    // Should be a valid t4 address format
-    expect(t4Address).toMatch(/^t4[0-9]+[a-z2-7]+$/);
+    // Should be a valid delegated address format
+    expect(t4Address).toMatch(/^t410f[a-z2-7]+$/);
   });
 
   it('should default to mainnet (f) when network not specified', () => {
     const ethAddress = '0xe764Acf02D8B7c21d2B6A8f0a96C78541e0DC3fd' as `0x${string}`;
     const f4Address = toF4(ethAddress);
     
-    expect(f4Address).toMatch(/^f4/);
+    expect(f4Address).toMatch(/^f410f/);
   });
 
   it('should handle different valid EVM addresses consistently', () => {
     const addresses = [
-      '0x742d35Cc6634C0532925a3b8D24e3B9d8e6e3c8e' as `0x${string}`,
+      '0x742d35cc6634c0532925a3b8d24e3b9d8e6e3c8e' as `0x${string}`,
       '0x1234567890123456789012345678901234567890' as `0x${string}`,
       '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd' as `0x${string}`,
     ];
 
-    addresses.forEach(addr => {
+    addresses.forEach((addr) => {
       const f4Addr = toF4(addr, 'f');
-      expect(f4Addr).toMatch(/^f4/);
+      expect(f4Addr).toMatch(/^f410f/);
       expect(f4Addr.length).toBeGreaterThan(addr.length);
-      expect(f4Addr).toMatch(/^f4[0-9]+[a-z2-7]+$/);
+      expect(f4Addr).toMatch(/^f410f[a-z2-7]+$/);
     });
   });
 

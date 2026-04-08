@@ -10,8 +10,8 @@ import {
  */
 export function encodeFilecoinAddressToBytes(address: string): `0x${string}` {
   const addr = newFromString(address);
-  const bytes = addr.bytes();
-  return `0x${Buffer.from(bytes).toString('hex')}` as `0x${string}`;
+  const bytes = Array.from(addr.bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+  return `0x${bytes}` as `0x${string}`;
 }
 
 /**

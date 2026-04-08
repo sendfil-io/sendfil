@@ -2,10 +2,14 @@
   "name": "sendfil",
   "version": "0.0.0",
   "private": true,
+  "type": "module",
+  "packageManager": "yarn@1.22.22",
   "scripts": {
     "dev": "vite",
-    "lint": "eslint . --ext .ts,.tsx --max-warnings=0",
-    "test": "vitest run"
+    "build": "vite build",
+    "lint": "eslint . --max-warnings=0",
+    "test": "vitest run",
+    "typecheck": "tsc -b"
   },
   "dependencies": {
     "@glif/filecoin-address": "^4.0.0",

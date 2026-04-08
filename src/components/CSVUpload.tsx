@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import Papa from 'papaparse';
+import Papa, { type ParseResult } from 'papaparse';
 
 export interface CSVRecipient {
   receiverAddress: string;
@@ -15,11 +15,10 @@ export interface CSVUploadResult {
 
 interface CSVUploadProps {
   onUpload: (result: CSVUploadResult) => void;
-  onReset: () => void;
   disabled?: boolean;
 }
 
-export const CSVUpload: React.FC<CSVUploadProps> = ({ onUpload, onReset, disabled = false }) => {
+export const CSVUpload: React.FC<CSVUploadProps> = ({ onUpload, disabled = false }) => {
   const [isDragOver, setIsDragOver] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
 
@@ -55,8 +54,8 @@ export const CSVUpload: React.FC<CSVUploadProps> = ({ onUpload, onReset, disable
         Papa.parse<Record<string, string>>(text, {
           header: true,
           skipEmptyLines: true,
-          transformHeader: (header) => header.trim().toLowerCase(),
-          complete: (results) => {
+          transformHeader: (header: string) => header.trim().toLowerCase(),
+          complete: (results: ParseResult<Record<string, string>>) => {
             const recipients: CSVRecipient[] = [];
             const errors: string[] = [];
             const warnings: string[] = [];
@@ -64,10 +63,10 @@ export const CSVUpload: React.FC<CSVUploadProps> = ({ onUpload, onReset, disable
 
             // Check for required columns
             const headers = results.meta.fields || [];
-            const hasReceiverAddress = headers.some((h) =>
+            const hasReceiverAddress = headers.some((h: string) =>
               ['receiveraddress', 'receiver_address', 'address', 'to'].includes(h.toLowerCase()),
             );
-            const hasValue = headers.some((h) =>
+            const hasValue = headers.some((h: string) =>
               ['value', 'amount', 'fil', 'tokens'].includes(h.toLowerCase()),
             );
 
@@ -79,7 +78,7 @@ export const CSVUpload: React.FC<CSVUploadProps> = ({ onUpload, onReset, disable
             }
 
             if (errors.length === 0) {
-              results.data.forEach((row, index) => {
+              results.data.forEach((row: Record<string, string>, index: number) => {
                 const lineNumber = index + 2; // +1 for 0-indexing, +1 for header row
 
                 // Find the address and value fields (case insensitive)
@@ -260,17 +259,6 @@ export const CSVUpload: React.FC<CSVUploadProps> = ({ onUpload, onReset, disable
         className="hidden"
         disabled={disabled || isProcessing}
       />
-
-      {/* Reset button - show when there's data uploaded */}
-      <div className="mt-4 flex justify-center">
-        <button
-          onClick={onReset}
-          className="text-sm bg-gray-100 text-gray-500 hover:text-gray-700 underline"
-          disabled={disabled || isProcessing}
-        >
-          Clear and upload different file
-        </button>
-      </div>
     </div>
   );
 };
