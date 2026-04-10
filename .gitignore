@@ -24,3 +24,5 @@ yarn-error.log*
 
 # Local-only specs (not in repo)
 DevSpecs/
+CLAUDE.md
+AGENTS.md
