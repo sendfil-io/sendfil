@@ -275,10 +275,7 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
         >
           <span className="flex items-center gap-2">
             {validationErrors.length > 0 ? (
-              <span className="text-yellow-600">
-                {recipients.length - validationErrors.length} of {recipients.length} recipients
-                valid
-              </span>
+              <span className="text-yellow-600">{recipients.length} recipients currently valid</span>
             ) : (
               <span className="text-green-600">✓ {recipients.length} recipients validated</span>
             )}

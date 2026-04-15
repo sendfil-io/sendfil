@@ -10,18 +10,23 @@ import ReviewTransactionModal, {
   TransactionState,
   GasEstimate,
 } from './components/ReviewTransactionModal';
-import { useAccount, useBalance } from 'wagmi';
+import { useAccount, useBalance, useChainId } from 'wagmi';
 import { calculateFeeRows } from './utils/fee';
 import { buildBatchTransaction, attoFilToFil } from './lib/transaction/messageBuilder';
 import { getNonce } from './lib/DataProvider';
+import { validateRecipientRows } from './utils/recipientValidation';
 
 interface Recipient {
   address: string;
   amount: string;
 }
 
+const FILECOIN_MAINNET_ID = 314;
+const MAINNET_ADDRESS_PREFIX = 'f' as const;
+
 export default function App() {
   const { isConnected, address } = useAccount();
+  const chainId = useChainId();
   const { data: balanceData } = useBalance({ address });
   const [recipients, setRecipients] = React.useState<Recipient[]>([]);
   const [csvData, setCsvData] = React.useState<CSVRecipient[]>([]);
@@ -63,7 +68,10 @@ export default function App() {
         amount: csvRecipient.value,
       }));
       setRecipients(convertedRecipients);
+      return;
     }
+
+    setRecipients([]);
   };
 
   const handleCSVReset = () => {
@@ -88,10 +96,49 @@ export default function App() {
     setRecipients(newRecipients);
   };
 
+  const manualValidation = React.useMemo(
+    () =>
+      validateRecipientRows(recipients, {
+        source: 'manual',
+        expectedNetworkPrefix: MAINNET_ADDRESS_PREFIX,
+        requireAtLeastOneRecipient: false,
+      }),
+    [recipients],
+  );
+
+  const hasEnteredData = showManualInput
+    ? manualValidation.nonEmptyRowCount > 0
+    : recipients.length > 0 || csvErrors.length > 0 || csvWarnings.length > 0;
+  const isNetworkMismatch = isConnected && chainId !== FILECOIN_MAINNET_ID;
+  const networkValidationErrors = isNetworkMismatch
+    && hasEnteredData
+    ? ['Switch to Filecoin Mainnet (chain 314) to review and send this batch.']
+    : [];
+
+  const activeValidationErrors = showManualInput
+    ? [...manualValidation.errors, ...networkValidationErrors]
+    : [...csvErrors, ...networkValidationErrors];
+  const activeValidationWarnings = showManualInput ? manualValidation.warnings : csvWarnings;
+
   // Calculate fee and totals for the modal
-  const validRecipients = recipients
-    .filter((r) => r.address && r.amount)
-    .map((r) => ({ address: r.address, amount: Number(r.amount) }));
+  const validRecipients = React.useMemo(
+    () =>
+      (showManualInput
+        ? manualValidation.validRecipients
+        : recipients.map((recipient, index) => ({
+            ...recipient,
+            lineNumber: index + 1,
+          }))
+      ).map((recipient) => ({
+        address: recipient.address,
+        amount: Number(recipient.amount),
+      })),
+    [manualValidation.validRecipients, recipients, showManualInput],
+  );
+
+  const hasReviewableRows = showManualInput
+    ? manualValidation.nonEmptyRowCount > 0
+    : recipients.length > 0;
 
   const recipientTotal = validRecipients.reduce((sum, r) => sum + r.amount, 0);
 
@@ -112,7 +159,11 @@ export default function App() {
   const insufficientBalance = walletBalance < recipientTotal + feeTotal + estimatedNetworkFee;
 
   const handleReview = async () => {
-    if (validRecipients.length === 0) {
+    if (isNetworkMismatch) {
+      return;
+    }
+
+    if (!hasReviewableRows) {
       alert('Please add at least one recipient');
       return;
     }
@@ -126,7 +177,7 @@ export default function App() {
     setIsReviewModalOpen(true);
 
     // Start gas estimation
-    if (address) {
+    if (address && validRecipients.length > 0 && activeValidationErrors.length === 0) {
       setIsEstimatingGas(true);
       try {
         // Get all recipients including fee rows
@@ -324,28 +375,29 @@ f1cj...,3.3`;
                       <CSVUpload
                         onUpload={handleCSVUpload}
                         disabled={false}
+                        expectedNetworkPrefix={MAINNET_ADDRESS_PREFIX}
                       />
                     </div>
                   )}
 
                   {/* CSV Validation Messages */}
-                  {(csvErrors.length > 0 || csvWarnings.length > 0) && (
+                  {(activeValidationErrors.length > 0 || activeValidationWarnings.length > 0) && (
                     <div className="mb-6 space-y-2">
-                      {csvErrors.length > 0 && (
+                      {activeValidationErrors.length > 0 && (
                         <div className="bg-red-50 border border-red-200 rounded-md p-4">
                           <h4 className="font-semibold text-red-800 mb-2">Errors:</h4>
                           <ul className="text-sm text-red-700 space-y-1">
-                            {csvErrors.map((error, index) => (
+                            {activeValidationErrors.map((error, index) => (
                               <li key={index}>• {error}</li>
                             ))}
                           </ul>
                         </div>
                       )}
-                      {csvWarnings.length > 0 && (
+                      {activeValidationWarnings.length > 0 && (
                         <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4">
                           <h4 className="font-semibold text-yellow-800 mb-2">Warnings:</h4>
                           <ul className="text-sm text-yellow-700 space-y-1">
-                            {csvWarnings.map((warning, index) => (
+                            {activeValidationWarnings.map((warning, index) => (
                               <li key={index}>• {warning}</li>
                             ))}
                           </ul>
@@ -406,7 +458,8 @@ f1cj...,3.3`;
                                   </div>
                                   <div className="relative flex items-center gap-2">
                                     <input
-                                      type="number"
+                                      type="text"
+                                      inputMode="decimal"
                                       placeholder="0"
                                       value={recipient.amount}
                                       onChange={(e) =>
@@ -450,15 +503,26 @@ f1cj...,3.3`;
                     </>
                   )}
 
-                  {/* Review Button - only show when we have valid recipients */}
-                  {recipients.length > 0 && csvErrors.length === 0 && (
+                  {/* Review Button - only show when we have entered recipients */}
+                  {hasReviewableRows && (
                     <div className="mt-6">
                       <button
-                        className="w-full text-white bg-blue-500 hover:bg-blue-600 rounded-md py-3 px-4 font-medium text-lg"
+                        className={`w-full rounded-md py-3 px-4 font-medium text-lg ${
+                          isNetworkMismatch
+                            ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                            : 'text-white bg-blue-500 hover:bg-blue-600'
+                        }`}
                         onClick={handleReview}
+                        disabled={isNetworkMismatch}
                       >
-                        Review Batch ({recipients.length} recipients)
+                        Review Batch (
+                        {showManualInput ? manualValidation.nonEmptyRowCount : recipients.length} recipients)
                       </button>
+                      {isNetworkMismatch && (
+                        <p className="mt-2 text-sm text-red-700">
+                          Switch to Filecoin Mainnet before reviewing or sending this batch.
+                        </p>
+                      )}
                     </div>
                   )}
                 </>
@@ -486,8 +550,8 @@ f1cj...,3.3`;
         onClose={handleCloseReviewModal}
         onConfirm={handleConfirmTransaction}
         recipients={validRecipients}
-        validationErrors={csvErrors}
-        validationWarnings={csvWarnings}
+        validationErrors={activeValidationErrors}
+        validationWarnings={activeValidationWarnings}
         recipientTotal={recipientTotal}
         feeTotal={feeTotal}
         gasEstimate={gasEstimate}

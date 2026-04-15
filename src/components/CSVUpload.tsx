@@ -1,5 +1,6 @@
 import React, { useCallback, useState } from 'react';
 import Papa, { type ParseResult } from 'papaparse';
+import { validateRecipientRows } from '../utils/recipientValidation';
 
 export interface CSVRecipient {
   receiverAddress: string;
@@ -16,33 +17,16 @@ export interface CSVUploadResult {
 interface CSVUploadProps {
   onUpload: (result: CSVUploadResult) => void;
   disabled?: boolean;
+  expectedNetworkPrefix?: 'f' | 't';
 }
 
-export const CSVUpload: React.FC<CSVUploadProps> = ({ onUpload, disabled = false }) => {
+export const CSVUpload: React.FC<CSVUploadProps> = ({
+  onUpload,
+  disabled = false,
+  expectedNetworkPrefix = 'f',
+}) => {
   const [isDragOver, setIsDragOver] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-
-  const validateAddress = (address: string): boolean => {
-    // Basic Filecoin address validation
-    if (!address || typeof address !== 'string') return false;
-
-    // Check for f1, f2, f3, f4, t1, t2, t3, t4 addresses
-    const filecoinAddressRegex = /^[ft][0-4][a-zA-Z0-9]{38,}$/;
-    return filecoinAddressRegex.test(address.trim());
-  };
-
-  const validateValue = (value: string): { isValid: boolean; numericValue?: number } => {
-    if (!value || typeof value !== 'string') return { isValid: false };
-
-    const trimmed = value.trim();
-    const numericValue = parseFloat(trimmed);
-
-    if (isNaN(numericValue) || numericValue <= 0) {
-      return { isValid: false };
-    }
-
-    return { isValid: true, numericValue };
-  };
 
   const processCSV = useCallback(
     async (file: File) => {
@@ -56,10 +40,8 @@ export const CSVUpload: React.FC<CSVUploadProps> = ({ onUpload, disabled = false
           skipEmptyLines: true,
           transformHeader: (header: string) => header.trim().toLowerCase(),
           complete: (results: ParseResult<Record<string, string>>) => {
-            const recipients: CSVRecipient[] = [];
+            const parsedRecipients: CSVRecipient[] = [];
             const errors: string[] = [];
-            const warnings: string[] = [];
-            const seenAddresses = new Set<string>();
 
             // Check for required columns
             const headers = results.meta.fields || [];
@@ -94,51 +76,44 @@ export const CSVUpload: React.FC<CSVUploadProps> = ({ onUpload, disabled = false
                 const address = addressKey ? row[addressKey]?.trim() || '' : '';
                 const value = valueKey ? row[valueKey]?.trim() || '' : '';
 
-                // Skip empty rows
-                if (!address && !value) return;
-
-                // Validate address
-                if (!validateAddress(address)) {
-                  errors.push(`Line ${lineNumber}: Invalid Filecoin address "${address}"`);
-                  return;
-                }
-
-                // Check for duplicates
-                if (seenAddresses.has(address)) {
-                  warnings.push(`Line ${lineNumber}: Duplicate address "${address}"`);
-                } else {
-                  seenAddresses.add(address);
-                }
-
-                // Validate value
-                const valueValidation = validateValue(value);
-                if (!valueValidation.isValid) {
-                  errors.push(
-                    `Line ${lineNumber}: Invalid value "${value}" (must be positive number)`,
-                  );
-                  return;
-                }
-
-                recipients.push({
+                parsedRecipients.push({
                   receiverAddress: address,
-                  value: value,
+                  value,
                   lineNumber,
                 });
               });
             }
 
-            // Additional validations
-            if (recipients.length === 0 && errors.length === 0) {
-              errors.push('No valid recipients found in CSV file');
-            }
+            const validationResult =
+              errors.length === 0
+                ? validateRecipientRows(
+                    parsedRecipients.map((recipient) => ({
+                      address: recipient.receiverAddress,
+                      amount: recipient.value,
+                      lineNumber: recipient.lineNumber,
+                    })),
+                    {
+                      source: 'csv',
+                      expectedNetworkPrefix,
+                      requireAtLeastOneRecipient: true,
+                    },
+                  )
+                : {
+                    validRecipients: [],
+                    errors: [],
+                    warnings: [],
+                    nonEmptyRowCount: 0,
+                  };
 
-            if (recipients.length > 1000) {
-              warnings.push(
-                `Large batch detected: ${recipients.length} recipients. Consider splitting into smaller batches.`,
-              );
-            }
-
-            onUpload({ recipients, errors, warnings });
+            onUpload({
+              recipients: validationResult.validRecipients.map((recipient) => ({
+                receiverAddress: recipient.address,
+                value: recipient.amount,
+                lineNumber: recipient.lineNumber,
+              })),
+              errors: [...errors, ...validationResult.errors],
+              warnings: validationResult.warnings,
+            });
             setIsProcessing(false);
           },
           error: (error: Error) => {
@@ -161,7 +136,7 @@ export const CSVUpload: React.FC<CSVUploadProps> = ({ onUpload, disabled = false
         setIsProcessing(false);
       }
     },
-    [onUpload],
+    [expectedNetworkPrefix, onUpload],
   );
 
   const handleDrop = useCallback(
