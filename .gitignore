@@ -21,6 +21,8 @@ yarn-error.log*
 
 # Misc
 .DS_Store
+playwright-report/
+test-results/
 
 # Local-only specs (not in repo)
 DevSpecs/

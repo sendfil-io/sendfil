@@ -1,0 +1,45 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    labels:
+      - dependencies
+      - github-actions
+    open-pull-requests-limit: 5
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    labels:
+      - dependencies
+      - npm
+    open-pull-requests-limit: 10
+    groups:
+      frontend-tooling:
+        applies-to: version-updates
+        patterns:
+          - "@types/*"
+          - "@vitejs/*"
+          - "eslint*"
+          - "prettier"
+          - "tailwindcss"
+          - "typescript"
+          - "vite"
+          - "vitest"
+          - "@playwright/test"
+      app-runtime:
+        applies-to: version-updates
+        patterns:
+          - "@glif/*"
+          - "@rainbow-me/*"
+          - "@tanstack/*"
+          - "papaparse"
+          - "p-retry"
+          - "p-timeout"
+          - "react"
+          - "react-dom"
+          - "viem"
+          - "wagmi"
+          - "zod"
