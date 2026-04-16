@@ -195,6 +195,7 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
               checked={hasAcknowledgedDuplicateRecipients}
               onChange={(event) => setHasAcknowledgedDuplicateRecipients(event.target.checked)}
               aria-label="Acknowledge duplicate recipients"
+              data-testid="duplicate-acknowledgment"
             />
             <span>
               I understand the duplicate recipients above will each receive a separate transfer.
@@ -450,6 +451,7 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
               type="button"
               onClick={onConfirm}
               disabled={isSendDisabled}
+              data-testid="send-batch-button"
               className={`px-6 py-2 rounded-md transition-colors ${
                 isSendDisabled
                   ? 'bg-gray-300 text-gray-500 cursor-not-allowed'

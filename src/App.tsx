@@ -23,11 +23,19 @@ interface Recipient {
 
 const FILECOIN_MAINNET_ID = 314;
 const MAINNET_ADDRESS_PREFIX = 'f' as const;
+const E2E_MOCK_WALLET_ENABLED = import.meta.env.VITE_E2E_MOCK_WALLET === 'true';
+const E2E_SKIP_GAS_ESTIMATION = import.meta.env.VITE_E2E_SKIP_GAS_ESTIMATION === 'true';
+const E2E_MOCK_SEND_DELAY_MS = Number(import.meta.env.VITE_E2E_SEND_DELAY_MS ?? '3000');
+const E2E_MOCK_ACCOUNT = '0x1234567890AbcdEF1234567890aBcdef12345678' as const;
+const E2E_MOCK_BALANCE_FIL = 1000;
 
 export default function App() {
-  const { isConnected, address } = useAccount();
-  const chainId = useChainId();
-  const { data: balanceData } = useBalance({ address });
+  const account = useAccount();
+  const walletChainId = useChainId();
+  const { data: balanceData } = useBalance({ address: account.address });
+  const isConnected = E2E_MOCK_WALLET_ENABLED ? true : account.isConnected;
+  const address = E2E_MOCK_WALLET_ENABLED ? E2E_MOCK_ACCOUNT : account.address;
+  const chainId = E2E_MOCK_WALLET_ENABLED ? FILECOIN_MAINNET_ID : walletChainId;
   const [recipients, setRecipients] = React.useState<Recipient[]>([]);
   const [csvData, setCsvData] = React.useState<CSVRecipient[]>([]);
   const [csvErrors, setCsvErrors] = React.useState<string[]>([]);
@@ -154,7 +162,11 @@ export default function App() {
   }, [validRecipients]);
 
   // Get wallet balance in FIL
-  const walletBalance = balanceData ? Number(balanceData.formatted) : 0;
+  const walletBalance = E2E_MOCK_WALLET_ENABLED
+    ? E2E_MOCK_BALANCE_FIL
+    : balanceData
+      ? Number(balanceData.formatted)
+      : 0;
   const estimatedNetworkFee = gasEstimate?.estimatedFeeInFil || 0;
   const insufficientBalance = walletBalance < recipientTotal + feeTotal + estimatedNetworkFee;
 
@@ -175,6 +187,10 @@ export default function App() {
     setTransactionHash(undefined);
     setTransactionError(undefined);
     setIsReviewModalOpen(true);
+
+    if (E2E_MOCK_WALLET_ENABLED || E2E_SKIP_GAS_ESTIMATION) {
+      return;
+    }
 
     // Start gas estimation
     if (address && validRecipients.length > 0 && activeValidationErrors.length === 0) {
@@ -224,7 +240,7 @@ export default function App() {
       setTransactionState('pending');
 
       // Simulate transaction delay
-      await new Promise((resolve) => setTimeout(resolve, 3000));
+      await new Promise((resolve) => setTimeout(resolve, E2E_MOCK_SEND_DELAY_MS));
 
       // Simulate success (replace with actual transaction logic)
       setTransactionHash('bafy2bzaced...example');
@@ -364,6 +380,7 @@ f1cj...,3.3`;
                     <button
                       className="bg-gray-100 text-gray-700 rounded-md px-4 py-2"
                       onClick={() => setShowManualInput(!showManualInput)}
+                      data-testid="manual-mode-toggle"
                     >
                       {showManualInput ? 'Use CSV Upload' : 'Manual Input'}
                     </button>
@@ -454,6 +471,7 @@ f1cj...,3.3`;
                                         updateRecipient(index, 'address', e.target.value)
                                       }
                                       className="w-full p-2 border rounded-md bg-gray-100"
+                                      data-testid={`recipient-address-${index}`}
                                     />
                                   </div>
                                   <div className="relative flex items-center gap-2">
@@ -466,6 +484,7 @@ f1cj...,3.3`;
                                         updateRecipient(index, 'amount', e.target.value)
                                       }
                                       className="w-full p-2 border rounded-md bg-gray-100"
+                                      data-testid={`recipient-amount-${index}`}
                                     />
                                     {recipients.length > 1 && (
                                       <button
@@ -514,6 +533,7 @@ f1cj...,3.3`;
                         }`}
                         onClick={handleReview}
                         disabled={isNetworkMismatch}
+                        data-testid="review-batch-button"
                       >
                         Review Batch (
                         {showManualInput ? manualValidation.nonEmptyRowCount : recipients.length} recipients)

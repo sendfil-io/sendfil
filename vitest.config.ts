@@ -5,5 +5,6 @@ export default defineConfig({
     environment: 'node',
     globals: true,
     setupFiles: [],
+    include: ['src/**/*.{test,spec}.{ts,tsx}'],
   },
 });

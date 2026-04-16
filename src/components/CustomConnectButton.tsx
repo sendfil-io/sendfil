@@ -3,6 +3,8 @@ import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { useDisconnect } from 'wagmi';
 import { convertEthToF4, truncateAddress } from '../utils/addressConverter';
 
+const E2E_MOCK_WALLET_ENABLED = import.meta.env.VITE_E2E_MOCK_WALLET === 'true';
+
 export const CustomConnectButton: React.FC = () => {
   const [showAccountModal, setShowAccountModal] = useState(false);
   const { disconnect } = useDisconnect();
@@ -14,6 +16,22 @@ export const CustomConnectButton: React.FC = () => {
       console.error('Failed to copy text: ', err);
     }
   };
+
+  if (E2E_MOCK_WALLET_ENABLED) {
+    return (
+      <div className="w-full">
+        <div className="w-full flex items-center justify-center bg-gray-800 text-white rounded-md px-3 py-2 mb-3 text-sm font-medium">
+          Filecoin Mainnet
+        </div>
+        <div
+          className="w-full bg-blue-500 text-white rounded-md px-4 py-3 font-mono text-sm text-center"
+          data-testid="mock-wallet-chip"
+        >
+          Test Wallet
+        </div>
+      </div>
+    );
+  }
 
   return (
     <ConnectButton.Custom>
