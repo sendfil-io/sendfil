@@ -1,5 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useChainId } from 'wagmi';
+import {
+  getDuplicateRecipientWarnings,
+  isDuplicateRecipientWarning,
+} from '../utils/recipientValidation';
 
 export type TransactionState = 'review' | 'signing' | 'pending' | 'confirmed' | 'failed';
 
@@ -80,6 +84,8 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
   const [showDetails, setShowDetails] = useState(false);
   const [showGasDetails, setShowGasDetails] = useState(false);
   const [showFeeTooltip, setShowFeeTooltip] = useState(false);
+  const [hasAcknowledgedDuplicateRecipients, setHasAcknowledgedDuplicateRecipients] =
+    useState(false);
   const modalRef = useRef<HTMLDivElement>(null);
   const chainId = useChainId();
 
@@ -100,10 +106,17 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
   // Calculate totals
   const estimatedNetworkFee = gasEstimate?.estimatedFeeInFil || 0;
   const grandTotal = recipientTotal + feeTotal + estimatedNetworkFee;
+  const duplicateRecipientWarnings = getDuplicateRecipientWarnings(validationWarnings);
+  const otherValidationWarnings = validationWarnings.filter(
+    (warning) => !isDuplicateRecipientWarning(warning),
+  );
+  const duplicateWarningsSignature = duplicateRecipientWarnings.join('|');
+  const requiresDuplicateConfirmation = duplicateRecipientWarnings.length > 0;
 
   // Send button should be disabled when:
   const isSendDisabled =
     validationErrors.length > 0 ||
+    (requiresDuplicateConfirmation && !hasAcknowledgedDuplicateRecipients) ||
     insufficientBalance ||
     isEstimatingGas ||
     transactionState !== 'review';
@@ -135,6 +148,10 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
     }
   }, [isOpen]);
 
+  useEffect(() => {
+    setHasAcknowledgedDuplicateRecipients(false);
+  }, [duplicateWarningsSignature, isOpen]);
+
   if (!isOpen) return null;
 
   // Render different states
@@ -157,11 +174,43 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
       )}
 
       {/* Warnings Section */}
-      {validationWarnings.length > 0 && validationErrors.length === 0 && (
+      {duplicateRecipientWarnings.length > 0 && (
+        <div className="mb-4 bg-amber-50 border border-amber-200 rounded-md p-4">
+          <h4 className="font-semibold text-amber-900 mb-2">
+            Duplicate recipients need confirmation
+          </h4>
+          <p className="text-sm text-amber-800 mb-3">
+            This batch includes duplicate recipients. SendFIL will treat each duplicate entry as a
+            separate transfer.
+          </p>
+          <ul className="text-sm text-amber-800 space-y-1">
+            {duplicateRecipientWarnings.map((warning, index) => (
+              <li key={index}>• {warning}</li>
+            ))}
+          </ul>
+          <label className="mt-3 flex items-start gap-3 text-sm text-amber-900">
+            <input
+              type="checkbox"
+              className="mt-1 h-4 w-4 rounded border-amber-300 text-blue-600 focus:ring-blue-500"
+              checked={hasAcknowledgedDuplicateRecipients}
+              onChange={(event) => setHasAcknowledgedDuplicateRecipients(event.target.checked)}
+              aria-label="Acknowledge duplicate recipients"
+            />
+            <span>
+              I understand the duplicate recipients above will each receive a separate transfer.
+              <span className="block text-xs text-amber-700 mt-1">
+                Required before you can send this batch.
+              </span>
+            </span>
+          </label>
+        </div>
+      )}
+
+      {otherValidationWarnings.length > 0 && validationErrors.length === 0 && (
         <div className="mb-4 bg-yellow-50 border border-yellow-200 rounded-md p-4">
           <h4 className="font-semibold text-yellow-800 mb-2">Warnings:</h4>
           <ul className="text-sm text-yellow-700 space-y-1">
-            {validationWarnings.map((warning, index) => (
+            {otherValidationWarnings.map((warning, index) => (
               <li key={index}>• {warning}</li>
             ))}
           </ul>

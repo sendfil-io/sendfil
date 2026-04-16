@@ -26,6 +26,8 @@ export interface RecipientValidationResult {
   nonEmptyRowCount: number;
 }
 
+export const DUPLICATE_RECIPIENT_WARNING_MARKER = 'Duplicate recipient matches';
+
 interface AddressValidationResult {
   isValid: boolean;
   normalizedAddress?: string;
@@ -208,7 +210,7 @@ export function validateRecipientRows(
     const duplicateSource = seenRecipients.get(addressValidation.duplicateKey!);
     if (duplicateSource) {
       warnings.push(
-        `${rowLabel}: Duplicate recipient matches ${duplicateSource}`,
+        `${rowLabel}: ${DUPLICATE_RECIPIENT_WARNING_MARKER} ${duplicateSource}`,
       );
     } else {
       seenRecipients.set(addressValidation.duplicateKey!, rowLabel);
@@ -241,4 +243,12 @@ export function validateRecipientRows(
     warnings,
     nonEmptyRowCount,
   };
+}
+
+export function isDuplicateRecipientWarning(warning: string): boolean {
+  return warning.includes(DUPLICATE_RECIPIENT_WARNING_MARKER);
+}
+
+export function getDuplicateRecipientWarnings(warnings: string[]): string[] {
+  return warnings.filter(isDuplicateRecipientWarning);
 }
