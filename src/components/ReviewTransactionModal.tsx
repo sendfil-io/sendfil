@@ -519,7 +519,7 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
   const getModalTitle = () => {
     switch (transactionState) {
       case 'review':
-        return 'Review Transaction';
+        return 'Review Batch';
       case 'signing':
         return 'Sign Transaction';
       case 'pending':
@@ -529,13 +529,13 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
       case 'failed':
         return 'Error';
       default:
-        return 'Review Transaction';
+        return 'Review Batch';
     }
   };
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 px-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="modal-title"
@@ -543,10 +543,10 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
       <div
         ref={modalRef}
         tabIndex={-1}
-        className="bg-white rounded-lg shadow-xl w-full max-w-lg mx-4 max-h-[90vh] flex flex-col"
+        className="flex max-h-[90vh] w-full max-w-lg flex-col rounded-[28px] bg-white shadow-2xl"
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+        <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
           <h2 id="modal-title" className="text-xl font-semibold">
             {getModalTitle()}
           </h2>
@@ -554,7 +554,7 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="text-gray-400 hover:text-gray-600 text-2xl leading-none"
+              className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-2xl leading-none text-slate-500 transition-colors hover:bg-slate-200 hover:text-slate-900"
               aria-label="Close modal"
             >
               ×
@@ -563,10 +563,10 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto px-6 py-4">{renderContent()}</div>
+        <div className="flex-1 overflow-y-auto px-6 py-5">{renderContent()}</div>
 
         {/* Footer */}
-        <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-200">
+        <div className="flex justify-end gap-3 border-t border-slate-200 px-6 py-4">
           {renderButtons()}
         </div>
       </div>

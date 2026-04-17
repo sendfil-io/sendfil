@@ -194,12 +194,12 @@ export const CSVUpload: React.FC<CSVUploadProps> = ({
     <div className="w-full">
       <div
         className={`
-          border-2 border-dashed rounded-lg p-8 text-center transition-all
-          ${isDragOver ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-gray-400'}
+          rounded-[24px] border-2 border-dashed p-8 text-center transition-all
+          ${isDragOver ? 'border-[#1f69ff] bg-blue-50' : 'border-slate-200 bg-slate-50/70 hover:border-slate-300'}
           ${
             disabled || isProcessing
               ? 'opacity-50 cursor-not-allowed'
-              : 'cursor-pointer hover:bg-gray-50'
+              : 'cursor-pointer'
           }
         `}
         onDrop={handleDrop}
@@ -211,17 +211,17 @@ export const CSVUpload: React.FC<CSVUploadProps> = ({
       >
         {isProcessing ? (
           <div className="flex flex-col items-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mb-4"></div>
-            <p className="text-gray-600">Processing CSV file...</p>
+            <div className="mb-4 h-8 w-8 animate-spin rounded-full border-b-2 border-[#1f69ff]"></div>
+            <p className="text-slate-600">Processing CSV file...</p>
           </div>
         ) : (
           <div className="flex flex-col items-center">
-            <div className="text-4xl mb-4">📄</div>
-            <h3 className="text-lg font-semibold mb-2">Upload CSV File</h3>
-            <p className="text-gray-600 mb-4">
+            <div className="mb-4 text-4xl">📄</div>
+            <h3 className="mb-2 text-lg font-semibold text-slate-950">Upload CSV File</h3>
+            <p className="mb-4 max-w-md text-sm text-slate-600">
               Drag and drop your CSV file here, or click to browse
             </p>
-            <p className="text-sm text-gray-500">Expected format: receiverAddress, value</p>
+            <p className="text-sm text-slate-500">Expected format: receiverAddress, value</p>
           </div>
         )}
       </div>
