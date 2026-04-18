@@ -4,25 +4,57 @@ updates:
     directory: /
     schedule:
       interval: weekly
-    labels:
-      - dependencies
-      - github-actions
     open-pull-requests-limit: 5
   - package-ecosystem: npm
     directory: /
     schedule:
       interval: weekly
-    labels:
-      - dependencies
-      - npm
     open-pull-requests-limit: 10
+    # Keep routine Dependabot PRs on dependency lines that are compatible with the
+    # current app stack and CI/runtime policy.
+    ignore:
+      - dependency-name: "p-retry"
+        update-types:
+          - "version-update:semver-major"
+      - dependency-name: "wagmi"
+        update-types:
+          - "version-update:semver-major"
+      - dependency-name: "eslint"
+        update-types:
+          - "version-update:semver-major"
+      - dependency-name: "@eslint/js"
+        update-types:
+          - "version-update:semver-major"
+      - dependency-name: "@typescript-eslint/eslint-plugin"
+        update-types:
+          - "version-update:semver-major"
+      - dependency-name: "@typescript-eslint/parser"
+        update-types:
+          - "version-update:semver-major"
+      - dependency-name: "eslint-config-airbnb-typescript"
+        update-types:
+          - "version-update:semver-major"
+      - dependency-name: "eslint-config-prettier"
+        update-types:
+          - "version-update:semver-major"
+      - dependency-name: "eslint-plugin-prettier"
+        update-types:
+          - "version-update:semver-major"
+      - dependency-name: "eslint-plugin-react"
+        update-types:
+          - "version-update:semver-major"
+      - dependency-name: "eslint-plugin-react-hooks"
+        update-types:
+          - "version-update:semver-major"
+      - dependency-name: "eslint-plugin-react-refresh"
+        update-types:
+          - "version-update:semver-major"
     groups:
       frontend-tooling:
         applies-to: version-updates
         patterns:
           - "@types/*"
           - "@vitejs/*"
-          - "eslint*"
           - "prettier"
           - "tailwindcss"
           - "typescript"

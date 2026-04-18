@@ -7,6 +7,7 @@ import ReviewTransactionModal, {
   GasEstimate,
 } from './components/ReviewTransactionModal';
 import { useAccount, useBalance, useChainId } from 'wagmi';
+import { formatUnits } from 'viem';
 import { calculateFeeRows } from './utils/fee';
 import { buildBatchTransaction, attoFilToFil } from './lib/transaction/messageBuilder';
 import { getNonce } from './lib/DataProvider';
@@ -209,7 +210,7 @@ export default function App() {
   const walletBalance = E2E_MOCK_WALLET_ENABLED
     ? E2E_MOCK_BALANCE_FIL
     : balanceData
-      ? Number(balanceData.formatted)
+      ? Number(formatUnits(balanceData.value, balanceData.decimals))
       : 0;
   const estimatedNetworkFee = gasEstimate?.estimatedFeeInFil || 0;
   const insufficientBalance = walletBalance < recipientTotal + feeTotal + estimatedNetworkFee;
