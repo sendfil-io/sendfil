@@ -5,6 +5,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import ReviewTransactionModal, {
   type ReviewTransactionModalProps,
 } from '../ReviewTransactionModal';
+import { DEFAULT_BATCH_CONFIGURATION } from '../../lib/batchConfiguration';
 
 vi.mock('wagmi', () => ({
   useChainId: () => 314,
@@ -33,6 +34,7 @@ function getBaseProps(): ReviewTransactionModalProps {
     transactionState: 'review',
     transactionHash: undefined,
     transactionError: undefined,
+    batchConfiguration: DEFAULT_BATCH_CONFIGURATION,
   };
 }
 
@@ -130,6 +132,19 @@ describe('ReviewTransactionModal', () => {
 
     expect(checkbox).toBeNull();
     expect(sendButton.disabled).toBe(false);
+  });
+
+  it('renders the batch configuration summary', () => {
+    const props = getBaseProps();
+
+    act(() => {
+      root.render(<ReviewTransactionModal {...props} />);
+    });
+
+    expect(container.textContent).toContain('Batch configuration');
+    expect(container.textContent).toContain('Single-signer');
+    expect(container.textContent).toContain('Standard');
+    expect(container.textContent).toContain('Partial');
   });
 
   it('resets duplicate acknowledgment when the modal reopens', () => {

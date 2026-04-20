@@ -4,6 +4,12 @@ import {
   getDuplicateRecipientWarnings,
   isDuplicateRecipientWarning,
 } from '../utils/recipientValidation';
+import {
+  getErrorHandlingLabel,
+  getExecutionMethodLabel,
+  getSenderWalletTypeLabel,
+  type BatchConfiguration,
+} from '../lib/batchConfiguration';
 
 export type TransactionState = 'review' | 'signing' | 'pending' | 'confirmed' | 'failed';
 
@@ -41,6 +47,7 @@ export interface ReviewTransactionModalProps {
   transactionState: TransactionState;
   transactionHash?: string;
   transactionError?: string;
+  batchConfiguration: BatchConfiguration;
 }
 
 // Format FIL amounts for display
@@ -80,6 +87,7 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
   transactionState,
   transactionHash,
   transactionError,
+  batchConfiguration,
 }) => {
   const [showDetails, setShowDetails] = useState(false);
   const [showGasDetails, setShowGasDetails] = useState(false);
@@ -234,6 +242,38 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
 
       {/* Summary Section */}
       <div className="space-y-3 mb-4">
+        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+            Batch configuration
+          </p>
+          <div className="mt-3 grid gap-3 sm:grid-cols-3">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-[0.16em] text-slate-400">
+                Wallet type
+              </p>
+              <p className="mt-1 text-sm font-semibold text-slate-900">
+                {getSenderWalletTypeLabel(batchConfiguration.senderWalletType)}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-medium uppercase tracking-[0.16em] text-slate-400">
+                Method
+              </p>
+              <p className="mt-1 text-sm font-semibold text-slate-900">
+                {getExecutionMethodLabel(batchConfiguration.executionMethod)}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-medium uppercase tracking-[0.16em] text-slate-400">
+                Error handling
+              </p>
+              <p className="mt-1 text-sm font-semibold text-slate-900">
+                {getErrorHandlingLabel(batchConfiguration.errorHandling)}
+              </p>
+            </div>
+          </div>
+        </div>
+
         <div className="flex justify-between items-center">
           <span className="text-gray-600">Total to send:</span>
           <span className="font-semibold text-lg">{formatFil(recipientTotal)}</span>
