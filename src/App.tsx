@@ -37,7 +37,7 @@ interface ManualRecipientInteraction {
 interface ConfigurationChoice {
   value: string;
   label: string;
-  helper: string;
+  helper?: string;
   badge?: string;
   testId?: string;
 }
@@ -224,7 +224,9 @@ function ConfigurationChoiceGroup({
                   </span>
                 )}
               </div>
-              <p className="mt-2 text-xs leading-5 text-slate-500">{option.helper}</p>
+              {option.helper && (
+                <p className="mt-2 text-xs leading-5 text-slate-500">{option.helper}</p>
+              )}
             </button>
           );
         })}
@@ -692,32 +694,23 @@ f1cj...,3.3`;
           <div className="mt-6 rounded-[28px] border border-slate-200 bg-white px-4 py-4 shadow-[0_16px_40px_-32px_rgba(15,23,42,0.45)]">
             <ConfigurationChoiceGroup
               title="Wallet Type"
-              description="Choose the sender lane for this batch."
               selectedValue={batchConfiguration.senderWalletType}
               onSelect={(value) => handleSenderWalletTypeSelect(value as SenderWalletType)}
               options={[
                 {
                   value: 'SINGLE_SIG',
                   label: 'Single-signer',
-                  helper: 'Default v1 sender flow.',
-                  badge: 'Default',
                   testId: 'sender-wallet-single-sig',
                 },
                 {
                   value: 'MULTI_SIG',
                   label: 'Multi-sig',
-                  helper: 'Visible now, unlocks in a later phase.',
-                  badge: 'V2',
                   testId: 'sender-wallet-multi-sig',
                 },
               ]}
             />
           </div>
 
-          <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500">
-            Draft the batch first. Review and send are unlocked only after a wallet is connected on
-            Filecoin Mainnet.
-          </div>
         </aside>
 
         <main className="flex-1 px-4 py-6 sm:px-8 lg:px-12 lg:py-10">
@@ -730,13 +723,6 @@ f1cj...,3.3`;
                 Transfer FIL to one or many recipients.
               </p>
             </header>
-
-            {!isConnected && (
-              <div className="mb-6 rounded-2xl border border-blue-200 bg-blue-50 px-5 py-4 text-sm text-blue-900">
-                You can compose a batch before connecting a wallet. Connect when you are ready to
-                review gas estimates and send.
-              </div>
-            )}
 
             <div className="mb-6 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div className="inline-flex rounded-2xl border border-slate-200 bg-white p-1 shadow-sm">
@@ -777,11 +763,7 @@ f1cj...,3.3`;
             <section className="mb-6 rounded-[28px] border border-slate-200 bg-white px-6 py-5 shadow-[0_20px_60px_-48px_rgba(15,23,42,0.45)] sm:px-8">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                 <div>
-                  <h2 className="text-lg font-semibold text-slate-950">Batch settings</h2>
-                  <p className="mt-1 max-w-2xl text-sm text-slate-500">
-                    Keep the batch configuration visible while composing recipients. Defaults are
-                    applied fresh on every load.
-                  </p>
+                  <h2 className="text-lg font-semibold text-slate-950">Configure transaction</h2>
                 </div>
 
                 <div className="flex flex-wrap gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
