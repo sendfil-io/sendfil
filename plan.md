@@ -11,14 +11,12 @@ into delivery order, dependencies, implementation checkpoints, and acceptance cr
 
 Use these rules when working from this plan:
 
-- `DevSpecs/SendFIL-_Technical_Spec_Doc.md` is the authoritative product specification.
+- `DevSpecs/SendFIL-_Technical_Spec_Doc.md` is the authoritative product specification, specifically focusing on the core "transaction layer" of the product.
 - `plan.md` translates that specification into execution order and concrete delivery phases.
-- `AGENTS.md` remains the cross-agent guide for current code truth, repo caveats, and known
-  implementation gaps.
+- `AGENTS.md` remains the cross-agent guide for current code truth, repo caveats, and known implementation gaps.
 - `plan.md` must never silently narrow or redefine DevSpec scope.
-- If the repo lags the DevSpec, the plan must mark the gap explicitly.
-- If a roadmap item is blocked by missing deployment, upstream wallet capability, or missing
-  product input, the item must stay in scope and be labeled as blocked rather than dropped.
+- If the repo deviates from or lags the DevSpec, the plan must mark the gap explicitly.
+- If a roadmap item is blocked by missing deployment, upstream wallet capability, or missing product input, the item must stay in scope and be labeled as blocked rather than dropped.
 
 ## How To Read This Plan
 

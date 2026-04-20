@@ -18,6 +18,11 @@ interface Recipient {
   amount: string;
 }
 
+interface ManualRecipientInteraction {
+  addressTouched: boolean;
+  amountTouched: boolean;
+}
+
 type InputMode = 'manual' | 'csv';
 
 const FILECOIN_MAINNET_ID = 314;
@@ -30,6 +35,13 @@ const E2E_MOCK_BALANCE_FIL = 1000;
 
 function createEmptyRecipients(count = 3): Recipient[] {
   return Array.from({ length: count }, () => ({ address: '', amount: '' }));
+}
+
+function createEmptyManualInteractions(count = 3): ManualRecipientInteraction[] {
+  return Array.from({ length: count }, () => ({
+    addressTouched: false,
+    amountTouched: false,
+  }));
 }
 
 function formatSummaryFil(amount: number): string {
@@ -58,6 +70,50 @@ function collectManualRowIssues(messages: string[]): Record<number, string[]> {
     accumulator[rowNumber].push(details);
     return accumulator;
   }, {});
+}
+
+function shouldShowManualError(
+  recipient: Recipient | undefined,
+  interaction: ManualRecipientInteraction | undefined,
+  message: string,
+): boolean {
+  if (!recipient) {
+    return true;
+  }
+
+  const hasAddress = recipient.address.trim().length > 0;
+  const hasAmount = recipient.amount.trim().length > 0;
+  const isAmountError = message === 'Amount is required' || message.startsWith('Amount ');
+  const isAddressError = !isAmountError;
+
+  if (isAddressError) {
+    return Boolean(interaction?.addressTouched) && hasAmount;
+  }
+
+  return Boolean(interaction?.amountTouched) && hasAddress;
+}
+
+function getManualDraftHint(
+  recipient: Recipient,
+  hasVisibleErrors: boolean,
+  hasVisibleWarnings: boolean,
+): string | null {
+  if (hasVisibleErrors || hasVisibleWarnings) {
+    return null;
+  }
+
+  const hasAddress = recipient.address.trim().length > 0;
+  const hasAmount = recipient.amount.trim().length > 0;
+
+  if (hasAddress && !hasAmount) {
+    return 'Add an amount to include this row.';
+  }
+
+  if (!hasAddress && hasAmount) {
+    return 'Add a recipient address to include this row.';
+  }
+
+  return null;
 }
 
 function SummaryPanel({
@@ -100,6 +156,9 @@ export default function App() {
   const [manualRecipients, setManualRecipients] = React.useState<Recipient[]>(() =>
     createEmptyRecipients(),
   );
+  const [manualInteractions, setManualInteractions] = React.useState<ManualRecipientInteraction[]>(
+    () => createEmptyManualInteractions(),
+  );
   const [csvData, setCsvData] = React.useState<CSVRecipient[]>([]);
   const [csvErrors, setCsvErrors] = React.useState<string[]>([]);
   const [csvWarnings, setCsvWarnings] = React.useState<string[]>([]);
@@ -127,10 +186,17 @@ export default function App() {
 
   const addRecipient = () => {
     setManualRecipients((current) => [...current, { address: '', amount: '' }]);
+    setManualInteractions((current) => [
+      ...current,
+      { addressTouched: false, amountTouched: false },
+    ]);
   };
 
   const removeRecipient = (index: number) => {
     setManualRecipients((current) => current.filter((_, currentIndex) => currentIndex !== index));
+    setManualInteractions((current) =>
+      current.filter((_, currentIndex) => currentIndex !== index),
+    );
   };
 
   const updateRecipient = (index: number, field: keyof Recipient, value: string) => {
@@ -138,6 +204,26 @@ export default function App() {
       const nextRecipients = [...current];
       nextRecipients[index] = { ...nextRecipients[index], [field]: value };
       return nextRecipients;
+    });
+  };
+
+  const markRecipientTouched = (
+    index: number,
+    field: keyof ManualRecipientInteraction,
+  ) => {
+    setManualInteractions((current) => {
+      const nextInteractions = [...current];
+      const existingInteraction = nextInteractions[index] ?? {
+        addressTouched: false,
+        amountTouched: false,
+      };
+
+      nextInteractions[index] = {
+        ...existingInteraction,
+        [field]: true,
+      };
+
+      return nextInteractions;
     });
   };
 
@@ -172,9 +258,30 @@ export default function App() {
       ? ['Switch to Filecoin Mainnet (chain 314) to review and send this batch.']
       : [];
 
+  const manualDisplayErrors = React.useMemo(
+    () =>
+      manualValidation.errors.filter((message) => {
+        const match = message.match(/^Recipient (\d+):\s*(.*)$/);
+
+        if (!match) {
+          return true;
+        }
+
+        const rowNumber = Number(match[1]);
+        const details = match[2];
+
+        return shouldShowManualError(
+          manualRecipients[rowNumber - 1],
+          manualInteractions[rowNumber - 1],
+          details,
+        );
+      }),
+    [manualInteractions, manualRecipients, manualValidation.errors],
+  );
+
   const activeValidationErrors =
     inputMode === 'manual'
-      ? [...manualValidation.errors, ...networkValidationErrors]
+      ? [...manualDisplayErrors, ...networkValidationErrors]
       : [...csvErrors, ...networkValidationErrors];
   const activeValidationWarnings =
     inputMode === 'manual' ? manualValidation.warnings : csvWarnings;
@@ -216,12 +323,21 @@ export default function App() {
   const insufficientBalance = walletBalance < recipientTotal + feeTotal + estimatedNetworkFee;
 
   const manualRowErrors = React.useMemo(
-    () => collectManualRowIssues(manualValidation.errors),
-    [manualValidation.errors],
+    () => collectManualRowIssues(manualDisplayErrors),
+    [manualDisplayErrors],
   );
   const manualRowWarnings = React.useMemo(
     () => collectManualRowIssues(manualValidation.warnings),
     [manualValidation.warnings],
+  );
+  const manualIncompleteRowCount = React.useMemo(
+    () =>
+      manualRecipients.filter((recipient) => {
+        const hasAddress = recipient.address.trim().length > 0;
+        const hasAmount = recipient.amount.trim().length > 0;
+        return hasAddress !== hasAmount;
+      }).length,
+    [manualRecipients],
   );
 
   const reviewDisabled = !isConnected || isNetworkMismatch || !hasReviewableRows;
@@ -241,6 +357,10 @@ export default function App() {
         : 'Upload a CSV file to continue.';
     }
 
+    if (inputMode === 'manual' && manualIncompleteRowCount > 0 && activeValidationErrors.length === 0) {
+      return 'Complete each draft row with both an address and amount before review.';
+    }
+
     if (activeValidationErrors.length > 0) {
       return 'Review is available, but send stays disabled until errors are resolved.';
     }
@@ -257,11 +377,34 @@ export default function App() {
     inputMode,
     isConnected,
     isNetworkMismatch,
+    manualIncompleteRowCount,
   ]);
 
   const handleReview = async () => {
     if (!isConnected || !address || isNetworkMismatch || !hasReviewableRows) {
       return;
+    }
+
+    if (inputMode === 'manual') {
+      setManualInteractions((current) =>
+        manualRecipients.map((recipient, index) => {
+          const existingInteraction = current[index] ?? {
+            addressTouched: false,
+            amountTouched: false,
+          };
+          const hasAddress = recipient.address.trim().length > 0;
+          const hasAmount = recipient.amount.trim().length > 0;
+
+          if (!hasAddress && !hasAmount) {
+            return existingInteraction;
+          }
+
+          return {
+            addressTouched: existingInteraction.addressTouched || hasAmount,
+            amountTouched: existingInteraction.amountTouched || hasAddress,
+          };
+        }),
+      );
     }
 
     setTransactionState('review');
@@ -504,6 +647,11 @@ f1cj...,3.3`;
                       const rowErrors = manualRowErrors[rowNumber] || [];
                       const rowWarnings = manualRowWarnings[rowNumber] || [];
                       const hasRowIssues = rowErrors.length > 0;
+                      const draftHint = getManualDraftHint(
+                        recipient,
+                        rowErrors.length > 0,
+                        rowWarnings.length > 0,
+                      );
 
                       return (
                         <div key={rowNumber}>
@@ -518,6 +666,7 @@ f1cj...,3.3`;
                                 onChange={(event) =>
                                   updateRecipient(index, 'address', event.target.value)
                                 }
+                                onBlur={() => markRecipientTouched(index, 'addressTouched')}
                                 data-testid={`recipient-address-${index}`}
                                 className={`w-full rounded-2xl border px-4 py-3 text-sm font-mono transition-colors placeholder:text-slate-300 focus:outline-none focus:ring-2 focus:ring-[#1f69ff]/20 ${
                                   hasRowIssues
@@ -539,6 +688,7 @@ f1cj...,3.3`;
                                 onChange={(event) =>
                                   updateRecipient(index, 'amount', event.target.value)
                                 }
+                                onBlur={() => markRecipientTouched(index, 'amountTouched')}
                                 data-testid={`recipient-amount-${index}`}
                                 className={`w-full rounded-2xl border px-4 py-3 text-sm transition-colors placeholder:text-slate-300 focus:outline-none focus:ring-2 focus:ring-[#1f69ff]/20 ${
                                   hasRowIssues
@@ -564,7 +714,7 @@ f1cj...,3.3`;
                             </div>
                           </div>
 
-                          {(rowErrors.length > 0 || rowWarnings.length > 0) && (
+                          {(rowErrors.length > 0 || rowWarnings.length > 0 || Boolean(draftHint)) && (
                             <div className="mt-2 space-y-1">
                               {rowErrors.map((message) => (
                                 <p
@@ -582,6 +732,9 @@ f1cj...,3.3`;
                                   {message}
                                 </p>
                               ))}
+                              {draftHint && (
+                                <p className="text-sm text-slate-500">{draftHint}</p>
+                              )}
                             </div>
                           )}
                         </div>
@@ -677,7 +830,8 @@ f1cj...,3.3`;
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                   <div>
                     <p className="text-sm font-semibold text-slate-950">
-                      {activeValidationErrors.length > 0
+                      {activeValidationErrors.length > 0 ||
+                      (inputMode === 'manual' && manualIncompleteRowCount > 0)
                         ? `${validRecipients.length} valid recipients • ${formatSummaryFil(
                             recipientTotal,
                           )}`
