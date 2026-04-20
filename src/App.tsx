@@ -769,26 +769,35 @@ f1cj...,3.3`;
                 aria-expanded={isConfigureTransactionOpen}
               >
                 <h2 className="text-lg font-semibold text-slate-950">Configure transaction</h2>
-                <span
-                  className={`text-sm text-slate-500 transition-transform ${
-                    isConfigureTransactionOpen ? 'rotate-180' : ''
-                  }`}
-                  aria-hidden="true"
-                >
-                  ▼
-                </span>
-              </button>
-
-              {!isConfigureTransactionOpen && (
-                <div className="mt-4 flex flex-wrap gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  <span className="rounded-full bg-slate-100 px-3 py-1">
-                    {getExecutionMethodLabel(batchConfiguration.executionMethod)}
-                  </span>
-                  <span className="rounded-full bg-slate-100 px-3 py-1">
-                    {getErrorHandlingLabel(batchConfiguration.errorHandling)}
+                <div className="flex items-center gap-3">
+                  {!isConfigureTransactionOpen && (
+                    <div className="flex flex-wrap gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                      <span className="rounded-full bg-slate-100 px-3 py-1">
+                        {getExecutionMethodLabel(batchConfiguration.executionMethod)}
+                      </span>
+                      <span className="rounded-full bg-slate-100 px-3 py-1">
+                        {getErrorHandlingLabel(batchConfiguration.errorHandling)}
+                      </span>
+                    </div>
+                  )}
+                  <span
+                    className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-slate-400 transition-transform ${
+                      isConfigureTransactionOpen ? 'rotate-180' : ''
+                    }`}
+                    aria-hidden="true"
+                  >
+                    <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4">
+                      <path
+                        d="M5 7.5L10 12.5L15 7.5"
+                        stroke="currentColor"
+                        strokeWidth="1.75"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
                   </span>
                 </div>
-              )}
+              </button>
 
               {isConfigureTransactionOpen && (
                 <div className="mt-5 grid gap-5 xl:grid-cols-2">
