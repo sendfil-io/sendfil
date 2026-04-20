@@ -766,23 +766,12 @@ f1cj...,3.3`;
                   <h2 className="text-lg font-semibold text-slate-950">Configure transaction</h2>
                 </div>
 
-                <div className="flex flex-wrap gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  <span className="rounded-full bg-slate-100 px-3 py-1">
-                    {getSenderWalletTypeLabel(batchConfiguration.senderWalletType)}
-                  </span>
-                  <span className="rounded-full bg-slate-100 px-3 py-1">
-                    {getExecutionMethodLabel(batchConfiguration.executionMethod)}
-                  </span>
-                  <span className="rounded-full bg-slate-100 px-3 py-1">
-                    {getErrorHandlingLabel(batchConfiguration.errorHandling)}
-                  </span>
-                </div>
               </div>
 
               <div className="mt-5 grid gap-5 xl:grid-cols-2">
                 <ConfigurationChoiceGroup
                   title="Transaction method"
-                  description="Choose how SendFIL plans the batch execution."
+                  description="Choose how SendFIL executes the batch transaction."
                   selectedValue={batchConfiguration.executionMethod}
                   onSelect={(value) => handleExecutionMethodSelect(value as ExecutionMethod)}
                   options={[
@@ -797,7 +786,6 @@ f1cj...,3.3`;
                       value: 'THINBATCH',
                       label: 'ThinBatch',
                       helper: 'Visible in the UI now, planned once the execution lane is ready.',
-                      badge: 'Planned',
                       testId: 'execution-method-thinbatch',
                     },
                   ]}
@@ -805,7 +793,7 @@ f1cj...,3.3`;
 
                 <ConfigurationChoiceGroup
                   title="Error handling"
-                  description="Set the intended batch failure behavior."
+                  description="Choose what happens when a transaction fails."
                   selectedValue={batchConfiguration.errorHandling}
                   onSelect={(value) => handleErrorHandlingSelect(value as ErrorHandlingPreference)}
                   options={[
@@ -819,8 +807,8 @@ f1cj...,3.3`;
                     {
                       value: 'ATOMIC',
                       label: 'Atomic',
-                      helper: 'Visible now, activates after the strict execution path is wired.',
-                      badge: 'Planned',
+                      helper:
+                        'All-or-nothing: no FIL is sent if a single transaction in the batch fails.',
                       testId: 'error-handling-atomic',
                     },
                   ]}
