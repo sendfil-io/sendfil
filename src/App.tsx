@@ -6,12 +6,23 @@ import ReviewTransactionModal, {
   TransactionState,
   GasEstimate,
 } from './components/ReviewTransactionModal';
+import UnavailableCapabilityModal from './components/UnavailableCapabilityModal';
 import { useAccount, useBalance, useChainId } from 'wagmi';
 import { formatUnits } from 'viem';
 import { calculateFeeRows } from './utils/fee';
 import { buildBatchTransaction, attoFilToFil } from './lib/transaction/messageBuilder';
 import { getNonce } from './lib/DataProvider';
 import { validateRecipientRows } from './utils/recipientValidation';
+import {
+  DEFAULT_BATCH_CONFIGURATION,
+  getErrorHandlingLabel,
+  getExecutionMethodLabel,
+  getSenderWalletTypeLabel,
+  type BatchConfiguration,
+  type ErrorHandlingPreference,
+  type ExecutionMethod,
+  type SenderWalletType,
+} from './lib/batchConfiguration';
 
 interface Recipient {
   address: string;
@@ -21,6 +32,19 @@ interface Recipient {
 interface ManualRecipientInteraction {
   addressTouched: boolean;
   amountTouched: boolean;
+}
+
+interface ConfigurationChoice {
+  value: string;
+  label: string;
+  helper: string;
+  badge?: string;
+  testId?: string;
+}
+
+interface UnavailableCapabilityNotice {
+  title: string;
+  description: string;
 }
 
 type InputMode = 'manual' | 'csv';
@@ -143,6 +167,72 @@ function SummaryPanel({
   );
 }
 
+function ConfigurationChoiceGroup({
+  title,
+  description,
+  selectedValue,
+  options,
+  onSelect,
+}: {
+  title: string;
+  description?: string;
+  selectedValue: string;
+  options: ConfigurationChoice[];
+  onSelect: (value: string) => void;
+}) {
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-sm font-semibold text-slate-950">{title}</h3>
+      </div>
+      {description && <p className="mt-1 text-sm text-slate-500">{description}</p>}
+
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        {options.map((option) => {
+          const isSelected = option.value === selectedValue;
+
+          return (
+            <button
+              key={`${title}-${option.value}`}
+              type="button"
+              onClick={() => onSelect(option.value)}
+              data-testid={option.testId}
+              aria-pressed={isSelected}
+              className={`rounded-2xl border px-4 py-3 text-left transition-colors ${
+                isSelected
+                  ? 'border-[#1f69ff] bg-[#eef4ff] shadow-[0_18px_32px_-28px_rgba(31,105,255,0.95)]'
+                  : 'border-slate-200 bg-slate-50 hover:border-slate-300 hover:bg-white'
+              }`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span
+                  className={`text-sm font-semibold ${
+                    isSelected ? 'text-[#124ac4]' : 'text-slate-900'
+                  }`}
+                >
+                  {option.label}
+                </span>
+                {option.badge && (
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] ${
+                      isSelected
+                        ? 'bg-white text-[#124ac4]'
+                        : 'bg-slate-200 text-slate-600'
+                    }`}
+                  >
+                    {option.badge}
+                  </span>
+                )}
+              </div>
+              <p className="mt-2 text-xs leading-5 text-slate-500">{option.helper}</p>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const account = useAccount();
   const walletChainId = useChainId();
@@ -170,6 +260,11 @@ export default function App() {
   const [gasEstimationError, setGasEstimationError] = React.useState<string | undefined>(undefined);
   const [transactionHash, setTransactionHash] = React.useState<string | undefined>(undefined);
   const [transactionError, setTransactionError] = React.useState<string | undefined>(undefined);
+  const [batchConfiguration, setBatchConfiguration] = React.useState<BatchConfiguration>(
+    DEFAULT_BATCH_CONFIGURATION,
+  );
+  const [unavailableCapabilityNotice, setUnavailableCapabilityNotice] =
+    React.useState<UnavailableCapabilityNotice | null>(null);
 
   const handleCSVUpload = (result: CSVUploadResult) => {
     setCsvData(result.recipients);
@@ -182,6 +277,46 @@ export default function App() {
     setCsvData([]);
     setCsvErrors([]);
     setCsvWarnings([]);
+  };
+
+  const openUnavailableCapabilityNotice = (title: string, description: string) => {
+    setUnavailableCapabilityNotice({ title, description });
+  };
+
+  const handleSenderWalletTypeSelect = (value: SenderWalletType) => {
+    if (value === 'MULTI_SIG') {
+      openUnavailableCapabilityNotice(
+        'Multi-sig is not available in v1 yet',
+        'The selector is now in place, but the v1 live flow still supports only the single-signer path. Single-signer remains selected for this batch.',
+      );
+      return;
+    }
+
+    setBatchConfiguration((current) => ({ ...current, senderWalletType: value }));
+  };
+
+  const handleExecutionMethodSelect = (value: ExecutionMethod) => {
+    if (value === 'THINBATCH') {
+      openUnavailableCapabilityNotice(
+        'ThinBatch is not available yet',
+        'ThinBatch is part of the planned execution surface, but the deployed builder and send path are not wired into the live app yet. Standard remains selected for now.',
+      );
+      return;
+    }
+
+    setBatchConfiguration((current) => ({ ...current, executionMethod: value }));
+  };
+
+  const handleErrorHandlingSelect = (value: ErrorHandlingPreference) => {
+    if (value === 'ATOMIC') {
+      openUnavailableCapabilityNotice(
+        'Atomic error handling is not wired yet',
+        'The control is now visible, but the live execution path still defaults to Partial while atomic batch handling is implemented end to end. Partial remains selected for this batch.',
+      );
+      return;
+    }
+
+    setBatchConfiguration((current) => ({ ...current, errorHandling: value }));
   };
 
   const addRecipient = () => {
@@ -321,6 +456,15 @@ export default function App() {
       : 0;
   const estimatedNetworkFee = gasEstimate?.estimatedFeeInFil || 0;
   const insufficientBalance = walletBalance < recipientTotal + feeTotal + estimatedNetworkFee;
+  const configurationSummary = React.useMemo(
+    () =>
+      [
+        getSenderWalletTypeLabel(batchConfiguration.senderWalletType),
+        getExecutionMethodLabel(batchConfiguration.executionMethod),
+        getErrorHandlingLabel(batchConfiguration.errorHandling),
+      ].join(' • '),
+    [batchConfiguration],
+  );
 
   const manualRowErrors = React.useMemo(
     () => collectManualRowIssues(manualDisplayErrors),
@@ -545,6 +689,31 @@ f1cj...,3.3`;
 
           <CustomConnectButton />
 
+          <div className="mt-6 rounded-[28px] border border-slate-200 bg-white px-4 py-4 shadow-[0_16px_40px_-32px_rgba(15,23,42,0.45)]">
+            <ConfigurationChoiceGroup
+              title="Wallet Type"
+              description="Choose the sender lane for this batch."
+              selectedValue={batchConfiguration.senderWalletType}
+              onSelect={(value) => handleSenderWalletTypeSelect(value as SenderWalletType)}
+              options={[
+                {
+                  value: 'SINGLE_SIG',
+                  label: 'Single-signer',
+                  helper: 'Default v1 sender flow.',
+                  badge: 'Default',
+                  testId: 'sender-wallet-single-sig',
+                },
+                {
+                  value: 'MULTI_SIG',
+                  label: 'Multi-sig',
+                  helper: 'Visible now, unlocks in a later phase.',
+                  badge: 'V2',
+                  testId: 'sender-wallet-multi-sig',
+                },
+              ]}
+            />
+          </div>
+
           <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500">
             Draft the batch first. Review and send are unlocked only after a wallet is connected on
             Filecoin Mainnet.
@@ -604,6 +773,78 @@ f1cj...,3.3`;
                 Download Template
               </button>
             </div>
+
+            <section className="mb-6 rounded-[28px] border border-slate-200 bg-white px-6 py-5 shadow-[0_20px_60px_-48px_rgba(15,23,42,0.45)] sm:px-8">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-950">Batch settings</h2>
+                  <p className="mt-1 max-w-2xl text-sm text-slate-500">
+                    Keep the batch configuration visible while composing recipients. Defaults are
+                    applied fresh on every load.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  <span className="rounded-full bg-slate-100 px-3 py-1">
+                    {getSenderWalletTypeLabel(batchConfiguration.senderWalletType)}
+                  </span>
+                  <span className="rounded-full bg-slate-100 px-3 py-1">
+                    {getExecutionMethodLabel(batchConfiguration.executionMethod)}
+                  </span>
+                  <span className="rounded-full bg-slate-100 px-3 py-1">
+                    {getErrorHandlingLabel(batchConfiguration.errorHandling)}
+                  </span>
+                </div>
+              </div>
+
+              <div className="mt-5 grid gap-5 xl:grid-cols-2">
+                <ConfigurationChoiceGroup
+                  title="Transaction method"
+                  description="Choose how SendFIL plans the batch execution."
+                  selectedValue={batchConfiguration.executionMethod}
+                  onSelect={(value) => handleExecutionMethodSelect(value as ExecutionMethod)}
+                  options={[
+                    {
+                      value: 'STANDARD',
+                      label: 'Standard',
+                      helper: 'Default path based on Multicall3 and FilForwarder.',
+                      badge: 'Default',
+                      testId: 'execution-method-standard',
+                    },
+                    {
+                      value: 'THINBATCH',
+                      label: 'ThinBatch',
+                      helper: 'Visible in the UI now, planned once the execution lane is ready.',
+                      badge: 'Planned',
+                      testId: 'execution-method-thinbatch',
+                    },
+                  ]}
+                />
+
+                <ConfigurationChoiceGroup
+                  title="Error handling"
+                  description="Set the intended batch failure behavior."
+                  selectedValue={batchConfiguration.errorHandling}
+                  onSelect={(value) => handleErrorHandlingSelect(value as ErrorHandlingPreference)}
+                  options={[
+                    {
+                      value: 'PARTIAL',
+                      label: 'Partial',
+                      helper: 'Default best-effort handling for the current flow.',
+                      badge: 'Default',
+                      testId: 'error-handling-partial',
+                    },
+                    {
+                      value: 'ATOMIC',
+                      label: 'Atomic',
+                      helper: 'Visible now, activates after the strict execution path is wired.',
+                      badge: 'Planned',
+                      testId: 'error-handling-atomic',
+                    },
+                  ]}
+                />
+              </div>
+            </section>
 
             {(activeValidationErrors.length > 0 || activeValidationWarnings.length > 0) && (
               <div className="mb-6 space-y-3">
@@ -838,6 +1079,9 @@ f1cj...,3.3`;
                         : `${draftRecipientCount} recipients • ${formatSummaryFil(recipientTotal)}`}
                     </p>
                     <p className="mt-1 text-sm text-slate-500">{reviewHint}</p>
+                    <p className="mt-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                      {configurationSummary}
+                    </p>
                   </div>
 
                   <button
@@ -881,6 +1125,14 @@ f1cj...,3.3`;
         transactionState={transactionState}
         transactionHash={transactionHash}
         transactionError={transactionError}
+        batchConfiguration={batchConfiguration}
+      />
+
+      <UnavailableCapabilityModal
+        isOpen={unavailableCapabilityNotice !== null}
+        title={unavailableCapabilityNotice?.title ?? ''}
+        description={unavailableCapabilityNotice?.description ?? ''}
+        onClose={() => setUnavailableCapabilityNotice(null)}
       />
     </div>
   );
