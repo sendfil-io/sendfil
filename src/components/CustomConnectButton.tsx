@@ -53,22 +53,13 @@ export const CustomConnectButton: React.FC = () => {
           (!authenticationStatus || authenticationStatus === 'authenticated');
 
         const renderDisconnectedState = () => (
-          <div className="space-y-4">
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-              <p className="text-sm font-semibold text-slate-950">Wallet not connected</p>
-              <p className="mt-1 text-sm text-slate-500">
-                Draft the batch now. Connect when you are ready to review gas estimates and send.
-              </p>
-            </div>
-
-            <button
-              type="button"
-              onClick={openConnectModal}
-              className="w-full rounded-2xl bg-[#1f69ff] px-4 py-3 text-sm font-medium text-white shadow-[0_22px_35px_-28px_rgba(31,105,255,0.95)] transition-colors hover:bg-[#1857d4]"
-            >
-              Connect Wallet
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={openConnectModal}
+            className="w-full rounded-2xl bg-[#1f69ff] px-4 py-3 text-sm font-medium text-white shadow-[0_22px_35px_-28px_rgba(31,105,255,0.95)] transition-colors hover:bg-[#1857d4]"
+          >
+            Connect Wallet
+          </button>
         );
 
         const renderConnectedState = () => {
