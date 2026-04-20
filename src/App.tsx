@@ -667,12 +667,26 @@ f1cj...,3.3`;
       <div className="min-h-screen lg:flex">
         <aside className="flex flex-col border-b border-slate-200/80 bg-white/90 px-5 pb-6 pt-0 backdrop-blur lg:w-72 lg:border-b-0 lg:border-r lg:px-6 lg:pb-8">
           <div className="-mx-5 mb-8 flex items-center justify-center bg-gradient-to-r from-[#1F69FF] via-[#22A6E2] to-[#3CD4A0] px-5 py-10 lg:-mx-6 lg:px-6">
-            <img
-              src="/sendfil-wordmark-white.png"
-              alt="SendFIL"
-              className="h-12 w-auto select-none"
-              draggable={false}
-            />
+            <span
+              className="inline-flex items-center gap-2 text-3xl font-bold tracking-tight text-white"
+              aria-label="SendFIL"
+            >
+              SendFIL
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                aria-hidden="true"
+                className="h-5 w-5"
+              >
+                <path
+                  d="M7 6L15 12L7 18"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </span>
           </div>
 
           <CustomConnectButton />
