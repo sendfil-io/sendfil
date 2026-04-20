@@ -17,7 +17,6 @@ import {
   DEFAULT_BATCH_CONFIGURATION,
   getErrorHandlingLabel,
   getExecutionMethodLabel,
-  getSenderWalletTypeLabel,
   type BatchConfiguration,
   type ErrorHandlingPreference,
   type ExecutionMethod,
@@ -459,15 +458,6 @@ export default function App() {
       : 0;
   const estimatedNetworkFee = gasEstimate?.estimatedFeeInFil || 0;
   const insufficientBalance = walletBalance < recipientTotal + feeTotal + estimatedNetworkFee;
-  const configurationSummary = React.useMemo(
-    () =>
-      [
-        getSenderWalletTypeLabel(batchConfiguration.senderWalletType),
-        getExecutionMethodLabel(batchConfiguration.executionMethod),
-        getErrorHandlingLabel(batchConfiguration.errorHandling),
-      ].join(' • '),
-    [batchConfiguration],
-  );
 
   const manualRowErrors = React.useMemo(
     () => collectManualRowIssues(manualDisplayErrors),
@@ -491,7 +481,7 @@ export default function App() {
 
   const reviewHint = React.useMemo(() => {
     if (!isConnected) {
-      return 'Connect a wallet in the sidebar to review and send.';
+      return 'Connect a wallet to review and send.';
     }
 
     if (isNetworkMismatch) {
@@ -1107,9 +1097,6 @@ f1cj...,3.3`;
                         : `${draftRecipientCount} recipients • ${formatSummaryFil(recipientTotal)}`}
                     </p>
                     <p className="mt-1 text-sm text-slate-500">{reviewHint}</p>
-                    <p className="mt-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-                      {configurationSummary}
-                    </p>
                   </div>
 
                   <button
