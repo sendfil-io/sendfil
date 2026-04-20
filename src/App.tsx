@@ -813,29 +813,31 @@ f1cj...,3.3`;
                   ]}
                 />
 
-                <ConfigurationChoiceGroup
-                  title="Error handling"
-                  description="Choose what happens when a transaction fails."
-                  selectedValue={batchConfiguration.errorHandling}
-                  onSelect={(value) => handleErrorHandlingSelect(value as ErrorHandlingPreference)}
-                  options={[
-                    {
-                      value: 'PARTIAL',
-                      label: 'Partial',
-                      helper:
-                        'Sends what it can: failed payments are skipped and the rest is completed.',
-                      badge: 'Default',
-                      testId: 'error-handling-partial',
-                    },
-                    {
-                      value: 'ATOMIC',
-                      label: 'Atomic',
-                      helper:
-                        'All-or-nothing: no FIL is sent if a single payment in the batch fails.',
-                      testId: 'error-handling-atomic',
-                    },
-                  ]}
-                />
+                <div className="xl:border-l xl:border-slate-200 xl:pl-5">
+                  <ConfigurationChoiceGroup
+                    title="Error handling"
+                    description="Choose what happens when a transaction fails."
+                    selectedValue={batchConfiguration.errorHandling}
+                    onSelect={(value) => handleErrorHandlingSelect(value as ErrorHandlingPreference)}
+                    options={[
+                      {
+                        value: 'PARTIAL',
+                        label: 'Partial',
+                        helper:
+                          'Sends what it can: failed payments are skipped and the rest is completed.',
+                        badge: 'Default',
+                        testId: 'error-handling-partial',
+                      },
+                      {
+                        value: 'ATOMIC',
+                        label: 'Atomic',
+                        helper:
+                          'All-or-nothing: no FIL is sent if a single payment in the batch fails.',
+                        testId: 'error-handling-atomic',
+                      },
+                    ]}
+                  />
+                </div>
               </div>
             </section>
 
