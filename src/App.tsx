@@ -17,7 +17,6 @@ import {
   DEFAULT_BATCH_CONFIGURATION,
   getErrorHandlingLabel,
   getExecutionMethodLabel,
-  getSenderWalletTypeLabel,
   type BatchConfiguration,
   type ErrorHandlingPreference,
   type ExecutionMethod,
@@ -459,15 +458,6 @@ export default function App() {
       : 0;
   const estimatedNetworkFee = gasEstimate?.estimatedFeeInFil || 0;
   const insufficientBalance = walletBalance < recipientTotal + feeTotal + estimatedNetworkFee;
-  const configurationSummary = React.useMemo(
-    () =>
-      [
-        getSenderWalletTypeLabel(batchConfiguration.senderWalletType),
-        getExecutionMethodLabel(batchConfiguration.executionMethod),
-        getErrorHandlingLabel(batchConfiguration.errorHandling),
-      ].join(' • '),
-    [batchConfiguration],
-  );
 
   const manualRowErrors = React.useMemo(
     () => collectManualRowIssues(manualDisplayErrors),
@@ -491,7 +481,7 @@ export default function App() {
 
   const reviewHint = React.useMemo(() => {
     if (!isConnected) {
-      return 'Connect a wallet in the sidebar to review and send.';
+      return 'Connect a wallet to review and send.';
     }
 
     if (isNetworkMismatch) {
@@ -675,19 +665,14 @@ f1cj...,3.3`;
   return (
     <div className="min-h-screen bg-[#f4f6fb] text-slate-900">
       <div className="min-h-screen lg:flex">
-        <aside className="border-b border-slate-200/80 bg-white/90 px-5 py-6 backdrop-blur lg:w-72 lg:border-b-0 lg:border-r lg:px-6 lg:py-8">
-          <div className="flex items-start justify-between gap-4 lg:block">
-            <div className="flex items-center gap-3 lg:mb-8">
-              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-[#1f69ff] text-3xl text-white shadow-[0_20px_35px_-25px_rgba(31,105,255,0.95)]">
-                ƒ
-              </div>
-              <div className="lg:hidden">
-                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">
-                  SendFIL
-                </p>
-                <p className="text-sm text-slate-500">Batch FIL transfers</p>
-              </div>
-            </div>
+        <aside className="flex flex-col border-b border-slate-200/80 bg-white/90 px-5 pb-6 pt-0 backdrop-blur lg:w-72 lg:border-b-0 lg:border-r lg:px-6 lg:pb-8">
+          <div className="-mx-5 mb-8 flex items-center justify-center bg-gradient-to-r from-[#1F69FF] via-[#22A6E2] to-[#3CD4A0] px-5 py-[26px] lg:-mx-6 lg:px-6">
+            <img
+              src="/sendfil-wordmark.png"
+              alt="SendFIL"
+              className="h-10 w-auto select-none"
+              draggable={false}
+            />
           </div>
 
           <CustomConnectButton />
@@ -710,6 +695,30 @@ f1cj...,3.3`;
                 },
               ]}
             />
+          </div>
+
+          <div className="mt-auto pt-8">
+            <div className="flex items-center justify-center gap-2 text-sm text-slate-500">
+              <a
+                href="https://x.com/send_fil"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-medium transition-colors hover:text-slate-900"
+              >
+                X
+              </a>
+              <span className="text-slate-300" aria-hidden="true">
+                |
+              </span>
+              <a
+                href="https://github.com/sendfil-io/sendfil"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-medium transition-colors hover:text-slate-900"
+              >
+                GitHub
+              </a>
+            </div>
           </div>
 
         </aside>
@@ -1107,9 +1116,6 @@ f1cj...,3.3`;
                         : `${draftRecipientCount} recipients • ${formatSummaryFil(recipientTotal)}`}
                     </p>
                     <p className="mt-1 text-sm text-slate-500">{reviewHint}</p>
-                    <p className="mt-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-                      {configurationSummary}
-                    </p>
                   </div>
 
                   <button
