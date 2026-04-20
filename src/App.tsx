@@ -37,7 +37,7 @@ interface ManualRecipientInteraction {
 interface ConfigurationChoice {
   value: string;
   label: string;
-  helper?: string;
+  helper?: React.ReactNode;
   badge?: string;
   testId?: string;
 }
@@ -699,7 +699,7 @@ f1cj...,3.3`;
               options={[
                 {
                   value: 'SINGLE_SIG',
-                  label: 'Single-signer',
+                  label: 'Single-sig',
                   testId: 'sender-wallet-single-sig',
                 },
                 {
@@ -778,14 +778,36 @@ f1cj...,3.3`;
                     {
                       value: 'STANDARD',
                       label: 'Standard',
-                      helper: 'Default path based on Multicall3 and FilForwarder.',
+                      helper: (
+                        <>
+                          <a
+                            href="https://docs.filecoin.io/smart-contracts/advanced/multicall"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="underline decoration-slate-400 underline-offset-2 hover:decoration-slate-700"
+                          >
+                            Multicall3
+                          </a>{' '}
+                          +{' '}
+                          <a
+                            href="https://docs.filecoin.io/smart-contracts/filecoin-evm-runtime/filforwarder"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="underline decoration-slate-400 underline-offset-2 hover:decoration-slate-700"
+                          >
+                            FilForwarder
+                          </a>{' '}
+                          to batch all payments in a single transaction.
+                        </>
+                      ),
                       badge: 'Default',
                       testId: 'execution-method-standard',
                     },
                     {
                       value: 'THINBATCH',
                       label: 'ThinBatch',
-                      helper: 'Visible in the UI now, planned once the execution lane is ready.',
+                      helper:
+                        'Uses a custom, lightweight contract to batch in one call for easy per-recipient auditing.',
                       testId: 'execution-method-thinbatch',
                     },
                   ]}
@@ -800,7 +822,8 @@ f1cj...,3.3`;
                     {
                       value: 'PARTIAL',
                       label: 'Partial',
-                      helper: 'Default best-effort handling for the current flow.',
+                      helper:
+                        'Sends what it can: failed payments are skipped and the rest is completed.',
                       badge: 'Default',
                       testId: 'error-handling-partial',
                     },
@@ -808,7 +831,7 @@ f1cj...,3.3`;
                       value: 'ATOMIC',
                       label: 'Atomic',
                       helper:
-                        'All-or-nothing: no FIL is sent if a single transaction in the batch fails.',
+                        'All-or-nothing: no FIL is sent if a single payment in the batch fails.',
                       testId: 'error-handling-atomic',
                     },
                   ]}
