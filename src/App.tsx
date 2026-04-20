@@ -37,7 +37,7 @@ interface ManualRecipientInteraction {
 interface ConfigurationChoice {
   value: string;
   label: string;
-  helper?: string;
+  helper?: React.ReactNode;
   badge?: string;
   testId?: string;
 }
@@ -210,7 +210,7 @@ function ConfigurationChoiceGroup({
                     isSelected ? 'text-[#124ac4]' : 'text-slate-900'
                   }`}
                 >
-                  {option.label}
+                  <span className="whitespace-nowrap">{option.label}</span>
                 </span>
                 {option.badge && (
                   <span
@@ -265,6 +265,7 @@ export default function App() {
   const [batchConfiguration, setBatchConfiguration] = React.useState<BatchConfiguration>(
     DEFAULT_BATCH_CONFIGURATION,
   );
+  const [isConfigureTransactionOpen, setIsConfigureTransactionOpen] = React.useState(false);
   const [unavailableCapabilityNotice, setUnavailableCapabilityNotice] =
     React.useState<UnavailableCapabilityNotice | null>(null);
 
@@ -699,7 +700,7 @@ f1cj...,3.3`;
               options={[
                 {
                   value: 'SINGLE_SIG',
-                  label: 'Single-signer',
+                  label: 'Single-sig',
                   testId: 'sender-wallet-single-sig',
                 },
                 {
@@ -761,71 +762,116 @@ f1cj...,3.3`;
             </div>
 
             <section className="mb-6 rounded-[28px] border border-slate-200 bg-white px-6 py-5 shadow-[0_20px_60px_-48px_rgba(15,23,42,0.45)] sm:px-8">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                <div>
-                  <h2 className="text-lg font-semibold text-slate-950">Configure transaction</h2>
+              <button
+                type="button"
+                onClick={() => setIsConfigureTransactionOpen((current) => !current)}
+                className="flex w-full items-center justify-between gap-3 text-left"
+                aria-expanded={isConfigureTransactionOpen}
+              >
+                <h2 className="text-lg font-semibold text-slate-950">Configure transaction</h2>
+                <div className="flex items-center gap-3">
+                  {!isConfigureTransactionOpen && (
+                    <div className="flex flex-wrap gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                      <span className="rounded-full bg-slate-100 px-3 py-1">
+                        {getExecutionMethodLabel(batchConfiguration.executionMethod)}
+                      </span>
+                      <span className="rounded-full bg-slate-100 px-3 py-1">
+                        {getErrorHandlingLabel(batchConfiguration.errorHandling)}
+                      </span>
+                    </div>
+                  )}
+                  <span
+                    className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-slate-400 transition-transform ${
+                      isConfigureTransactionOpen ? 'rotate-180' : ''
+                    }`}
+                    aria-hidden="true"
+                  >
+                    <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4">
+                      <path
+                        d="M5 7.5L10 12.5L15 7.5"
+                        stroke="currentColor"
+                        strokeWidth="1.75"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </span>
                 </div>
+              </button>
 
-                <div className="flex flex-wrap gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  <span className="rounded-full bg-slate-100 px-3 py-1">
-                    {getSenderWalletTypeLabel(batchConfiguration.senderWalletType)}
-                  </span>
-                  <span className="rounded-full bg-slate-100 px-3 py-1">
-                    {getExecutionMethodLabel(batchConfiguration.executionMethod)}
-                  </span>
-                  <span className="rounded-full bg-slate-100 px-3 py-1">
-                    {getErrorHandlingLabel(batchConfiguration.errorHandling)}
-                  </span>
+              {isConfigureTransactionOpen && (
+                <div className="mt-5 grid gap-5 xl:grid-cols-2">
+                  <ConfigurationChoiceGroup
+                    title="Transaction method"
+                    description="Choose how SendFIL executes the batch transaction."
+                    selectedValue={batchConfiguration.executionMethod}
+                    onSelect={(value) => handleExecutionMethodSelect(value as ExecutionMethod)}
+                    options={[
+                      {
+                        value: 'STANDARD',
+                        label: 'Standard',
+                        helper: (
+                          <>
+                            <a
+                              href="https://docs.filecoin.io/smart-contracts/advanced/multicall"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="underline decoration-slate-400 underline-offset-2 hover:decoration-slate-700"
+                            >
+                              Multicall3
+                            </a>{' '}
+                            +{' '}
+                            <a
+                              href="https://docs.filecoin.io/smart-contracts/filecoin-evm-runtime/filforwarder"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="underline decoration-slate-400 underline-offset-2 hover:decoration-slate-700"
+                            >
+                              FilForwarder
+                            </a>{' '}
+                            to batch all payments in a single transaction.
+                          </>
+                        ),
+                        badge: 'Default',
+                        testId: 'execution-method-standard',
+                      },
+                      {
+                        value: 'THINBATCH',
+                        label: 'ThinBatch',
+                        helper:
+                          'Uses a cusom contract to batch in one call for easy per-recipient auditing.',
+                        testId: 'execution-method-thinbatch',
+                      },
+                    ]}
+                  />
+
+                  <div className="xl:border-l xl:border-slate-200 xl:pl-5">
+                    <ConfigurationChoiceGroup
+                      title="Error handling"
+                      description="Choose what happens when a payment within a batch transaction fails."
+                      selectedValue={batchConfiguration.errorHandling}
+                      onSelect={(value) => handleErrorHandlingSelect(value as ErrorHandlingPreference)}
+                      options={[
+                        {
+                          value: 'PARTIAL',
+                          label: 'Partial',
+                          helper:
+                            'Sends what it can: failed payments are skipped and the rest is completed.',
+                          badge: 'Default',
+                          testId: 'error-handling-partial',
+                        },
+                        {
+                          value: 'ATOMIC',
+                          label: 'Atomic',
+                          helper:
+                            'All-or-nothing: no FIL is sent if a single payment in the batch fails.',
+                          testId: 'error-handling-atomic',
+                        },
+                      ]}
+                    />
+                  </div>
                 </div>
-              </div>
-
-              <div className="mt-5 grid gap-5 xl:grid-cols-2">
-                <ConfigurationChoiceGroup
-                  title="Transaction method"
-                  description="Choose how SendFIL plans the batch execution."
-                  selectedValue={batchConfiguration.executionMethod}
-                  onSelect={(value) => handleExecutionMethodSelect(value as ExecutionMethod)}
-                  options={[
-                    {
-                      value: 'STANDARD',
-                      label: 'Standard',
-                      helper: 'Default path based on Multicall3 and FilForwarder.',
-                      badge: 'Default',
-                      testId: 'execution-method-standard',
-                    },
-                    {
-                      value: 'THINBATCH',
-                      label: 'ThinBatch',
-                      helper: 'Visible in the UI now, planned once the execution lane is ready.',
-                      badge: 'Planned',
-                      testId: 'execution-method-thinbatch',
-                    },
-                  ]}
-                />
-
-                <ConfigurationChoiceGroup
-                  title="Error handling"
-                  description="Set the intended batch failure behavior."
-                  selectedValue={batchConfiguration.errorHandling}
-                  onSelect={(value) => handleErrorHandlingSelect(value as ErrorHandlingPreference)}
-                  options={[
-                    {
-                      value: 'PARTIAL',
-                      label: 'Partial',
-                      helper: 'Default best-effort handling for the current flow.',
-                      badge: 'Default',
-                      testId: 'error-handling-partial',
-                    },
-                    {
-                      value: 'ATOMIC',
-                      label: 'Atomic',
-                      helper: 'Visible now, activates after the strict execution path is wired.',
-                      badge: 'Planned',
-                      testId: 'error-handling-atomic',
-                    },
-                  ]}
-                />
-              </div>
+              )}
             </section>
 
             {(activeValidationErrors.length > 0 || activeValidationWarnings.length > 0) && (
