@@ -51,9 +51,9 @@ export async function callRpc<T = unknown>(
       retries: 1, // only one fail-over attempt
       onFailedAttempt: (err) => {
         console.warn(
-          `[DataProvider] RPC attempt ${err.attemptNumber} failed: ${err.error.message}`,
+          `[DataProvider] RPC attempt ${err.attemptNumber} failed: ${err.message}`,
         );
       },
     },
   );
-} 
+}
