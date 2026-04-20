@@ -848,7 +848,7 @@ f1cj...,3.3`;
                   <div className="xl:border-l xl:border-slate-200 xl:pl-5">
                     <ConfigurationChoiceGroup
                       title="Error handling"
-                      description="Choose what happens when a transaction fails."
+                      description="Choose what happens when a payment within a batch transaction fails."
                       selectedValue={batchConfiguration.errorHandling}
                       onSelect={(value) => handleErrorHandlingSelect(value as ErrorHandlingPreference)}
                       options={[
