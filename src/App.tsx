@@ -668,9 +668,11 @@ f1cj...,3.3`;
         <aside className="flex flex-col border-b border-slate-200/80 bg-white/90 px-5 py-6 backdrop-blur lg:w-72 lg:border-b-0 lg:border-r lg:px-6 lg:py-8">
           <div className="mb-8 flex justify-center">
             <div className="flex items-center justify-center">
-              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-[#1f69ff] text-3xl text-white shadow-[0_20px_35px_-25px_rgba(31,105,255,0.95)]">
-                ƒ
-              </div>
+              <img
+                src="/sendfil-logo.svg"
+                alt="SendFIL"
+                className="h-14 w-auto rounded-xl shadow-[0_20px_35px_-25px_rgba(31,105,255,0.95)]"
+              />
             </div>
           </div>
 
