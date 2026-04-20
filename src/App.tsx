@@ -807,7 +807,7 @@ f1cj...,3.3`;
                       value: 'THINBATCH',
                       label: 'ThinBatch',
                       helper:
-                        'Uses a custom, lightweight contract to batch in one call for easy per-recipient auditing.',
+                        'Uses a cusom contract to batch in one call for easy per-recipient auditing.',
                       testId: 'execution-method-thinbatch',
                     },
                   ]}
