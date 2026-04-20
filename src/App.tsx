@@ -265,6 +265,7 @@ export default function App() {
   const [batchConfiguration, setBatchConfiguration] = React.useState<BatchConfiguration>(
     DEFAULT_BATCH_CONFIGURATION,
   );
+  const [isConfigureTransactionOpen, setIsConfigureTransactionOpen] = React.useState(false);
   const [unavailableCapabilityNotice, setUnavailableCapabilityNotice] =
     React.useState<UnavailableCapabilityNotice | null>(null);
 
@@ -761,84 +762,107 @@ f1cj...,3.3`;
             </div>
 
             <section className="mb-6 rounded-[28px] border border-slate-200 bg-white px-6 py-5 shadow-[0_20px_60px_-48px_rgba(15,23,42,0.45)] sm:px-8">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                <div>
-                  <h2 className="text-lg font-semibold text-slate-950">Configure transaction</h2>
+              <button
+                type="button"
+                onClick={() => setIsConfigureTransactionOpen((current) => !current)}
+                className="flex w-full items-center justify-between gap-3 text-left"
+                aria-expanded={isConfigureTransactionOpen}
+              >
+                <h2 className="text-lg font-semibold text-slate-950">Configure transaction</h2>
+                <span
+                  className={`text-sm text-slate-500 transition-transform ${
+                    isConfigureTransactionOpen ? 'rotate-180' : ''
+                  }`}
+                  aria-hidden="true"
+                >
+                  ▼
+                </span>
+              </button>
+
+              {!isConfigureTransactionOpen && (
+                <div className="mt-4 flex flex-wrap gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  <span className="rounded-full bg-slate-100 px-3 py-1">
+                    {getExecutionMethodLabel(batchConfiguration.executionMethod)}
+                  </span>
+                  <span className="rounded-full bg-slate-100 px-3 py-1">
+                    {getErrorHandlingLabel(batchConfiguration.errorHandling)}
+                  </span>
                 </div>
+              )}
 
-              </div>
-
-              <div className="mt-5 grid gap-5 xl:grid-cols-2">
-                <ConfigurationChoiceGroup
-                  title="Transaction method"
-                  description="Choose how SendFIL executes the batch transaction."
-                  selectedValue={batchConfiguration.executionMethod}
-                  onSelect={(value) => handleExecutionMethodSelect(value as ExecutionMethod)}
-                  options={[
-                    {
-                      value: 'STANDARD',
-                      label: 'Standard',
-                      helper: (
-                        <>
-                          <a
-                            href="https://docs.filecoin.io/smart-contracts/advanced/multicall"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="underline decoration-slate-400 underline-offset-2 hover:decoration-slate-700"
-                          >
-                            Multicall3
-                          </a>{' '}
-                          +{' '}
-                          <a
-                            href="https://docs.filecoin.io/smart-contracts/filecoin-evm-runtime/filforwarder"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="underline decoration-slate-400 underline-offset-2 hover:decoration-slate-700"
-                          >
-                            FilForwarder
-                          </a>{' '}
-                          to batch all payments in a single transaction.
-                        </>
-                      ),
-                      badge: 'Default',
-                      testId: 'execution-method-standard',
-                    },
-                    {
-                      value: 'THINBATCH',
-                      label: 'ThinBatch',
-                      helper:
-                        'Uses a cusom contract to batch in one call for easy per-recipient auditing.',
-                      testId: 'execution-method-thinbatch',
-                    },
-                  ]}
-                />
-
-                <div className="xl:border-l xl:border-slate-200 xl:pl-5">
+              {isConfigureTransactionOpen && (
+                <div className="mt-5 grid gap-5 xl:grid-cols-2">
                   <ConfigurationChoiceGroup
-                    title="Error handling"
-                    description="Choose what happens when a transaction fails."
-                    selectedValue={batchConfiguration.errorHandling}
-                    onSelect={(value) => handleErrorHandlingSelect(value as ErrorHandlingPreference)}
+                    title="Transaction method"
+                    description="Choose how SendFIL executes the batch transaction."
+                    selectedValue={batchConfiguration.executionMethod}
+                    onSelect={(value) => handleExecutionMethodSelect(value as ExecutionMethod)}
                     options={[
                       {
-                        value: 'PARTIAL',
-                        label: 'Partial',
-                        helper:
-                          'Sends what it can: failed payments are skipped and the rest is completed.',
+                        value: 'STANDARD',
+                        label: 'Standard',
+                        helper: (
+                          <>
+                            <a
+                              href="https://docs.filecoin.io/smart-contracts/advanced/multicall"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="underline decoration-slate-400 underline-offset-2 hover:decoration-slate-700"
+                            >
+                              Multicall3
+                            </a>{' '}
+                            +{' '}
+                            <a
+                              href="https://docs.filecoin.io/smart-contracts/filecoin-evm-runtime/filforwarder"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="underline decoration-slate-400 underline-offset-2 hover:decoration-slate-700"
+                            >
+                              FilForwarder
+                            </a>{' '}
+                            to batch all payments in a single transaction.
+                          </>
+                        ),
                         badge: 'Default',
-                        testId: 'error-handling-partial',
+                        testId: 'execution-method-standard',
                       },
                       {
-                        value: 'ATOMIC',
-                        label: 'Atomic',
+                        value: 'THINBATCH',
+                        label: 'ThinBatch',
                         helper:
-                          'All-or-nothing: no FIL is sent if a single payment in the batch fails.',
-                        testId: 'error-handling-atomic',
+                          'Uses a cusom contract to batch in one call for easy per-recipient auditing.',
+                        testId: 'execution-method-thinbatch',
                       },
                     ]}
                   />
+
+                  <div className="xl:border-l xl:border-slate-200 xl:pl-5">
+                    <ConfigurationChoiceGroup
+                      title="Error handling"
+                      description="Choose what happens when a transaction fails."
+                      selectedValue={batchConfiguration.errorHandling}
+                      onSelect={(value) => handleErrorHandlingSelect(value as ErrorHandlingPreference)}
+                      options={[
+                        {
+                          value: 'PARTIAL',
+                          label: 'Partial',
+                          helper:
+                            'Sends what it can: failed payments are skipped and the rest is completed.',
+                          badge: 'Default',
+                          testId: 'error-handling-partial',
+                        },
+                        {
+                          value: 'ATOMIC',
+                          label: 'Atomic',
+                          helper:
+                            'All-or-nothing: no FIL is sent if a single payment in the batch fails.',
+                          testId: 'error-handling-atomic',
+                        },
+                      ]}
+                    />
+                  </div>
                 </div>
-              </div>
+              )}
             </section>
 
             {(activeValidationErrors.length > 0 || activeValidationWarnings.length > 0) && (
