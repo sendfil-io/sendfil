@@ -210,7 +210,7 @@ function ConfigurationChoiceGroup({
                     isSelected ? 'text-[#124ac4]' : 'text-slate-900'
                   }`}
                 >
-                  {option.label}
+                  <span className="whitespace-nowrap">{option.label}</span>
                 </span>
                 {option.badge && (
                   <span
