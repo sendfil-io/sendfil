@@ -667,11 +667,12 @@ f1cj...,3.3`;
       <div className="min-h-screen lg:flex">
         <aside className="flex flex-col border-b border-slate-200/80 bg-white/90 px-5 py-6 backdrop-blur lg:w-72 lg:border-b-0 lg:border-r lg:px-6 lg:py-8">
           <div className="mb-8 flex justify-center">
-            <div className="h-16 w-16 overflow-hidden rounded-2xl shadow-[0_20px_35px_-25px_rgba(31,105,255,0.95)]">
+            <div className="h-14 w-44 overflow-hidden rounded-xl">
               <img
                 src="/sendfil-logo.png"
                 alt="SendFIL"
                 className="h-full w-full object-cover"
+                draggable={false}
               />
             </div>
           </div>
