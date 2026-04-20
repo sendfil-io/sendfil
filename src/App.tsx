@@ -665,7 +665,7 @@ f1cj...,3.3`;
   return (
     <div className="min-h-screen bg-[#f4f6fb] text-slate-900">
       <div className="min-h-screen lg:flex">
-        <aside className="border-b border-slate-200/80 bg-white/90 px-5 py-6 backdrop-blur lg:w-72 lg:border-b-0 lg:border-r lg:px-6 lg:py-8">
+        <aside className="flex flex-col border-b border-slate-200/80 bg-white/90 px-5 py-6 backdrop-blur lg:w-72 lg:border-b-0 lg:border-r lg:px-6 lg:py-8">
           <div className="flex items-start justify-between gap-4 lg:block">
             <div className="flex items-center gap-3 lg:mb-8">
               <div className="flex h-14 w-14 items-center justify-center rounded-full bg-[#1f69ff] text-3xl text-white shadow-[0_20px_35px_-25px_rgba(31,105,255,0.95)]">
@@ -700,6 +700,30 @@ f1cj...,3.3`;
                 },
               ]}
             />
+          </div>
+
+          <div className="mt-auto pt-8">
+            <div className="flex items-center justify-center gap-2 text-sm text-slate-500">
+              <a
+                href="https://x.com/send_fil"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-medium transition-colors hover:text-slate-900"
+              >
+                X
+              </a>
+              <span className="text-slate-300" aria-hidden="true">
+                |
+              </span>
+              <a
+                href="https://github.com/sendfil-io/sendfil"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-medium transition-colors hover:text-slate-900"
+              >
+                GitHub
+              </a>
+            </div>
           </div>
 
         </aside>
