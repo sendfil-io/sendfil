@@ -1,6 +1,6 @@
 # SendFIL
 
-SendFIL is a client-only Vite SPA for batch sending FIL.
+SendFIL is a client-only Vite SPA for batch sending FIL. Senders can disperse FIL from a single-signer or multi-sig to one or many f1, f2, f4, or 0x addresses.
 
 ## Current live execution surface
 
