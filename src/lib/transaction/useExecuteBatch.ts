@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import {
   useSendTransaction,
   useWaitForTransactionReceipt,
@@ -25,6 +25,18 @@ export interface BatchExecutionResult {
   gasEstimate?: bigint;
 }
 
+export interface BatchExecutionSubmission {
+  txHash: `0x${string}`;
+  confirmation?: Promise<void>;
+}
+
+export interface BatchExecutionAdapter {
+  executeBatch: (
+    recipients: Array<{ address: string; amount: number }>,
+    errorMode: ErrorMode,
+  ) => Promise<BatchExecutionSubmission>;
+}
+
 export interface UseExecuteBatchReturn {
   executeBatch: (
     recipients: Array<{ address: string; amount: number }>,
@@ -40,14 +52,38 @@ export interface UseExecuteBatchReturn {
   reset: () => void;
 }
 
+export interface UseExecuteBatchOptions {
+  adapter?: BatchExecutionAdapter;
+}
+
+function getFriendlyErrorMessage(err: unknown): string {
+  if (err instanceof Error) {
+    if (err.message.includes('User rejected')) {
+      return 'Transaction rejected by user';
+    }
+
+    if (err.message.includes('insufficient funds')) {
+      return 'Insufficient funds for transaction';
+    }
+
+    return err.message;
+  }
+
+  return 'Transaction failed';
+}
+
 /**
  * Hook for executing batch transactions via Multicall3.
  * Provides a single-signature batch execution for multiple recipients.
  */
-export function useExecuteBatch(): UseExecuteBatchReturn {
+export function useExecuteBatch(
+  options: UseExecuteBatchOptions = {},
+): UseExecuteBatchReturn {
+  const { adapter } = options;
   const [state, setState] = useState<BatchExecutionState>('idle');
   const [txHash, setTxHash] = useState<`0x${string}` | undefined>();
   const [error, setError] = useState<string | undefined>();
+  const executionIdRef = useRef(0);
 
   const publicClient = usePublicClient();
   const { sendTransactionAsync } = useSendTransaction();
@@ -55,11 +91,15 @@ export function useExecuteBatch(): UseExecuteBatchReturn {
   // Watch for transaction confirmation
   const { isLoading: isConfirming, isSuccess, isError: txError } =
     useWaitForTransactionReceipt({
-      hash: txHash,
+      hash: adapter ? undefined : txHash,
     });
 
   // Update state based on transaction receipt
   useEffect(() => {
+    if (adapter) {
+      return;
+    }
+
     if (txHash && isConfirming && state === 'pending') {
       // Still waiting for confirmation
     } else if (txHash && isSuccess && state === 'pending') {
@@ -68,7 +108,7 @@ export function useExecuteBatch(): UseExecuteBatchReturn {
       setState('failed');
       setError('Transaction failed on-chain');
     }
-  }, [txHash, isConfirming, isSuccess, txError, state]);
+  }, [adapter, txHash, isConfirming, isSuccess, txError, state]);
 
   /**
    * Estimate gas for a batch transaction.
@@ -106,49 +146,65 @@ export function useExecuteBatch(): UseExecuteBatchReturn {
       recipients: Array<{ address: string; amount: number }>,
       errorMode: ErrorMode = 'PARTIAL',
     ): Promise<`0x${string}`> => {
+      const executionId = executionIdRef.current + 1;
+      executionIdRef.current = executionId;
       setState('building');
       setError(undefined);
       setTxHash(undefined);
 
       try {
-        // Validate and build the batch
-        const batchRecipients = convertRecipientsToBatch(recipients);
-        const batch = buildMulticallBatch(batchRecipients, errorMode);
-
-        console.log('[useExecuteBatch] Built batch:', {
-          to: batch.to,
-          value: batch.value.toString(),
-          recipientCount: batch.recipientCount,
-          callsCount: batch.calls.length,
-        });
-
         setState('signing');
+        let hash: `0x${string}`;
+        let confirmation: Promise<void> | undefined;
 
-        // Send the transaction
-        const hash = await sendTransactionAsync({
-          to: batch.to,
-          data: batch.data,
-          value: batch.value,
-        });
+        if (adapter) {
+          const submission = await adapter.executeBatch(recipients, errorMode);
+          hash = submission.txHash;
+          confirmation = submission.confirmation;
+        } else {
+          // Validate and build the batch
+          const batchRecipients = convertRecipientsToBatch(recipients);
+          const batch = buildMulticallBatch(batchRecipients, errorMode);
+
+          console.log('[useExecuteBatch] Built batch:', {
+            to: batch.to,
+            value: batch.value.toString(),
+            recipientCount: batch.recipientCount,
+            callsCount: batch.calls.length,
+          });
+
+          // Send the transaction
+          hash = await sendTransactionAsync({
+            to: batch.to,
+            data: batch.data,
+            value: batch.value,
+          });
+        }
 
         console.log('[useExecuteBatch] Transaction sent:', hash);
+
+        if (executionIdRef.current !== executionId) {
+          return hash;
+        }
+
         setTxHash(hash);
         setState('pending');
+
+        if (confirmation) {
+          await confirmation;
+
+          if (executionIdRef.current === executionId) {
+            setState('confirmed');
+          }
+        }
 
         return hash;
       } catch (err) {
         console.error('[useExecuteBatch] Error:', err);
+        const errorMessage = getFriendlyErrorMessage(err);
 
-        // Extract user-friendly error message
-        let errorMessage = 'Transaction failed';
-        if (err instanceof Error) {
-          if (err.message.includes('User rejected')) {
-            errorMessage = 'Transaction rejected by user';
-          } else if (err.message.includes('insufficient funds')) {
-            errorMessage = 'Insufficient funds for transaction';
-          } else {
-            errorMessage = err.message;
-          }
+        if (executionIdRef.current !== executionId) {
+          throw new Error(errorMessage);
         }
 
         setState('failed');
@@ -156,13 +212,14 @@ export function useExecuteBatch(): UseExecuteBatchReturn {
         throw new Error(errorMessage);
       }
     },
-    [sendTransactionAsync],
+    [adapter, sendTransactionAsync],
   );
 
   /**
    * Reset the hook state for a new transaction.
    */
   const reset = useCallback(() => {
+    executionIdRef.current += 1;
     setState('idle');
     setTxHash(undefined);
     setError(undefined);

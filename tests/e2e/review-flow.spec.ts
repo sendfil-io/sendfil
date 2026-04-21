@@ -29,7 +29,7 @@ test('manual review can proceed without duplicate acknowledgment for unique reci
 
   await page.getByTestId('review-batch-button').click();
 
-  await expect(page.getByRole('heading', { name: 'Review Transaction' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Review Batch' })).toBeVisible();
   await expect(page.getByTestId('duplicate-acknowledgment')).toHaveCount(0);
   await expect(page.getByTestId('send-batch-button')).toBeEnabled();
 
@@ -56,6 +56,7 @@ test('manual review requires duplicate acknowledgment before send is enabled', a
 test('csv review preserves duplicate warnings and requires acknowledgment', async ({ page }) => {
   await page.goto('/');
   await expect(page.getByTestId('mock-wallet-chip')).toBeVisible();
+  await page.getByRole('button', { name: 'CSV Upload' }).click();
 
   await page.locator('#csv-file-input').setInputFiles({
     name: 'duplicate-recipients.csv',
@@ -66,7 +67,8 @@ ${DUPLICATE_ADDRESS},2
 `),
   });
 
-  await expect(page.getByText('Successfully loaded 2 recipients')).toBeVisible();
+  await expect(page.getByText('CSV loaded successfully')).toBeVisible();
+  await expect(page.getByText('2 recipients imported from the uploaded file.')).toBeVisible();
   await page.getByTestId('review-batch-button').click();
 
   await expect(page.getByText('Duplicate recipients need confirmation')).toBeVisible();

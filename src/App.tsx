@@ -12,6 +12,8 @@ import { formatUnits } from 'viem';
 import { calculateFeeRows } from './utils/fee';
 import { buildBatchTransaction, attoFilToFil } from './lib/transaction/messageBuilder';
 import { getNonce } from './lib/DataProvider';
+import { createMockBatchExecutionAdapter } from './lib/transaction/mockAdapter';
+import { useExecuteBatch } from './lib/transaction/useExecuteBatch';
 import { validateRecipientRows } from './utils/recipientValidation';
 import {
   DEFAULT_BATCH_CONFIGURATION,
@@ -267,6 +269,53 @@ export default function App() {
   const [isConfigureTransactionOpen, setIsConfigureTransactionOpen] = React.useState(false);
   const [unavailableCapabilityNotice, setUnavailableCapabilityNotice] =
     React.useState<UnavailableCapabilityNotice | null>(null);
+  const batchExecutionAdapter = React.useMemo(
+    () =>
+      E2E_MOCK_WALLET_ENABLED
+        ? createMockBatchExecutionAdapter({
+            confirmationDelayMs: E2E_MOCK_SEND_DELAY_MS,
+          })
+        : undefined,
+    [],
+  );
+  const {
+    executeBatch,
+    state: executionState,
+    txHash: executionTxHash,
+    error: executionError,
+    reset: resetExecution,
+  } = useExecuteBatch({
+    adapter: batchExecutionAdapter,
+  });
+
+  React.useEffect(() => {
+    if (executionTxHash) {
+      setTransactionHash(executionTxHash);
+    }
+
+    if (executionError) {
+      setTransactionError(executionError);
+    }
+
+    switch (executionState) {
+      case 'building':
+      case 'signing':
+        setTransactionState('signing');
+        break;
+      case 'pending':
+        setTransactionState('pending');
+        break;
+      case 'confirmed':
+        setTransactionState('confirmed');
+        break;
+      case 'failed':
+        setTransactionState('failed');
+        break;
+      case 'idle':
+      default:
+        break;
+    }
+  }, [executionError, executionState, executionTxHash]);
 
   const handleCSVUpload = (result: CSVUploadResult) => {
     setCsvData(result.recipients);
@@ -416,13 +465,6 @@ export default function App() {
     [manualInteractions, manualRecipients, manualValidation.errors],
   );
 
-  const activeValidationErrors =
-    inputMode === 'manual'
-      ? [...manualDisplayErrors, ...networkValidationErrors]
-      : [...csvErrors, ...networkValidationErrors];
-  const activeValidationWarnings =
-    inputMode === 'manual' ? manualValidation.warnings : csvWarnings;
-
   const validRecipients = React.useMemo(
     () =>
       (inputMode === 'manual' ? manualValidation.validRecipients : csvRecipients).map(
@@ -433,23 +475,58 @@ export default function App() {
       ),
     [csvRecipients, inputMode, manualValidation.validRecipients],
   );
+  const feeComputation = React.useMemo(() => {
+    if (validRecipients.length === 0) {
+      return {
+        recipients: validRecipients,
+        feeTotal: 0,
+        error: undefined as string | undefined,
+      };
+    }
+
+    try {
+      const recipientsWithFees = calculateFeeRows(validRecipients);
+
+      return {
+        recipients: recipientsWithFees,
+        feeTotal: recipientsWithFees
+          .slice(validRecipients.length)
+          .reduce((sum, row) => sum + row.amount, 0),
+        error: undefined as string | undefined,
+      };
+    } catch (error) {
+      return {
+        recipients: validRecipients,
+        feeTotal: 0,
+        error:
+          error instanceof Error
+            ? error.message
+            : 'Failed to calculate the platform fee rows for this batch.',
+      };
+    }
+  }, [validRecipients]);
+  const executionErrorMode: ErrorHandlingPreference = 'PARTIAL';
+  const activeValidationErrors =
+    inputMode === 'manual'
+      ? [
+          ...manualDisplayErrors,
+          ...(feeComputation.error ? [feeComputation.error] : []),
+          ...networkValidationErrors,
+        ]
+      : [
+          ...csvErrors,
+          ...(feeComputation.error ? [feeComputation.error] : []),
+          ...networkValidationErrors,
+        ];
+  const activeValidationWarnings =
+    inputMode === 'manual' ? manualValidation.warnings : csvWarnings;
 
   const draftRecipientCount =
     inputMode === 'manual' ? manualValidation.nonEmptyRowCount : csvData.length;
   const hasReviewableRows = draftRecipientCount > 0;
 
   const recipientTotal = validRecipients.reduce((sum, recipient) => sum + recipient.amount, 0);
-
-  const feeTotal = React.useMemo(() => {
-    if (validRecipients.length === 0) return 0;
-
-    try {
-      const rows = calculateFeeRows(validRecipients);
-      return rows.slice(validRecipients.length).reduce((sum, row) => sum + row.amount, 0);
-    } catch {
-      return 0;
-    }
-  }, [validRecipients]);
+  const feeTotal = feeComputation.feeTotal;
 
   const walletBalance = E2E_MOCK_WALLET_ENABLED
     ? E2E_MOCK_BALANCE_FIL
@@ -544,6 +621,7 @@ export default function App() {
       );
     }
 
+    resetExecution();
     setTransactionState('review');
     setGasEstimate(undefined);
     setGasEstimationError(undefined);
@@ -559,10 +637,8 @@ export default function App() {
       setIsEstimatingGas(true);
 
       try {
-        const allRecipients = calculateFeeRows(validRecipients);
-
         const batchResult = await buildBatchTransaction({
-          recipients: allRecipients,
+          recipients: feeComputation.recipients,
           senderAddress: address,
           startingNonce: await getNonce(address),
         });
@@ -590,17 +666,21 @@ export default function App() {
     }
 
     setIsReviewModalOpen(false);
+
+    if (transactionState !== 'pending') {
+      resetExecution();
+    }
   };
 
   const handleConfirmTransaction = async () => {
+    resetExecution();
     setTransactionState('signing');
+    setTransactionHash(undefined);
     setTransactionError(undefined);
 
     try {
-      setTransactionState('pending');
-      await new Promise((resolve) => setTimeout(resolve, E2E_MOCK_SEND_DELAY_MS));
-      setTransactionHash('bafy2bzaced...example');
-      setTransactionState('confirmed');
+      const hash = await executeBatch(feeComputation.recipients, executionErrorMode);
+      setTransactionHash(hash);
     } catch (error) {
       console.error('Transaction failed:', error);
       setTransactionError(error instanceof Error ? error.message : 'Transaction failed');
