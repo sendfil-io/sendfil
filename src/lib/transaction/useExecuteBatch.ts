@@ -1,14 +1,27 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import {
+  useAccount,
   useSendTransaction,
   useWaitForTransactionReceipt,
   usePublicClient,
 } from 'wagmi';
 import {
-  buildMulticallBatch,
-  convertRecipientsToBatch,
   type ErrorMode,
 } from './multicall';
+import {
+  applyGasBuffer,
+  buildBatchGasEstimate,
+  prepareBatchExecution,
+  type BatchExecutionAdapter,
+  type BatchExecutionRecipient,
+  type BatchGasEstimate,
+  type PreparedBatchExecution,
+} from './batchExecution';
+import {
+  BatchExecutionError,
+  mapBatchExecutionError,
+} from './errorHandling';
+import { emitBatchExecutionTelemetry } from './telemetry';
 
 export type BatchExecutionState =
   | 'idle'
@@ -21,80 +34,179 @@ export type BatchExecutionState =
 export interface BatchExecutionResult {
   state: BatchExecutionState;
   txHash?: `0x${string}`;
-  error?: string;
-  gasEstimate?: bigint;
+  error?: BatchExecutionError;
+  gasEstimate?: BatchGasEstimate;
 }
 
 export interface UseExecuteBatchReturn {
   executeBatch: (
-    recipients: Array<{ address: string; amount: number }>,
-    errorMode?: ErrorMode,
+    recipients: BatchExecutionRecipient[],
+    errorMode: ErrorMode,
   ) => Promise<`0x${string}`>;
-  estimateGas: (
-    recipients: Array<{ address: string; amount: number }>,
-    errorMode?: ErrorMode,
-  ) => Promise<bigint>;
+  estimateBatch: (
+    recipients: BatchExecutionRecipient[],
+    errorMode: ErrorMode,
+  ) => Promise<BatchGasEstimate>;
   state: BatchExecutionState;
   txHash?: `0x${string}`;
-  error?: string;
+  error?: BatchExecutionError;
   reset: () => void;
+}
+
+export interface UseExecuteBatchOptions {
+  adapter?: BatchExecutionAdapter;
 }
 
 /**
  * Hook for executing batch transactions via Multicall3.
  * Provides a single-signature batch execution for multiple recipients.
  */
-export function useExecuteBatch(): UseExecuteBatchReturn {
+export function useExecuteBatch(
+  options: UseExecuteBatchOptions = {},
+): UseExecuteBatchReturn {
+  const { adapter } = options;
   const [state, setState] = useState<BatchExecutionState>('idle');
   const [txHash, setTxHash] = useState<`0x${string}` | undefined>();
-  const [error, setError] = useState<string | undefined>();
+  const [error, setError] = useState<BatchExecutionError | undefined>();
+  const [pendingPreparedBatch, setPendingPreparedBatch] = useState<
+    PreparedBatchExecution | undefined
+  >();
+  const executionSequence = useRef(0);
 
+  const account = useAccount();
   const publicClient = usePublicClient();
   const { sendTransactionAsync } = useSendTransaction();
 
   // Watch for transaction confirmation
-  const { isLoading: isConfirming, isSuccess, isError: txError } =
+  const { isLoading: isConfirming, isSuccess, isError: txError, error: receiptError } =
     useWaitForTransactionReceipt({
       hash: txHash,
     });
 
   // Update state based on transaction receipt
   useEffect(() => {
-    if (txHash && isConfirming && state === 'pending') {
-      // Still waiting for confirmation
-    } else if (txHash && isSuccess && state === 'pending') {
-      setState('confirmed');
-    } else if (txHash && txError && state === 'pending') {
-      setState('failed');
-      setError('Transaction failed on-chain');
+    if (!txHash || state !== 'pending' || !pendingPreparedBatch || adapter) {
+      return;
     }
-  }, [txHash, isConfirming, isSuccess, txError, state]);
 
-  /**
-   * Estimate gas for a batch transaction.
-   */
-  const estimateGas = useCallback(
-    async (
-      recipients: Array<{ address: string; amount: number }>,
-      errorMode: ErrorMode = 'PARTIAL',
-    ): Promise<bigint> => {
+    if (isConfirming) {
+      // Still waiting for confirmation
+      return;
+    }
+
+    if (isSuccess) {
+      setState('confirmed');
+      emitBatchExecutionTelemetry({
+        event: 'batch_confirmed',
+        errorMode: pendingPreparedBatch.errorMode,
+        recipientCount: pendingPreparedBatch.recipientCount,
+        totalValueAttoFil: pendingPreparedBatch.totalValueAttoFil.toString(),
+        txHash,
+      });
+      return;
+    }
+
+    if (txError) {
+      const mappedError = mapBatchExecutionError(
+        receiptError ?? new Error('Transaction failed on-chain'),
+        {
+          stage: 'confirmation',
+          errorMode: pendingPreparedBatch.errorMode,
+        },
+      );
+
+      setState('failed');
+      setError(mappedError);
+      emitBatchExecutionTelemetry({
+        event: 'batch_failed',
+        errorMode: pendingPreparedBatch.errorMode,
+        recipientCount: pendingPreparedBatch.recipientCount,
+        totalValueAttoFil: pendingPreparedBatch.totalValueAttoFil.toString(),
+        txHash,
+        errorCategory: mappedError.category,
+        errorMessage: mappedError.details ?? mappedError.message,
+      });
+    }
+  }, [
+    adapter,
+    isConfirming,
+    isSuccess,
+    pendingPreparedBatch,
+    receiptError,
+    state,
+    txError,
+    txHash,
+  ]);
+
+  const estimatePreparedBatch = useCallback(
+    async (prepared: PreparedBatchExecution): Promise<BatchGasEstimate> => {
+      if (adapter) {
+        return adapter.estimate(prepared);
+      }
+
       if (!publicClient) {
         throw new Error('Public client not available');
       }
 
-      const batchRecipients = convertRecipientsToBatch(recipients);
-      const batch = buildMulticallBatch(batchRecipients, errorMode);
-
-      const gasEstimate = await publicClient.estimateGas({
-        to: batch.to,
-        data: batch.data,
-        value: batch.value,
+      const rawGasEstimate = await publicClient.estimateGas({
+        to: prepared.batch.to,
+        data: prepared.batch.data,
+        value: prepared.batch.value,
+        ...(account.address ? { account: account.address } : {}),
       });
+      const gasLimit = applyGasBuffer(rawGasEstimate);
+      const gasPrice = await publicClient.getGasPrice();
 
-      // Add 10% buffer for safety
-      return (gasEstimate * 110n) / 100n;
+      return buildBatchGasEstimate(gasLimit, gasPrice);
     },
-    [publicClient],
+    [account.address, adapter, publicClient],
+  );
+
+  /**
+   * Estimate gas for a batch transaction.
+   */
+  const estimateBatch = useCallback(
+    async (
+      recipients: BatchExecutionRecipient[],
+      errorMode: ErrorMode,
+    ): Promise<BatchGasEstimate> => {
+      let prepared: PreparedBatchExecution | undefined;
+
+      try {
+        prepared = prepareBatchExecution(recipients, errorMode);
+        const estimate = await estimatePreparedBatch(prepared);
+
+        emitBatchExecutionTelemetry({
+          event: 'batch_preflight_succeeded',
+          errorMode,
+          recipientCount: prepared.recipientCount,
+          totalValueAttoFil: prepared.totalValueAttoFil.toString(),
+          simulationResult: 'passed',
+          gasLimit: estimate.gasLimit.toString(),
+          estimatedFeeAttoFil: estimate.estimatedFee.toString(),
+        });
+
+        return estimate;
+      } catch (cause) {
+        const mappedError = mapBatchExecutionError(cause, {
+          stage: 'preflight',
+          errorMode,
+        });
+
+        emitBatchExecutionTelemetry({
+          event: 'batch_preflight_failed',
+          errorMode,
+          recipientCount: prepared?.recipientCount ?? recipients.length,
+          totalValueAttoFil: prepared?.totalValueAttoFil.toString() ?? '0',
+          simulationResult: 'failed',
+          errorCategory: mappedError.category,
+          errorMessage: mappedError.details ?? mappedError.message,
+        });
+
+        throw mappedError;
+      }
+    },
+    [estimatePreparedBatch],
   );
 
   /**
@@ -103,145 +215,120 @@ export function useExecuteBatch(): UseExecuteBatchReturn {
    */
   const executeBatch = useCallback(
     async (
-      recipients: Array<{ address: string; amount: number }>,
-      errorMode: ErrorMode = 'PARTIAL',
+      recipients: BatchExecutionRecipient[],
+      errorMode: ErrorMode,
     ): Promise<`0x${string}`> => {
+      const executionId = executionSequence.current + 1;
+      executionSequence.current = executionId;
       setState('building');
       setError(undefined);
       setTxHash(undefined);
+      setPendingPreparedBatch(undefined);
+
+      let prepared: PreparedBatchExecution | undefined;
+      let failureStage: 'preflight' | 'execution' = 'preflight';
 
       try {
-        // Validate and build the batch
-        const batchRecipients = convertRecipientsToBatch(recipients);
-        const batch = buildMulticallBatch(batchRecipients, errorMode);
+        prepared = prepareBatchExecution(recipients, errorMode);
 
-        console.log('[useExecuteBatch] Built batch:', {
-          to: batch.to,
-          value: batch.value.toString(),
-          recipientCount: batch.recipientCount,
-          callsCount: batch.calls.length,
+        emitBatchExecutionTelemetry({
+          event: 'batch_submission_requested',
+          errorMode,
+          recipientCount: prepared.recipientCount,
+          totalValueAttoFil: prepared.totalValueAttoFil.toString(),
+          simulationResult: errorMode === 'ATOMIC' ? 'passed' : 'skipped',
         });
 
+        if (errorMode === 'ATOMIC') {
+          await estimatePreparedBatch(prepared);
+        }
+
+        failureStage = 'execution';
         setState('signing');
 
-        // Send the transaction
-        const hash = await sendTransactionAsync({
-          to: batch.to,
-          data: batch.data,
-          value: batch.value,
+        const submission = adapter
+          ? await adapter.execute(prepared)
+          : {
+              txHash: await sendTransactionAsync({
+                to: prepared.batch.to,
+                data: prepared.batch.data,
+                value: prepared.batch.value,
+              }),
+            };
+        const hash = submission.txHash;
+
+        setTxHash(hash);
+        setPendingPreparedBatch(prepared);
+        setState('pending');
+        emitBatchExecutionTelemetry({
+          event: 'batch_submitted',
+          errorMode,
+          recipientCount: prepared.recipientCount,
+          totalValueAttoFil: prepared.totalValueAttoFil.toString(),
+          txHash: hash,
         });
 
-        console.log('[useExecuteBatch] Transaction sent:', hash);
-        setTxHash(hash);
-        setState('pending');
+        if (submission.confirmation) {
+          await submission.confirmation;
+
+          if (executionSequence.current !== executionId) {
+            return hash;
+          }
+
+          setState('confirmed');
+          emitBatchExecutionTelemetry({
+            event: 'batch_confirmed',
+            errorMode,
+            recipientCount: prepared.recipientCount,
+            totalValueAttoFil: prepared.totalValueAttoFil.toString(),
+            txHash: hash,
+          });
+        }
 
         return hash;
-      } catch (err) {
-        console.error('[useExecuteBatch] Error:', err);
+      } catch (cause) {
+        const mappedError = mapBatchExecutionError(cause, {
+          stage: failureStage,
+          errorMode,
+        });
 
-        // Extract user-friendly error message
-        let errorMessage = 'Transaction failed';
-        if (err instanceof Error) {
-          if (err.message.includes('User rejected')) {
-            errorMessage = 'Transaction rejected by user';
-          } else if (err.message.includes('insufficient funds')) {
-            errorMessage = 'Insufficient funds for transaction';
-          } else {
-            errorMessage = err.message;
-          }
+        if (executionSequence.current !== executionId) {
+          throw mappedError;
         }
 
         setState('failed');
-        setError(errorMessage);
-        throw new Error(errorMessage);
+        setError(mappedError);
+        emitBatchExecutionTelemetry({
+          event: 'batch_failed',
+          errorMode,
+          recipientCount: prepared?.recipientCount ?? recipients.length,
+          totalValueAttoFil: prepared?.totalValueAttoFil.toString() ?? '0',
+          errorCategory: mappedError.category,
+          errorMessage: mappedError.details ?? mappedError.message,
+        });
+        throw mappedError;
       }
     },
-    [sendTransactionAsync],
+    [adapter, estimatePreparedBatch, sendTransactionAsync],
   );
 
   /**
    * Reset the hook state for a new transaction.
    */
   const reset = useCallback(() => {
+    executionSequence.current += 1;
     setState('idle');
     setTxHash(undefined);
     setError(undefined);
+    setPendingPreparedBatch(undefined);
   }, []);
 
   return {
     executeBatch,
-    estimateGas,
+    estimateBatch,
     state,
     txHash,
     error,
     reset,
-  };
-}
-
-/**
- * Hook for estimating gas for a batch transaction.
- * Separate from execution for use in the review modal.
- */
-export function useBatchGasEstimate(
-  recipients: Array<{ address: string; amount: number }> | undefined,
-  errorMode: ErrorMode = 'PARTIAL',
-) {
-  const [gasEstimate, setGasEstimate] = useState<bigint | undefined>();
-  const [isEstimating, setIsEstimating] = useState(false);
-  const [estimateError, setEstimateError] = useState<string | undefined>();
-
-  const publicClient = usePublicClient();
-
-  useEffect(() => {
-    if (!recipients || recipients.length === 0 || !publicClient) {
-      setGasEstimate(undefined);
-      return;
-    }
-
-    let cancelled = false;
-
-    const estimate = async () => {
-      setIsEstimating(true);
-      setEstimateError(undefined);
-
-      try {
-        const batchRecipients = convertRecipientsToBatch(recipients);
-        const batch = buildMulticallBatch(batchRecipients, errorMode);
-
-        const gas = await publicClient.estimateGas({
-          to: batch.to,
-          data: batch.data,
-          value: batch.value,
-        });
-
-        if (!cancelled) {
-          // Add 10% buffer
-          setGasEstimate((gas * 110n) / 100n);
-        }
-      } catch (err) {
-        if (!cancelled) {
-          console.error('[useBatchGasEstimate] Error:', err);
-          setEstimateError(
-            err instanceof Error ? err.message : 'Gas estimation failed',
-          );
-        }
-      } finally {
-        if (!cancelled) {
-          setIsEstimating(false);
-        }
-      }
-    };
-
-    estimate();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [recipients, errorMode, publicClient]);
-
-  return {
-    gasEstimate,
-    isEstimating,
-    estimateError,
   };
 }
