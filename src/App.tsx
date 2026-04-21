@@ -10,8 +10,6 @@ import UnavailableCapabilityModal from './components/UnavailableCapabilityModal'
 import { useAccount, useBalance, useChainId } from 'wagmi';
 import { formatUnits } from 'viem';
 import { calculateFeeRows } from './utils/fee';
-import { buildBatchTransaction, attoFilToFil } from './lib/transaction/messageBuilder';
-import { getNonce } from './lib/DataProvider';
 import { validateRecipientRows } from './utils/recipientValidation';
 import {
   DEFAULT_BATCH_CONFIGURATION,
@@ -22,6 +20,13 @@ import {
   type ExecutionMethod,
   type SenderWalletType,
 } from './lib/batchConfiguration';
+import {
+  attoFilBigIntToFil,
+  type BatchGasEstimate,
+} from './lib/transaction/batchExecution';
+import { BatchExecutionError } from './lib/transaction/errorHandling';
+import { createMockBatchExecutionAdapter } from './lib/transaction/mockAdapter';
+import { useExecuteBatch } from './lib/transaction/useExecuteBatch';
 
 interface Recipient {
   address: string;
@@ -137,6 +142,28 @@ function getManualDraftHint(
   }
 
   return null;
+}
+
+function createFallbackReviewGasEstimate(recipientCount: number): GasEstimate {
+  const gasLimit = 21_000n * BigInt(recipientCount + 1);
+  const gasPrice = 1_000_000_000n;
+  const bufferedGasLimit = (gasLimit * 110n) / 100n;
+
+  return {
+    gasLimit: Number(bufferedGasLimit),
+    gasFeeCap: gasPrice.toString(),
+    gasPremium: gasPrice.toString(),
+    estimatedFeeInFil: attoFilBigIntToFil(bufferedGasLimit * gasPrice),
+  };
+}
+
+function toReviewGasEstimate(estimate: BatchGasEstimate): GasEstimate {
+  return {
+    gasLimit: Number(estimate.gasLimit),
+    gasFeeCap: estimate.gasFeeCap.toString(),
+    gasPremium: estimate.gasPremium.toString(),
+    estimatedFeeInFil: attoFilBigIntToFil(estimate.estimatedFee),
+  };
 }
 
 function SummaryPanel({
@@ -255,18 +282,35 @@ export default function App() {
   const [csvWarnings, setCsvWarnings] = React.useState<string[]>([]);
 
   const [isReviewModalOpen, setIsReviewModalOpen] = React.useState(false);
-  const [transactionState, setTransactionState] = React.useState<TransactionState>('review');
   const [gasEstimate, setGasEstimate] = React.useState<GasEstimate | undefined>(undefined);
   const [isEstimatingGas, setIsEstimatingGas] = React.useState(false);
-  const [gasEstimationError, setGasEstimationError] = React.useState<string | undefined>(undefined);
-  const [transactionHash, setTransactionHash] = React.useState<string | undefined>(undefined);
-  const [transactionError, setTransactionError] = React.useState<string | undefined>(undefined);
+  const [gasEstimationError, setGasEstimationError] =
+    React.useState<BatchExecutionError | undefined>(undefined);
   const [batchConfiguration, setBatchConfiguration] = React.useState<BatchConfiguration>(
     DEFAULT_BATCH_CONFIGURATION,
   );
   const [isConfigureTransactionOpen, setIsConfigureTransactionOpen] = React.useState(false);
   const [unavailableCapabilityNotice, setUnavailableCapabilityNotice] =
     React.useState<UnavailableCapabilityNotice | null>(null);
+  const batchExecutionAdapter = React.useMemo(
+    () =>
+      E2E_MOCK_WALLET_ENABLED
+        ? createMockBatchExecutionAdapter({
+            confirmationDelayMs: E2E_MOCK_SEND_DELAY_MS,
+          })
+        : undefined,
+    [],
+  );
+  const {
+    estimateBatch,
+    executeBatch,
+    state: executionState,
+    txHash: transactionHash,
+    error: transactionError,
+    reset: resetExecution,
+  } = useExecuteBatch({
+    adapter: batchExecutionAdapter,
+  });
 
   const handleCSVUpload = (result: CSVUploadResult) => {
     setCsvData(result.recipients);
@@ -416,13 +460,6 @@ export default function App() {
     [manualInteractions, manualRecipients, manualValidation.errors],
   );
 
-  const activeValidationErrors =
-    inputMode === 'manual'
-      ? [...manualDisplayErrors, ...networkValidationErrors]
-      : [...csvErrors, ...networkValidationErrors];
-  const activeValidationWarnings =
-    inputMode === 'manual' ? manualValidation.warnings : csvWarnings;
-
   const validRecipients = React.useMemo(
     () =>
       (inputMode === 'manual' ? manualValidation.validRecipients : csvRecipients).map(
@@ -433,23 +470,58 @@ export default function App() {
       ),
     [csvRecipients, inputMode, manualValidation.validRecipients],
   );
+  const selectedErrorMode: ErrorHandlingPreference = 'PARTIAL';
+  const feeComputation = React.useMemo(() => {
+    if (validRecipients.length === 0) {
+      return {
+        recipients: validRecipients,
+        feeTotal: 0,
+        error: undefined as string | undefined,
+      };
+    }
+
+    try {
+      const recipientsWithFees = calculateFeeRows(validRecipients);
+
+      return {
+        recipients: recipientsWithFees,
+        feeTotal: recipientsWithFees
+          .slice(validRecipients.length)
+          .reduce((sum, row) => sum + row.amount, 0),
+        error: undefined as string | undefined,
+      };
+    } catch (error) {
+      return {
+        recipients: validRecipients,
+        feeTotal: 0,
+        error:
+          error instanceof Error
+            ? error.message
+            : 'Failed to calculate the platform fee rows for this batch.',
+      };
+    }
+  }, [validRecipients]);
+  const activeValidationErrors =
+    inputMode === 'manual'
+      ? [
+          ...manualDisplayErrors,
+          ...(feeComputation.error ? [feeComputation.error] : []),
+          ...networkValidationErrors,
+        ]
+      : [
+          ...csvErrors,
+          ...(feeComputation.error ? [feeComputation.error] : []),
+          ...networkValidationErrors,
+        ];
+  const activeValidationWarnings =
+    inputMode === 'manual' ? manualValidation.warnings : csvWarnings;
 
   const draftRecipientCount =
     inputMode === 'manual' ? manualValidation.nonEmptyRowCount : csvData.length;
   const hasReviewableRows = draftRecipientCount > 0;
 
   const recipientTotal = validRecipients.reduce((sum, recipient) => sum + recipient.amount, 0);
-
-  const feeTotal = React.useMemo(() => {
-    if (validRecipients.length === 0) return 0;
-
-    try {
-      const rows = calculateFeeRows(validRecipients);
-      return rows.slice(validRecipients.length).reduce((sum, row) => sum + row.amount, 0);
-    } catch {
-      return 0;
-    }
-  }, [validRecipients]);
+  const feeTotal = feeComputation.feeTotal;
 
   const walletBalance = E2E_MOCK_WALLET_ENABLED
     ? E2E_MOCK_BALANCE_FIL
@@ -478,6 +550,12 @@ export default function App() {
   );
 
   const reviewDisabled = !isConnected || isNetworkMismatch || !hasReviewableRows;
+  const transactionState: TransactionState =
+    executionState === 'idle'
+      ? 'review'
+      : executionState === 'building'
+        ? 'signing'
+        : executionState;
 
   const reviewHint = React.useMemo(() => {
     if (!isConnected) {
@@ -544,14 +622,13 @@ export default function App() {
       );
     }
 
-    setTransactionState('review');
+    resetExecution();
     setGasEstimate(undefined);
     setGasEstimationError(undefined);
-    setTransactionHash(undefined);
-    setTransactionError(undefined);
     setIsReviewModalOpen(true);
 
-    if (E2E_MOCK_WALLET_ENABLED || E2E_SKIP_GAS_ESTIMATION) {
+    if (E2E_SKIP_GAS_ESTIMATION && !batchExecutionAdapter) {
+      setGasEstimate(createFallbackReviewGasEstimate(feeComputation.recipients.length));
       return;
     }
 
@@ -559,24 +636,26 @@ export default function App() {
       setIsEstimatingGas(true);
 
       try {
-        const allRecipients = calculateFeeRows(validRecipients);
-
-        const batchResult = await buildBatchTransaction({
-          recipients: allRecipients,
-          senderAddress: address,
-          startingNonce: await getNonce(address),
-        });
-
-        setGasEstimate({
-          gasLimit: batchResult.estimatedGas.GasLimit,
-          gasFeeCap: batchResult.estimatedGas.GasFeeCap,
-          gasPremium: batchResult.estimatedGas.GasPremium,
-          estimatedFeeInFil: attoFilToFil(batchResult.feeEstimate),
-        });
+        const estimate = await estimateBatch(
+          feeComputation.recipients,
+          selectedErrorMode,
+        );
+        setGasEstimate(toReviewGasEstimate(estimate));
       } catch (error) {
-        console.error('Gas estimation failed:', error);
         setGasEstimationError(
-          error instanceof Error ? error.message : 'Failed to estimate gas',
+          error instanceof BatchExecutionError
+            ? error
+            : new BatchExecutionError({
+                category: 'UNKNOWN',
+                title: 'Batch preflight failed',
+                message: 'SendFIL could not estimate this batch with the current inputs.',
+                errorMode: selectedErrorMode,
+                stage: 'preflight',
+                recoverable: true,
+                hint: 'Review the batch inputs and retry the estimate.',
+                details: error instanceof Error ? error.message : 'Unknown error',
+                cause: error,
+              }),
         );
       } finally {
         setIsEstimatingGas(false);
@@ -590,21 +669,17 @@ export default function App() {
     }
 
     setIsReviewModalOpen(false);
+
+    if (transactionState !== 'pending') {
+      resetExecution();
+    }
   };
 
   const handleConfirmTransaction = async () => {
-    setTransactionState('signing');
-    setTransactionError(undefined);
-
     try {
-      setTransactionState('pending');
-      await new Promise((resolve) => setTimeout(resolve, E2E_MOCK_SEND_DELAY_MS));
-      setTransactionHash('bafy2bzaced...example');
-      setTransactionState('confirmed');
-    } catch (error) {
-      console.error('Transaction failed:', error);
-      setTransactionError(error instanceof Error ? error.message : 'Transaction failed');
-      setTransactionState('failed');
+      await executeBatch(feeComputation.recipients, selectedErrorMode);
+    } catch {
+      // useExecuteBatch stores the failure state used by the modal
     }
   };
 

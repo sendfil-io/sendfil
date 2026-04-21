@@ -1,100 +1,84 @@
 # SendFIL
-SendFIL is a batch payout tool that sends FIL from a single‑signer (f1 or f4/0x) or multisig (f2) to multiple recipients across f1/f2/f3/f4/0x address types.
 
-# React + TypeScript + Vite
+SendFIL is a client-only Vite SPA for batch sending FIL.
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+## Current live execution surface
 
-Currently, two official plugins are available:
+- Single-signer FEVM batch execution through `Multicall3.aggregate3Value(...)` plus `FilForwarder`.
+- Filecoin Mainnet wallet flow through wagmi/RainbowKit with `metaMaskWallet` and `walletConnectWallet`.
+- Review-step gas estimation and send execution now use the same FEVM batch builder and the same selected error mode.
+- Duplicate recipients are warnings that require explicit acknowledgment before send.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react/README.md) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## Error handling modes
 
-## Expanding the ESLint configuration
+- `PARTIAL` is the default. Successful internal calls can still finalize even if another call fails.
+- `ATOMIC` is all-or-nothing. Any failing internal call reverts the entire batch and no transfer is finalized.
 
-If you are developing a production application, we recommend updating the configuration to enable type aware lint rules:
+Recommended usage:
 
-- Configure the top-level `parserOptions` property like this:
+- Use `PARTIAL` when best-effort delivery is acceptable and you want the batch to keep going.
+- Use `ATOMIC` when every recipient must succeed together or the batch should fail as one unit.
 
-```js
-export default tseslint.config({
-  languageOptions: {
-    // other options...
-    parserOptions: {
-      project: ['./tsconfig.node.json', './tsconfig.app.json'],
-      tsconfigRootDir: import.meta.dirname,
-    },
-  },
-})
-```
+When an atomic preflight fails, SendFIL blocks submission and explains that the whole batch would revert. When an atomic transaction fails after submission, the failure copy explicitly states that no transfer was finalized.
 
-- Replace `tseslint.configs.recommended` to `tseslint.configs.recommendedTypeChecked` or `tseslint.configs.strictTypeChecked`
-- Optionally add `...tseslint.configs.stylisticTypeChecked`
-- Install [eslint-plugin-react](https://github.com/jsx-eslint/eslint-plugin-react) and update the config:
+## Telemetry
 
-```js
-// eslint.config.js
-import react from 'eslint-plugin-react'
+Batch execution emits structured telemetry in two places:
 
-export default tseslint.config({
-  // Set the react version
-  settings: { react: { version: '18.3' } },
-  plugins: {
-    // Add the react plugin
-    react,
-  },
-  rules: {
-    // other rules...
-    // Enable its recommended rules
-    ...react.configs.recommended.rules,
-    ...react.configs['jsx-runtime'].rules,
-  },
-})
-```
+- `console.info('[sendfil:batch-telemetry]', payload)`
+- `window` custom events named `sendfil:batch-telemetry`
 
-## Supported Wallets
-- MetaMask
-- WalletConnect
-- Brave Wallet (via injected)
+Payloads include:
 
-## Environment Setup
-1. Copy `.env.example` to `.env.local` and fill in your values:
-   - `VITE_WALLETCONNECT_PROJECT_ID` (from WalletConnect Cloud)
-   - `VITE_RPC_URL` (Filecoin mainnet RPC endpoint)
-   - `VITE_GLIF_RPC_URL_PRIMARY` (primary GLIF RPC endpoint)
-   - `VITE_GLIF_RPC_URL_FALLBACK` (fallback GLIF RPC endpoint)
-   - `VITE_GLIF_RPC_TIMEOUT_MS` (timeout in milliseconds for GLIF RPC requests)
+- `errorMode`
+- `recipientCount`
+- `totalValueAttoFil`
+- preflight/simulation result
+- final transaction status
+- normalized error category
 
-## Running the App
+## Known limitations
+
+- `ThinBatch` is still UI-visible but not live.
+- Calibration/testnet support is still partial, not end-to-end.
+- Filecoin-native signer flows are not wired into the live app path.
+- Contract-recipient blocking (`eth_getCode`) is not implemented yet.
+- Balance is checked during review, but there is not yet a second submit-time balance recheck.
+
+## Environment setup
+
+Copy `.env.example` to `.env.local` and set:
+
+- `VITE_WALLETCONNECT_PROJECT_ID`
+- `VITE_RPC_URL`
+- `VITE_GLIF_RPC_URL_PRIMARY`
+- `VITE_GLIF_RPC_URL_FALLBACK`
+- `VITE_GLIF_RPC_TIMEOUT_MS`
+- `VITE_FEE_ADDR_A`
+- `VITE_FEE_ADDR_B`
+
+Optional E2E-only helpers:
+
+- `VITE_E2E_MOCK_WALLET`
+- `VITE_E2E_SKIP_GAS_ESTIMATION`
+- `VITE_E2E_SEND_DELAY_MS`
+
+## Development
+
 ```sh
 yarn install
 yarn dev
 ```
 
-Open [http://localhost:5173/](http://localhost:5173/) in your browser.
-
-## Linting and Testing
-
-Run ESLint:
+## Validation
 
 ```sh
 yarn lint
-```
-
-Execute unit tests with Vitest:
-
-```sh
 yarn test
-```
-
-Run a typecheck:
-
-```sh
 yarn typecheck
+yarn test:e2e tests/e2e/review-flow.spec.ts
 ```
 
-Create a production build:
+## Design note
 
-```sh
-yarn build
-```
+See [docs/atomic-error-handling.md](docs/atomic-error-handling.md) for the ATOMIC-mode execution contract, error taxonomy, telemetry schema, and rollout notes.
