@@ -4,6 +4,38 @@ import { JsonRpcSuccess, JsonRpcError, RpcSuccess } from './types';
 
 let requestId = 1;
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function getRetryAttemptNumber(context: unknown): number | undefined {
+  if (!isRecord(context) || typeof context.attemptNumber !== 'number') {
+    return undefined;
+  }
+
+  return context.attemptNumber;
+}
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  if (isRecord(error) && typeof error.message === 'string') {
+    return error.message;
+  }
+
+  return String(error);
+}
+
+function getRetryErrorMessage(context: unknown): string {
+  if (isRecord(context) && 'error' in context) {
+    return getErrorMessage(context.error);
+  }
+
+  return getErrorMessage(context);
+}
+
 function getRpcConfig() {
   const primary = import.meta.env.VITE_GLIF_RPC_URL_PRIMARY as string | undefined;
   const fallback =
@@ -49,9 +81,9 @@ export async function callRpc<T = unknown>(
     },
     {
       retries: 1, // only one fail-over attempt
-      onFailedAttempt: (err) => {
+      onFailedAttempt: (context: unknown) => {
         console.warn(
-          `[DataProvider] RPC attempt ${err.attemptNumber} failed: ${err.message}`,
+          `[DataProvider] RPC attempt ${getRetryAttemptNumber(context) ?? 'unknown'} failed: ${getRetryErrorMessage(context)}`,
         );
       },
     },
