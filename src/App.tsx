@@ -933,8 +933,8 @@ f1cj...,3.3`;
 
                       return (
                         <div key={rowNumber}>
-                          <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px_48px]">
-                            <div>
+                          <div className="grid grid-cols-[minmax(0,1fr)_48px] gap-3 md:grid-cols-[minmax(0,1fr)_180px_48px]">
+                            <div className="col-span-2 md:col-span-1">
                               <label className="mb-1 block text-xs font-medium text-slate-500 md:hidden">
                                 Receiver
                               </label>
@@ -976,7 +976,7 @@ f1cj...,3.3`;
                               />
                             </div>
 
-                            <div className="flex items-center justify-end md:justify-center">
+                            <div className="flex items-end justify-end md:justify-center">
                               {manualRecipients.length > 1 ? (
                                 <button
                                   type="button"
