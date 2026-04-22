@@ -32,6 +32,7 @@ interface AddressValidationResult {
   isValid: boolean;
   normalizedAddress?: string;
   duplicateKey?: string;
+  networkPrefix?: 'f' | 't';
   error?: string;
 }
 
@@ -158,6 +159,7 @@ function validateAddress(
     isValid: true,
     normalizedAddress: trimmed,
     duplicateKey: normalizedTwin ? normalizedTwin.toLowerCase() : trimmed,
+    networkPrefix: trimmed[0] as 'f' | 't',
   };
 }
 
@@ -172,6 +174,7 @@ export function validateRecipientRows(
   const maxRecipients = options.maxRecipients ?? DEFAULT_MAX_RECIPIENTS;
   const requireAtLeastOneRecipient = options.requireAtLeastOneRecipient ?? true;
   let nonEmptyRowCount = 0;
+  const seenNativeNetworkPrefixes = new Set<'f' | 't'>();
 
   rows.forEach((row, index) => {
     const lineNumber = row.lineNumber ?? index + 1;
@@ -221,6 +224,10 @@ export function validateRecipientRows(
       amount: amountValidation.normalizedAmount,
       lineNumber,
     });
+
+    if (!options.expectedNetworkPrefix && addressValidation.networkPrefix) {
+      seenNativeNetworkPrefixes.add(addressValidation.networkPrefix);
+    }
   });
 
   if (requireAtLeastOneRecipient && nonEmptyRowCount === 0) {
@@ -234,6 +241,12 @@ export function validateRecipientRows(
   if (nonEmptyRowCount > maxRecipients) {
     errors.push(
       `Batch size exceeds the current limit of ${maxRecipients} recipients`,
+    );
+  }
+
+  if (seenNativeNetworkPrefixes.size > 1) {
+    errors.push(
+      'Batch mixes mainnet (f...) and Calibration (t...) native addresses. Keep all native recipients on one network before review.',
     );
   }
 

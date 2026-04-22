@@ -7,6 +7,7 @@ import type {
 import { submitTransaction, getNonce, getBalance, pollTransactionStatus } from '../DataProvider';
 import { buildBatchTransaction, validateSufficientBalance, attoFilToFil } from './messageBuilder';
 import { calculateFeeRows } from '../../utils/fee';
+import { getDefaultNetworkConfig } from '../networks';
 
 export interface BatchExecutionRequest {
   recipients: Array<{ address: string; amount: number }>; // includes fees
@@ -221,5 +222,5 @@ export async function monitorBatchProgress(
 export function prepareRecipientsWithFees(
   recipients: Array<{ address: string; amount: number }>
 ): Array<{ address: string; amount: number }> {
-  return calculateFeeRows(recipients);
+  return calculateFeeRows(recipients, getDefaultNetworkConfig());
 } 

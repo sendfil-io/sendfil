@@ -4,13 +4,22 @@ import {
   walletConnectWallet,
 } from '@rainbow-me/rainbowkit/wallets';
 import { createConfig, http } from 'wagmi';
-import { filecoin } from 'viem/chains';
+import {
+  SUPPORTED_WAGMI_CHAINS,
+  getNetworkConfig,
+} from './networks';
 
-const chains = [filecoin] as const;
 const projectId = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID!;
 
+const mainnetConfig = getNetworkConfig('mainnet');
+const calibrationConfig = getNetworkConfig('calibration');
+const transports: Record<(typeof SUPPORTED_WAGMI_CHAINS)[number]['id'], ReturnType<typeof http>> = {
+  314: http(mainnetConfig.fevmRpcUrl),
+  314159: http(calibrationConfig.fevmRpcUrl),
+};
+
 export const wagmiConfig = createConfig({
-  chains,
+  chains: SUPPORTED_WAGMI_CHAINS,
   connectors: connectorsForWallets(
     [
       {
@@ -23,6 +32,6 @@ export const wagmiConfig = createConfig({
     ],
     { appName: 'SendFIL', projectId }
   ),
-  transports: { [filecoin.id]: http(import.meta.env.VITE_RPC_URL) },
+  transports,
   ssr: false,
 });

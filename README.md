@@ -5,7 +5,7 @@ SendFIL is a client-only Vite SPA for batch sending FIL.
 ## Current live execution surface
 
 - Single-signer FEVM batch execution through `Multicall3.aggregate3Value(...)` plus `FilForwarder`.
-- Filecoin Mainnet wallet flow through wagmi/RainbowKit with `metaMaskWallet` and `walletConnectWallet`.
+- Filecoin Mainnet and Calibration wallet flow through wagmi/RainbowKit with `metaMaskWallet` and `walletConnectWallet`.
 - Review-step gas estimation and send execution now use the same FEVM batch builder and the same selected error mode.
 - Duplicate recipients are warnings that require explicit acknowledgment before send.
 
@@ -40,7 +40,6 @@ Payloads include:
 ## Known limitations
 
 - `ThinBatch` is still UI-visible but not live.
-- Calibration/testnet support is still partial, not end-to-end.
 - Filecoin-native signer flows are not wired into the live app path.
 - Contract-recipient blocking (`eth_getCode`) is not implemented yet.
 - Balance is checked during review, but there is not yet a second submit-time balance recheck.
@@ -50,12 +49,22 @@ Payloads include:
 Copy `.env.example` to `.env.local` and set:
 
 - `VITE_WALLETCONNECT_PROJECT_ID`
-- `VITE_RPC_URL`
-- `VITE_GLIF_RPC_URL_PRIMARY`
-- `VITE_GLIF_RPC_URL_FALLBACK`
-- `VITE_GLIF_RPC_TIMEOUT_MS`
-- `VITE_FEE_ADDR_A`
-- `VITE_FEE_ADDR_B`
+- `VITE_FEVM_RPC_URL_MAINNET`
+- `VITE_FEVM_RPC_URL_CALIBRATION`
+- `VITE_LOTUS_RPC_URL_MAINNET`
+- `VITE_LOTUS_RPC_FALLBACK_MAINNET`
+- `VITE_LOTUS_RPC_URL_CALIBRATION`
+- `VITE_LOTUS_RPC_FALLBACK_CALIBRATION`
+- `VITE_LOTUS_RPC_TIMEOUT_MS`
+- `VITE_FEE_ENABLED_MAINNET`
+- `VITE_FEE_ADDR_A_MAINNET`
+- `VITE_FEE_ADDR_B_MAINNET`
+
+Calibration defaults to fee injection disabled. If you want testnet fee rows, also set:
+
+- `VITE_FEE_ENABLED_CALIBRATION=true`
+- `VITE_FEE_ADDR_A_CALIBRATION`
+- `VITE_FEE_ADDR_B_CALIBRATION`
 
 Optional E2E-only helpers:
 
@@ -78,6 +87,14 @@ yarn test
 yarn typecheck
 yarn test:e2e tests/e2e/review-flow.spec.ts
 ```
+
+## Calibration smoke test
+
+1. Connect a wallet on Calibration (`314159`).
+2. Enter a `t1...` recipient and a `0x...` recipient.
+3. Confirm the review modal opens without a network error.
+4. Confirm the modal labels the batch as `Calibration Testnet`.
+5. Send the batch and confirm the transaction link opens on `calibration.filfox.info`.
 
 ## Design note
 

@@ -1,18 +1,30 @@
 import React from 'react';
 import { useChainId, useAccount } from 'wagmi';
-
-const FILECOIN_MAINNET_ID = 314;
+import {
+  getSupportedNetworkByChainId,
+  getSupportedNetworkListLabel,
+} from '../lib/networks';
 
 const NetworkBanner: React.FC = () => {
   const chainId = useChainId();
   const { isConnected } = useAccount();
+  const network = getSupportedNetworkByChainId(chainId);
 
   if (!isConnected || !chainId) return null;
-  if (chainId === FILECOIN_MAINNET_ID) return null;
+  if (!network) {
+    return (
+      <div className="mb-6 w-full rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-center text-sm font-semibold text-red-800">
+        Unsupported network. Switch to {getSupportedNetworkListLabel()} to review and send this
+        batch.
+      </div>
+    );
+  }
+
+  if (!network.isTestnet) return null;
 
   return (
-    <div className="w-full bg-red-100 text-red-800 px-4 py-2 text-center font-semibold">
-      Unsupported network: {chainId}. Please switch to Filecoin Mainnet.
+    <div className="mb-6 w-full rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-center text-sm font-medium text-blue-900">
+      Connected to Calibration Testnet. Review and send will use test FIL on chain {network.chainId}.
     </div>
   );
 };

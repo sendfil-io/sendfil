@@ -56,6 +56,25 @@ describe('validateRecipientRows', () => {
     ]);
   });
 
+  it('accepts Calibration-native recipients in the testnet flow', () => {
+    const result = validateRecipientRows(
+      [
+        {
+          address: 't1abjxfbp274xpdqcpuaykwkfb43omjotacm2p3za',
+          amount: '1',
+        },
+        {
+          address: toF4('0xe764Acf02D8B7c21d2B6A8f0a96C78541e0DC3fd', 't'),
+          amount: '2',
+        },
+      ],
+      { source: 'manual', expectedNetworkPrefix: 't' },
+    );
+
+    expect(result.errors).toEqual([]);
+    expect(result.validRecipients).toHaveLength(2);
+  });
+
   it('warns when duplicate recipients resolve to the same EVM destination', () => {
     const result = validateRecipientRows(
       [
@@ -75,6 +94,47 @@ describe('validateRecipientRows', () => {
     expect(result.warnings).toEqual([
       'Recipient 2: Duplicate recipient matches Recipient 1',
     ]);
+  });
+
+  it('warns when a Calibration t4 address matches the same 0x destination', () => {
+    const result = validateRecipientRows(
+      [
+        {
+          address: '0xe764Acf02D8B7c21d2B6A8f0a96C78541e0DC3fd',
+          amount: '1',
+        },
+        {
+          address: toF4('0xe764Acf02D8B7c21d2B6A8f0a96C78541e0DC3fd', 't'),
+          amount: '2',
+        },
+      ],
+      { source: 'manual', expectedNetworkPrefix: 't' },
+    );
+
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toEqual([
+      'Recipient 2: Duplicate recipient matches Recipient 1',
+    ]);
+  });
+
+  it('blocks mixed mainnet and Calibration native prefixes while disconnected', () => {
+    const result = validateRecipientRows(
+      [
+        {
+          address: 'f1abjxfbp274xpdqcpuaykwkfb43omjotacm2p3za',
+          amount: '1',
+        },
+        {
+          address: 't1abjxfbp274xpdqcpuaykwkfb43omjotacm2p3za',
+          amount: '2',
+        },
+      ],
+      { source: 'manual' },
+    );
+
+    expect(result.errors).toContain(
+      'Batch mixes mainnet (f...) and Calibration (t...) native addresses. Keep all native recipients on one network before review.',
+    );
   });
 
   it('rejects malformed amounts and values over 18 decimals', () => {

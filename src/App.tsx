@@ -2,6 +2,7 @@ import * as React from 'react';
 import './App.css';
 import { CustomConnectButton } from './components/CustomConnectButton';
 import CSVUpload, { CSVRecipient, CSVUploadResult } from './components/CSVUpload';
+import NetworkBanner from './components/NetworkBanner';
 import ReviewTransactionModal, {
   TransactionState,
   GasEstimate,
@@ -9,7 +10,7 @@ import ReviewTransactionModal, {
 import UnavailableCapabilityModal from './components/UnavailableCapabilityModal';
 import { useAccount, useBalance, useChainId } from 'wagmi';
 import { formatUnits } from 'viem';
-import { calculateFeeRows } from './utils/fee';
+import { calculateFeeRows, getFeeLabel } from './utils/fee';
 import { validateRecipientRows } from './utils/recipientValidation';
 import {
   DEFAULT_BATCH_CONFIGURATION,
@@ -27,6 +28,11 @@ import {
 import { BatchExecutionError } from './lib/transaction/errorHandling';
 import { createMockBatchExecutionAdapter } from './lib/transaction/mockAdapter';
 import { useExecuteBatch } from './lib/transaction/useExecuteBatch';
+import {
+  getNetworkConfig,
+  getSupportedNetworkByChainId,
+  getSupportedNetworkListLabel,
+} from './lib/networks';
 
 interface Recipient {
   address: string;
@@ -53,13 +59,14 @@ interface UnavailableCapabilityNotice {
 
 type InputMode = 'manual' | 'csv';
 
-const FILECOIN_MAINNET_ID = 314;
-const MAINNET_ADDRESS_PREFIX = 'f' as const;
 const E2E_MOCK_WALLET_ENABLED = import.meta.env.VITE_E2E_MOCK_WALLET === 'true';
 const E2E_SKIP_GAS_ESTIMATION = import.meta.env.VITE_E2E_SKIP_GAS_ESTIMATION === 'true';
 const E2E_MOCK_SEND_DELAY_MS = Number(import.meta.env.VITE_E2E_SEND_DELAY_MS ?? '3000');
 const E2E_MOCK_ACCOUNT = '0x1234567890AbcdEF1234567890aBcdef12345678' as const;
 const E2E_MOCK_BALANCE_FIL = 1000;
+const E2E_MOCK_CHAIN_ID =
+  getSupportedNetworkByChainId(Number(import.meta.env.VITE_E2E_CHAIN_ID ?? '314'))?.chainId ??
+  getNetworkConfig('mainnet').chainId;
 
 function createEmptyRecipients(count = 3): Recipient[] {
   return Array.from({ length: count }, () => ({ address: '', amount: '' }));
@@ -264,11 +271,20 @@ function ConfigurationChoiceGroup({
 export default function App() {
   const account = useAccount();
   const walletChainId = useChainId();
-  const { data: balanceData } = useBalance({ address: account.address });
-
   const isConnected = E2E_MOCK_WALLET_ENABLED ? true : account.isConnected;
   const address = E2E_MOCK_WALLET_ENABLED ? E2E_MOCK_ACCOUNT : account.address;
-  const chainId = E2E_MOCK_WALLET_ENABLED ? FILECOIN_MAINNET_ID : walletChainId;
+  const chainId = E2E_MOCK_WALLET_ENABLED ? E2E_MOCK_CHAIN_ID : walletChainId;
+  const detectedNetwork = getSupportedNetworkByChainId(chainId);
+  const connectedNetwork = isConnected ? detectedNetwork : undefined;
+  const hasSupportedConnectedNetwork = isConnected && Boolean(connectedNetwork);
+  const isUnsupportedConnectedNetwork = isConnected && !detectedNetwork;
+  const expectedNetworkPrefix = connectedNetwork?.nativePrefix;
+  const feeLabel = getFeeLabel(connectedNetwork?.chainId);
+  const { data: balanceData } = useBalance({
+    address: account.address,
+    chainId: connectedNetwork?.chainId,
+    query: { enabled: Boolean(account.address && hasSupportedConnectedNetwork) },
+  });
 
   const [inputMode, setInputMode] = React.useState<InputMode>('manual');
   const [manualRecipients, setManualRecipients] = React.useState<Recipient[]>(() =>
@@ -412,10 +428,10 @@ export default function App() {
     () =>
       validateRecipientRows(manualRecipients, {
         source: 'manual',
-        expectedNetworkPrefix: MAINNET_ADDRESS_PREFIX,
+        expectedNetworkPrefix,
         requireAtLeastOneRecipient: false,
       }),
-    [manualRecipients],
+    [expectedNetworkPrefix, manualRecipients],
   );
 
   const csvRecipients = React.useMemo(
@@ -433,10 +449,12 @@ export default function App() {
       ? manualValidation.nonEmptyRowCount > 0
       : csvData.length > 0 || csvErrors.length > 0 || csvWarnings.length > 0;
 
-  const isNetworkMismatch = isConnected && chainId !== FILECOIN_MAINNET_ID;
+  const isNetworkMismatch = isUnsupportedConnectedNetwork;
   const networkValidationErrors =
     isNetworkMismatch && hasEnteredData
-      ? ['Switch to Filecoin Mainnet (chain 314) to review and send this batch.']
+      ? [
+          `Switch to ${getSupportedNetworkListLabel()} to review and send this batch.`,
+        ]
       : [];
 
   const manualDisplayErrors = React.useMemo(
@@ -480,8 +498,16 @@ export default function App() {
       };
     }
 
+    if (!connectedNetwork) {
+      return {
+        recipients: validRecipients,
+        feeTotal: 0,
+        error: undefined as string | undefined,
+      };
+    }
+
     try {
-      const recipientsWithFees = calculateFeeRows(validRecipients);
+      const recipientsWithFees = calculateFeeRows(validRecipients, connectedNetwork);
 
       return {
         recipients: recipientsWithFees,
@@ -500,7 +526,7 @@ export default function App() {
             : 'Failed to calculate the platform fee rows for this batch.',
       };
     }
-  }, [validRecipients]);
+  }, [connectedNetwork, validRecipients]);
   const activeValidationErrors =
     inputMode === 'manual'
       ? [
@@ -559,11 +585,11 @@ export default function App() {
 
   const reviewHint = React.useMemo(() => {
     if (!isConnected) {
-      return 'Connect a wallet to review and send.';
+      return 'Connect a wallet to confirm the target network before review and send.';
     }
 
     if (isNetworkMismatch) {
-      return 'Switch to Filecoin Mainnet before continuing.';
+      return `Switch to ${getSupportedNetworkListLabel()} before continuing.`;
     }
 
     if (!hasReviewableRows) {
@@ -809,6 +835,8 @@ f1cj...,3.3`;
               </p>
             </header>
 
+            <NetworkBanner />
+
             <div className="mb-6 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div className="inline-flex rounded-2xl border border-slate-200 bg-white p-1 shadow-sm">
                 <button
@@ -1008,13 +1036,19 @@ f1cj...,3.3`;
 
                       return (
                         <div key={rowNumber}>
-                          <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px_48px]">
-                            <div>
+                          <div className="grid grid-cols-[minmax(0,1fr)_48px] gap-3 md:grid-cols-[minmax(0,1fr)_180px_48px]">
+                            <div className="col-span-2 md:col-span-1">
                               <label className="mb-1 block text-xs font-medium text-slate-500 md:hidden">
                                 Receiver
                               </label>
                               <input
-                                placeholder="f1..., f4..., or 0x..."
+                                placeholder={
+                                  expectedNetworkPrefix === 't'
+                                    ? 't1..., t4..., or 0x...'
+                                    : expectedNetworkPrefix === 'f'
+                                      ? 'f1..., f4..., or 0x...'
+                                      : 'f1..., t1..., f4..., t4..., or 0x...'
+                                }
                                 value={recipient.address}
                                 onChange={(event) =>
                                   updateRecipient(index, 'address', event.target.value)
@@ -1051,7 +1085,7 @@ f1cj...,3.3`;
                               />
                             </div>
 
-                            <div className="flex items-center justify-end md:justify-center">
+                            <div className="flex items-end justify-end md:justify-center">
                               {manualRecipients.length > 1 ? (
                                 <button
                                   type="button"
@@ -1119,7 +1153,7 @@ f1cj...,3.3`;
                     <CSVUpload
                       onUpload={handleCSVUpload}
                       disabled={false}
-                      expectedNetworkPrefix={MAINNET_ADDRESS_PREFIX}
+                      expectedNetworkPrefix={expectedNetworkPrefix}
                     />
                   ) : (
                     <div>
@@ -1235,6 +1269,9 @@ f1cj...,3.3`;
         transactionHash={transactionHash}
         transactionError={transactionError}
         batchConfiguration={batchConfiguration}
+        chainId={chainId}
+        networkLabel={connectedNetwork?.walletLabel ?? 'Unsupported network'}
+        feeLabel={feeLabel}
       />
 
       <UnavailableCapabilityModal

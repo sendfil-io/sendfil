@@ -1,17 +1,53 @@
 import pRetry from 'p-retry';
 import pTimeout from 'p-timeout';
 import { JsonRpcSuccess, JsonRpcError, RpcSuccess } from './types';
+import {
+  getDefaultNetworkKey,
+  resolveLotusRpcConfig,
+  type SendFilNetworkKey,
+} from '../networks';
 
 let requestId = 1;
 
-function getRpcConfig() {
-  const primary = import.meta.env.VITE_GLIF_RPC_URL_PRIMARY as string | undefined;
-  const fallback =
-    (import.meta.env.VITE_GLIF_RPC_URL_FALLBACK as string | undefined) || primary;
-  const timeout = Number(import.meta.env.VITE_GLIF_RPC_TIMEOUT_MS) || 10_000;
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function getRetryAttemptNumber(context: unknown): number | undefined {
+  if (!isRecord(context) || typeof context.attemptNumber !== 'number') {
+    return undefined;
+  }
+
+  return context.attemptNumber;
+}
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  if (isRecord(error) && typeof error.message === 'string') {
+    return error.message;
+  }
+
+  return String(error);
+}
+
+function getRetryErrorMessage(context: unknown): string {
+  if (isRecord(context) && 'error' in context) {
+    return getErrorMessage(context.error);
+  }
+
+  return getErrorMessage(context);
+}
+
+export function getRpcConfig(
+  networkKey: SendFilNetworkKey = getDefaultNetworkKey(),
+) {
+  const { primary, fallback, timeout } = resolveLotusRpcConfig(networkKey);
 
   if (!primary) {
-    throw new Error('Missing VITE_GLIF_RPC_URL_PRIMARY');
+    throw new Error(`Missing Lotus RPC configuration for ${networkKey}`);
   }
 
   return { primary, fallback, timeout };
@@ -20,8 +56,9 @@ function getRpcConfig() {
 export async function callRpc<T = unknown>(
   method: string,
   params: unknown[] = [],
+  networkKey: SendFilNetworkKey = getDefaultNetworkKey(),
 ): Promise<T> {
-  const { primary, fallback, timeout } = getRpcConfig();
+  const { primary, fallback, timeout } = getRpcConfig(networkKey);
 
   return pRetry(
     async (attempt) => {
@@ -49,9 +86,9 @@ export async function callRpc<T = unknown>(
     },
     {
       retries: 1, // only one fail-over attempt
-      onFailedAttempt: (err) => {
+      onFailedAttempt: (context: unknown) => {
         console.warn(
-          `[DataProvider] RPC attempt ${err.attemptNumber} failed: ${err.message}`,
+          `[DataProvider] RPC attempt ${getRetryAttemptNumber(context) ?? 'unknown'} failed: ${getRetryErrorMessage(context)}`,
         );
       },
     },
