@@ -10,10 +10,6 @@ import UnavailableCapabilityModal from './components/UnavailableCapabilityModal'
 import { useAccount, useBalance, useChainId } from 'wagmi';
 import { formatUnits } from 'viem';
 import { calculateFeeRows } from './utils/fee';
-import { buildBatchTransaction, attoFilToFil } from './lib/transaction/messageBuilder';
-import { getNonce } from './lib/DataProvider';
-import { createMockBatchExecutionAdapter } from './lib/transaction/mockAdapter';
-import { useExecuteBatch } from './lib/transaction/useExecuteBatch';
 import { validateRecipientRows } from './utils/recipientValidation';
 import {
   DEFAULT_BATCH_CONFIGURATION,
@@ -24,6 +20,13 @@ import {
   type ExecutionMethod,
   type SenderWalletType,
 } from './lib/batchConfiguration';
+import {
+  attoFilBigIntToFil,
+  type BatchGasEstimate,
+} from './lib/transaction/batchExecution';
+import { BatchExecutionError } from './lib/transaction/errorHandling';
+import { createMockBatchExecutionAdapter } from './lib/transaction/mockAdapter';
+import { useExecuteBatch } from './lib/transaction/useExecuteBatch';
 
 interface Recipient {
   address: string;
@@ -139,6 +142,28 @@ function getManualDraftHint(
   }
 
   return null;
+}
+
+function createFallbackReviewGasEstimate(recipientCount: number): GasEstimate {
+  const gasLimit = 21_000n * BigInt(recipientCount + 1);
+  const gasPrice = 1_000_000_000n;
+  const bufferedGasLimit = (gasLimit * 110n) / 100n;
+
+  return {
+    gasLimit: Number(bufferedGasLimit),
+    gasFeeCap: gasPrice.toString(),
+    gasPremium: gasPrice.toString(),
+    estimatedFeeInFil: attoFilBigIntToFil(bufferedGasLimit * gasPrice),
+  };
+}
+
+function toReviewGasEstimate(estimate: BatchGasEstimate): GasEstimate {
+  return {
+    gasLimit: Number(estimate.gasLimit),
+    gasFeeCap: estimate.gasFeeCap.toString(),
+    gasPremium: estimate.gasPremium.toString(),
+    estimatedFeeInFil: attoFilBigIntToFil(estimate.estimatedFee),
+  };
 }
 
 function SummaryPanel({
@@ -257,12 +282,10 @@ export default function App() {
   const [csvWarnings, setCsvWarnings] = React.useState<string[]>([]);
 
   const [isReviewModalOpen, setIsReviewModalOpen] = React.useState(false);
-  const [transactionState, setTransactionState] = React.useState<TransactionState>('review');
   const [gasEstimate, setGasEstimate] = React.useState<GasEstimate | undefined>(undefined);
   const [isEstimatingGas, setIsEstimatingGas] = React.useState(false);
-  const [gasEstimationError, setGasEstimationError] = React.useState<string | undefined>(undefined);
-  const [transactionHash, setTransactionHash] = React.useState<string | undefined>(undefined);
-  const [transactionError, setTransactionError] = React.useState<string | undefined>(undefined);
+  const [gasEstimationError, setGasEstimationError] =
+    React.useState<BatchExecutionError | undefined>(undefined);
   const [batchConfiguration, setBatchConfiguration] = React.useState<BatchConfiguration>(
     DEFAULT_BATCH_CONFIGURATION,
   );
@@ -279,43 +302,15 @@ export default function App() {
     [],
   );
   const {
+    estimateBatch,
     executeBatch,
     state: executionState,
-    txHash: executionTxHash,
-    error: executionError,
+    txHash: transactionHash,
+    error: transactionError,
     reset: resetExecution,
   } = useExecuteBatch({
     adapter: batchExecutionAdapter,
   });
-
-  React.useEffect(() => {
-    if (executionTxHash) {
-      setTransactionHash(executionTxHash);
-    }
-
-    if (executionError) {
-      setTransactionError(executionError);
-    }
-
-    switch (executionState) {
-      case 'building':
-      case 'signing':
-        setTransactionState('signing');
-        break;
-      case 'pending':
-        setTransactionState('pending');
-        break;
-      case 'confirmed':
-        setTransactionState('confirmed');
-        break;
-      case 'failed':
-        setTransactionState('failed');
-        break;
-      case 'idle':
-      default:
-        break;
-    }
-  }, [executionError, executionState, executionTxHash]);
 
   const handleCSVUpload = (result: CSVUploadResult) => {
     setCsvData(result.recipients);
@@ -475,6 +470,7 @@ export default function App() {
       ),
     [csvRecipients, inputMode, manualValidation.validRecipients],
   );
+  const selectedErrorMode: ErrorHandlingPreference = 'PARTIAL';
   const feeComputation = React.useMemo(() => {
     if (validRecipients.length === 0) {
       return {
@@ -505,7 +501,6 @@ export default function App() {
       };
     }
   }, [validRecipients]);
-  const executionErrorMode: ErrorHandlingPreference = 'PARTIAL';
   const activeValidationErrors =
     inputMode === 'manual'
       ? [
@@ -555,6 +550,12 @@ export default function App() {
   );
 
   const reviewDisabled = !isConnected || isNetworkMismatch || !hasReviewableRows;
+  const transactionState: TransactionState =
+    executionState === 'idle'
+      ? 'review'
+      : executionState === 'building'
+        ? 'signing'
+        : executionState;
 
   const reviewHint = React.useMemo(() => {
     if (!isConnected) {
@@ -622,14 +623,12 @@ export default function App() {
     }
 
     resetExecution();
-    setTransactionState('review');
     setGasEstimate(undefined);
     setGasEstimationError(undefined);
-    setTransactionHash(undefined);
-    setTransactionError(undefined);
     setIsReviewModalOpen(true);
 
-    if (E2E_MOCK_WALLET_ENABLED || E2E_SKIP_GAS_ESTIMATION) {
+    if (E2E_SKIP_GAS_ESTIMATION && !batchExecutionAdapter) {
+      setGasEstimate(createFallbackReviewGasEstimate(feeComputation.recipients.length));
       return;
     }
 
@@ -637,22 +636,26 @@ export default function App() {
       setIsEstimatingGas(true);
 
       try {
-        const batchResult = await buildBatchTransaction({
-          recipients: feeComputation.recipients,
-          senderAddress: address,
-          startingNonce: await getNonce(address),
-        });
-
-        setGasEstimate({
-          gasLimit: batchResult.estimatedGas.GasLimit,
-          gasFeeCap: batchResult.estimatedGas.GasFeeCap,
-          gasPremium: batchResult.estimatedGas.GasPremium,
-          estimatedFeeInFil: attoFilToFil(batchResult.feeEstimate),
-        });
+        const estimate = await estimateBatch(
+          feeComputation.recipients,
+          selectedErrorMode,
+        );
+        setGasEstimate(toReviewGasEstimate(estimate));
       } catch (error) {
-        console.error('Gas estimation failed:', error);
         setGasEstimationError(
-          error instanceof Error ? error.message : 'Failed to estimate gas',
+          error instanceof BatchExecutionError
+            ? error
+            : new BatchExecutionError({
+                category: 'UNKNOWN',
+                title: 'Batch preflight failed',
+                message: 'SendFIL could not estimate this batch with the current inputs.',
+                errorMode: selectedErrorMode,
+                stage: 'preflight',
+                recoverable: true,
+                hint: 'Review the batch inputs and retry the estimate.',
+                details: error instanceof Error ? error.message : 'Unknown error',
+                cause: error,
+              }),
         );
       } finally {
         setIsEstimatingGas(false);
@@ -673,18 +676,10 @@ export default function App() {
   };
 
   const handleConfirmTransaction = async () => {
-    resetExecution();
-    setTransactionState('signing');
-    setTransactionHash(undefined);
-    setTransactionError(undefined);
-
     try {
-      const hash = await executeBatch(feeComputation.recipients, executionErrorMode);
-      setTransactionHash(hash);
-    } catch (error) {
-      console.error('Transaction failed:', error);
-      setTransactionError(error instanceof Error ? error.message : 'Transaction failed');
-      setTransactionState('failed');
+      await executeBatch(feeComputation.recipients, selectedErrorMode);
+    } catch {
+      // useExecuteBatch stores the failure state used by the modal
     }
   };
 
@@ -1013,8 +1008,8 @@ f1cj...,3.3`;
 
                       return (
                         <div key={rowNumber}>
-                          <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px_48px]">
-                            <div>
+                          <div className="grid grid-cols-[minmax(0,1fr)_48px] gap-3 md:grid-cols-[minmax(0,1fr)_180px_48px]">
+                            <div className="col-span-2 md:col-span-1">
                               <label className="mb-1 block text-xs font-medium text-slate-500 md:hidden">
                                 Receiver
                               </label>
@@ -1056,7 +1051,7 @@ f1cj...,3.3`;
                               />
                             </div>
 
-                            <div className="flex items-center justify-end md:justify-center">
+                            <div className="flex items-end justify-end md:justify-center">
                               {manualRecipients.length > 1 ? (
                                 <button
                                   type="button"

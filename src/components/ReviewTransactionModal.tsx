@@ -10,6 +10,10 @@ import {
   getSenderWalletTypeLabel,
   type BatchConfiguration,
 } from '../lib/batchConfiguration';
+import {
+  ERROR_MODE_COPY,
+  type BatchExecutionError,
+} from '../lib/transaction/errorHandling';
 
 export type TransactionState = 'review' | 'signing' | 'pending' | 'confirmed' | 'failed';
 
@@ -37,7 +41,7 @@ export interface ReviewTransactionModalProps {
   // Gas estimation
   gasEstimate?: GasEstimate;
   isEstimatingGas: boolean;
-  gasEstimationError?: string;
+  gasEstimationError?: BatchExecutionError;
 
   // Wallet state
   walletBalance: number; // in FIL
@@ -46,7 +50,7 @@ export interface ReviewTransactionModalProps {
   // Transaction state
   transactionState: TransactionState;
   transactionHash?: string;
-  transactionError?: string;
+  transactionError?: BatchExecutionError;
   batchConfiguration: BatchConfiguration;
 }
 
@@ -120,12 +124,17 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
   );
   const duplicateWarningsSignature = duplicateRecipientWarnings.join('|');
   const requiresDuplicateConfirmation = duplicateRecipientWarnings.length > 0;
+  const errorModeCopy = ERROR_MODE_COPY[batchConfiguration.errorHandling];
+  const isAtomicMode = batchConfiguration.errorHandling === 'ATOMIC';
+  const hasBlockingAtomicPreflightError =
+    isAtomicMode && Boolean(gasEstimationError);
 
   // Send button should be disabled when:
   const isSendDisabled =
     validationErrors.length > 0 ||
     (requiresDuplicateConfirmation && !hasAcknowledgedDuplicateRecipients) ||
     insufficientBalance ||
+    hasBlockingAtomicPreflightError ||
     isEstimatingGas ||
     transactionState !== 'review';
 
@@ -240,6 +249,45 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
         </div>
       )}
 
+      {gasEstimationError && (
+        <div
+          className={`mb-4 rounded-md border p-4 ${
+            hasBlockingAtomicPreflightError
+              ? 'border-red-200 bg-red-50'
+              : 'border-amber-200 bg-amber-50'
+          }`}
+          data-testid={
+            hasBlockingAtomicPreflightError
+              ? 'atomic-preflight-error'
+              : 'gas-estimation-error'
+          }
+        >
+          <h4
+            className={`font-semibold ${
+              hasBlockingAtomicPreflightError ? 'text-red-800' : 'text-amber-900'
+            }`}
+          >
+            {gasEstimationError.title}
+          </h4>
+          <p
+            className={`mt-1 text-sm ${
+              hasBlockingAtomicPreflightError ? 'text-red-700' : 'text-amber-800'
+            }`}
+          >
+            {gasEstimationError.message}
+          </p>
+          {gasEstimationError.hint && (
+            <p
+              className={`mt-2 text-sm ${
+                hasBlockingAtomicPreflightError ? 'text-red-700' : 'text-amber-800'
+              }`}
+            >
+              {gasEstimationError.hint}
+            </p>
+          )}
+        </div>
+      )}
+
       {/* Summary Section */}
       <div className="space-y-3 mb-4">
         <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
@@ -272,6 +320,23 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
               </p>
             </div>
           </div>
+        </div>
+
+        <div
+          className={`rounded-xl border px-4 py-3 ${
+            isAtomicMode
+              ? 'border-blue-200 bg-blue-50'
+              : 'border-slate-200 bg-slate-50'
+          }`}
+          data-testid="error-mode-summary"
+        >
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+            Execution semantics
+          </p>
+          <p className="mt-2 text-sm font-semibold text-slate-900">
+            {errorModeCopy.reviewSummary}
+          </p>
+          <p className="mt-1 text-sm text-slate-600">{errorModeCopy.reviewDetail}</p>
         </div>
 
         <div className="flex justify-between items-center">
@@ -410,7 +475,12 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
     <div className="flex flex-col items-center py-8">
       <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-500 mb-4" />
       <h3 className="text-lg font-semibold mb-2">Transaction Pending</h3>
-      <p className="text-gray-600 text-center mb-4">Your batch is being processed...</p>
+      <p className="text-gray-600 text-center mb-2">Your batch is being processed...</p>
+      <p className="text-sm text-gray-500 text-center mb-4">
+        {isAtomicMode
+          ? 'Atomic mode will only finalize if every internal transfer succeeds.'
+          : 'Partial mode may still finalize successful transfers even if one call fails.'}
+      </p>
       {transactionHash && (
         <a
           href={getFilfoxUrl(transactionHash)}
@@ -431,7 +501,11 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
       </div>
       <h3 className="text-lg font-semibold text-green-800 mb-2">Transaction Confirmed</h3>
       <p className="text-gray-600 text-center mb-4">
-        Successfully sent {formatFil(recipientTotal)} to {recipients.length} recipients
+        {isAtomicMode
+          ? `Successfully finalized ${formatFil(
+              recipientTotal,
+            )} to ${recipients.length} recipients in one atomic batch.`
+          : `Successfully sent ${formatFil(recipientTotal)} to ${recipients.length} recipients.`}
       </p>
       {transactionHash && (
         <a
@@ -453,8 +527,12 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
       </div>
       <h3 className="text-lg font-semibold text-red-800 mb-2">Transaction Failed</h3>
       <p className="text-gray-600 text-center mb-4">
-        {transactionError || 'An error occurred while processing your transaction.'}
+        {transactionError?.message || 'An error occurred while processing your transaction.'}
       </p>
+      <p className="text-sm text-gray-500 text-center mb-2">{errorModeCopy.failureSummary}</p>
+      {transactionError?.hint && (
+        <p className="text-sm text-gray-500 text-center">{transactionError.hint}</p>
+      )}
     </div>
   );
 

@@ -4,6 +4,7 @@ import { JSDOM } from 'jsdom';
 import { createRoot, type Root } from 'react-dom/client';
 import { getAddress } from 'viem';
 import App from '../App';
+import { BatchExecutionError } from '../lib/transaction/errorHandling';
 import type { RecipientValidationResult } from '../utils/recipientValidation';
 
 type MockBatchExecutionState =
@@ -17,7 +18,7 @@ type MockBatchExecutionState =
 interface MockExecutionSnapshot {
   state: MockBatchExecutionState;
   txHash?: `0x${string}`;
-  error?: string;
+  error?: BatchExecutionError;
 }
 
 const FEE_A = '0x1111111111111111111111111111111111111111';
@@ -41,6 +42,7 @@ let mockValidationResult: RecipientValidationResult = {
   nonEmptyRowCount: 1,
 };
 const executeBatchMock = vi.fn();
+const estimateBatchMock = vi.fn();
 
 function setMockExecutionSnapshot(next: MockExecutionSnapshot) {
   mockExecutionSnapshot = next;
@@ -105,7 +107,7 @@ vi.mock('../lib/transaction/useExecuteBatch', async () => {
 
       return {
         executeBatch: executeBatchMock,
-        estimateGas: vi.fn(),
+        estimateBatch: estimateBatchMock,
         state: mockExecutionSnapshot.state,
         txHash: mockExecutionSnapshot.txHash,
         error: mockExecutionSnapshot.error,
@@ -180,6 +182,13 @@ describe('App confirm flow', () => {
     };
     listeners.clear();
     executeBatchMock.mockReset();
+    estimateBatchMock.mockReset();
+    estimateBatchMock.mockResolvedValue({
+      gasLimit: 23_100n,
+      gasFeeCap: 1_000_000_000n,
+      gasPremium: 1_000_000_000n,
+      estimatedFee: 23_100n * 1_000_000_000n,
+    });
 
     dom = new JSDOM('<!doctype html><html><body></body></html>', {
       url: 'http://localhost',
@@ -280,13 +289,22 @@ describe('App confirm flow', () => {
   });
 
   it('shows failure details and retries through executeBatch again', async () => {
+    const userRejectedError = new BatchExecutionError({
+      category: 'USER_REJECTED',
+      title: 'Transaction rejected',
+      message: 'Transaction rejected by user',
+      errorMode: 'PARTIAL',
+      stage: 'execution',
+      recoverable: true,
+    });
+
     executeBatchMock
       .mockImplementationOnce(async () => {
         setMockExecutionSnapshot({
           state: 'failed',
-          error: 'Transaction rejected by user',
+          error: userRejectedError,
         });
-        throw new Error('Transaction rejected by user');
+        throw userRejectedError;
       })
       .mockImplementationOnce(async () => {
         setMockExecutionSnapshot({

@@ -6,6 +6,7 @@ import ReviewTransactionModal, {
   type ReviewTransactionModalProps,
 } from '../ReviewTransactionModal';
 import { DEFAULT_BATCH_CONFIGURATION } from '../../lib/batchConfiguration';
+import { BatchExecutionError } from '../../lib/transaction/errorHandling';
 
 vi.mock('wagmi', () => ({
   useChainId: () => 314,
@@ -176,5 +177,75 @@ describe('ReviewTransactionModal', () => {
 
     expect(reopenedCheckbox.checked).toBe(false);
     expect(getButton(container, 'Send').disabled).toBe(true);
+  });
+
+  it('renders atomic execution semantics in review mode', () => {
+    const props = getBaseProps();
+    props.batchConfiguration = {
+      ...DEFAULT_BATCH_CONFIGURATION,
+      errorHandling: 'ATOMIC',
+    };
+
+    act(() => {
+      root.render(<ReviewTransactionModal {...props} />);
+    });
+
+    expect(container.textContent).toContain('Execution semantics');
+    expect(container.textContent).toContain('Any failing transfer reverts the whole batch.');
+  });
+
+  it('blocks send when atomic preflight fails', () => {
+    const props = getBaseProps();
+    props.batchConfiguration = {
+      ...DEFAULT_BATCH_CONFIGURATION,
+      errorHandling: 'ATOMIC',
+    };
+    props.gasEstimationError = new BatchExecutionError({
+      category: 'SIMULATION_REVERT',
+      title: 'Atomic batch would revert',
+      message:
+        'At least one recipient call would fail. Because Atomic mode is all-or-nothing, the whole batch is blocked before submission.',
+      errorMode: 'ATOMIC',
+      stage: 'preflight',
+      recoverable: true,
+      hint:
+        'Correct the failing recipient rows and try again, or switch to Partial for best-effort delivery.',
+    });
+
+    act(() => {
+      root.render(<ReviewTransactionModal {...props} />);
+    });
+
+    expect(container.textContent).toContain('Atomic batch would revert');
+    expect(getButton(container, 'Send').disabled).toBe(true);
+  });
+
+  it('renders atomic-specific failure guidance', () => {
+    const props = getBaseProps();
+    props.batchConfiguration = {
+      ...DEFAULT_BATCH_CONFIGURATION,
+      errorHandling: 'ATOMIC',
+    };
+    props.transactionState = 'failed';
+    props.transactionError = new BatchExecutionError({
+      category: 'ONCHAIN_REVERT_ATOMIC',
+      title: 'Atomic batch reverted',
+      message:
+        'The transaction reached on-chain execution, but one internal call failed and reverted the entire batch. No transfers were finalized.',
+      errorMode: 'ATOMIC',
+      stage: 'confirmation',
+      recoverable: true,
+      hint:
+        'Correct the failing recipient rows and try again, or switch to Partial for best-effort delivery.',
+    });
+
+    act(() => {
+      root.render(<ReviewTransactionModal {...props} />);
+    });
+
+    expect(container.textContent).toContain('No transfers are finalized if any internal call fails.');
+    expect(container.textContent).not.toContain(
+      'Some transfers may already be finalized even when another call in the batch fails.',
+    );
   });
 });
