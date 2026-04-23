@@ -1,14 +1,23 @@
 import React, { useState } from 'react';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { useDisconnect } from 'wagmi';
-import { convertEthToF4, truncateAddress } from '../utils/addressConverter';
+import {
+  getSupportedNetworkByChainId,
+  getSupportedNetworkListLabel,
+} from '../lib/networks';
+import {
+  convertEthToDelegatedAddress,
+  truncateAddress,
+} from '../utils/addressConverter';
 
-const FILECOIN_MAINNET_ID = 314;
 const E2E_MOCK_WALLET_ENABLED = import.meta.env.VITE_E2E_MOCK_WALLET === 'true';
 
 export const CustomConnectButton: React.FC = () => {
   const [showAccountModal, setShowAccountModal] = useState(false);
   const { disconnect } = useDisconnect();
+  const mockNetwork =
+    getSupportedNetworkByChainId(Number(import.meta.env.VITE_E2E_CHAIN_ID ?? '314')) ??
+    getSupportedNetworkByChainId(314);
 
   const copyToClipboard = async (text: string) => {
     try {
@@ -22,7 +31,7 @@ export const CustomConnectButton: React.FC = () => {
     return (
       <div className="space-y-3">
         <div className="rounded-2xl border border-slate-900 bg-slate-900 px-4 py-3 text-sm font-medium text-white">
-          Filecoin Mainnet
+          {mockNetwork?.walletLabel ?? 'Filecoin Mainnet'}
         </div>
         <div
           className="rounded-[22px] bg-[#4a84ea] px-4 py-4 text-left font-mono text-sm text-white shadow-[0_22px_35px_-28px_rgba(74,132,234,0.95)]"
@@ -51,6 +60,12 @@ export const CustomConnectButton: React.FC = () => {
           account &&
           chain &&
           (!authenticationStatus || authenticationStatus === 'authenticated');
+        const supportedNetwork = chain ? getSupportedNetworkByChainId(chain.id) : undefined;
+        const delegatedAddress =
+          account && supportedNetwork
+            ? convertEthToDelegatedAddress(account.address, supportedNetwork.chainId)
+            : account?.address;
+        const networkLabel = supportedNetwork?.walletLabel ?? chain?.name;
 
         const renderDisconnectedState = () => (
           <button
@@ -67,9 +82,8 @@ export const CustomConnectButton: React.FC = () => {
             return null;
           }
 
-          const f4Address = convertEthToF4(account.address);
-          const displayAddress = truncateAddress(f4Address, 5);
-          const isWrongNetwork = chain.unsupported || chain.id !== FILECOIN_MAINNET_ID;
+          const displayAddress = truncateAddress(delegatedAddress ?? account.address, 5);
+          const isWrongNetwork = chain.unsupported || !supportedNetwork;
 
           return (
             <div className="space-y-3">
@@ -83,20 +97,25 @@ export const CustomConnectButton: React.FC = () => {
                 }`}
               >
                 <div className="flex items-center justify-between gap-3">
-                  <span>{isWrongNetwork ? 'Wrong Network' : chain.name}</span>
+                  <span>{isWrongNetwork ? 'Unsupported Network' : networkLabel}</span>
                   {isWrongNetwork && (
                     <span className="rounded-full border border-red-200 bg-white px-2 py-0.5 text-xs font-semibold text-red-700">
                       Switch
                     </span>
                   )}
                 </div>
+                {isWrongNetwork && (
+                  <div className="mt-1 text-xs font-normal text-red-700">
+                    Switch to {getSupportedNetworkListLabel()}.
+                  </div>
+                )}
               </button>
 
               <button
                 type="button"
                 onClick={() => setShowAccountModal(true)}
                 className="w-full rounded-[22px] bg-[#4a84ea] px-4 py-4 text-left text-white shadow-[0_22px_35px_-28px_rgba(74,132,234,0.95)] transition-colors hover:bg-[#3f77dd]"
-                title={f4Address}
+                title={delegatedAddress}
               >
                 <div className="font-mono text-base font-semibold">{displayAddress}</div>
                 <div className="mt-1 text-sm text-blue-100">{account.displayBalance || '0 FIL'}</div>
@@ -137,8 +156,9 @@ export const CustomConnectButton: React.FC = () => {
                     </div>
 
                     <h3 className="font-mono text-base font-semibold text-slate-950">
-                      {convertEthToF4(account.address)}
+                      {delegatedAddress ?? account.address}
                     </h3>
+                    <p className="mt-2 text-sm text-slate-500">{networkLabel}</p>
                     <p className="mt-2 text-sm text-slate-500">
                       {account.displayBalance || '0 FIL'}
                     </p>
@@ -147,7 +167,7 @@ export const CustomConnectButton: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => {
-                          copyToClipboard(convertEthToF4(account.address));
+                          copyToClipboard(delegatedAddress ?? account.address);
                           setShowAccountModal(false);
                         }}
                         className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:bg-slate-100"

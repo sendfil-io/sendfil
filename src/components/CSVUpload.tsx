@@ -23,7 +23,7 @@ interface CSVUploadProps {
 export const CSVUpload: React.FC<CSVUploadProps> = ({
   onUpload,
   disabled = false,
-  expectedNetworkPrefix = 'f',
+  expectedNetworkPrefix,
 }) => {
   const [isDragOver, setIsDragOver] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -222,6 +222,15 @@ export const CSVUpload: React.FC<CSVUploadProps> = ({
               Drag and drop your CSV file here, or click to browse
             </p>
             <p className="text-sm text-slate-500">Expected format: receiverAddress, value</p>
+            {expectedNetworkPrefix ? (
+              <p className="mt-2 text-xs text-slate-400">
+                Current network expects native addresses that start with {expectedNetworkPrefix}...
+              </p>
+            ) : (
+              <p className="mt-2 text-xs text-slate-400">
+                Connect a wallet to lock the batch to mainnet or Calibration before review.
+              </p>
+            )}
           </div>
         )}
       </div>

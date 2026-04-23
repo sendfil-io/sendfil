@@ -1,6 +1,11 @@
 import pRetry from 'p-retry';
 import pTimeout from 'p-timeout';
 import { JsonRpcSuccess, JsonRpcError, RpcSuccess } from './types';
+import {
+  getDefaultNetworkKey,
+  resolveLotusRpcConfig,
+  type SendFilNetworkKey,
+} from '../networks';
 
 let requestId = 1;
 
@@ -36,14 +41,13 @@ function getRetryErrorMessage(context: unknown): string {
   return getErrorMessage(context);
 }
 
-function getRpcConfig() {
-  const primary = import.meta.env.VITE_GLIF_RPC_URL_PRIMARY as string | undefined;
-  const fallback =
-    (import.meta.env.VITE_GLIF_RPC_URL_FALLBACK as string | undefined) || primary;
-  const timeout = Number(import.meta.env.VITE_GLIF_RPC_TIMEOUT_MS) || 10_000;
+export function getRpcConfig(
+  networkKey: SendFilNetworkKey = getDefaultNetworkKey(),
+) {
+  const { primary, fallback, timeout } = resolveLotusRpcConfig(networkKey);
 
   if (!primary) {
-    throw new Error('Missing VITE_GLIF_RPC_URL_PRIMARY');
+    throw new Error(`Missing Lotus RPC configuration for ${networkKey}`);
   }
 
   return { primary, fallback, timeout };
@@ -52,8 +56,9 @@ function getRpcConfig() {
 export async function callRpc<T = unknown>(
   method: string,
   params: unknown[] = [],
+  networkKey: SendFilNetworkKey = getDefaultNetworkKey(),
 ): Promise<T> {
-  const { primary, fallback, timeout } = getRpcConfig();
+  const { primary, fallback, timeout } = getRpcConfig(networkKey);
 
   return pRetry(
     async (attempt) => {

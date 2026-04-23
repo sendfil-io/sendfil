@@ -1,5 +1,6 @@
 import type { BatchExecutionErrorCategory } from './errorHandling';
 import type { ErrorMode } from './multicall';
+import type { SendFilNetworkKey, SupportedChainId } from '../networks';
 
 export type BatchTelemetryEventName =
   | 'batch_preflight_succeeded'
@@ -14,6 +15,8 @@ export interface BatchTelemetryEvent {
   errorMode: ErrorMode;
   recipientCount: number;
   totalValueAttoFil: string;
+  networkKey?: SendFilNetworkKey;
+  chainId?: SupportedChainId;
   simulationResult?: 'passed' | 'failed' | 'skipped';
   gasLimit?: string;
   estimatedFeeAttoFil?: string;
