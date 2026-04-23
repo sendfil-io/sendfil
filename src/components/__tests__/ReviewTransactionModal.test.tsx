@@ -93,7 +93,7 @@ describe('ReviewTransactionModal', () => {
     dom.window.close();
   });
 
-  it('requires duplicate acknowledgment before enabling send', () => {
+  it('INV-DUP-001 requires duplicate acknowledgment before enabling send', () => {
     const props = getBaseProps();
     props.validationWarnings = ['Recipient 2: Duplicate recipient matches Recipient 1'];
 
@@ -148,7 +148,7 @@ describe('ReviewTransactionModal', () => {
     expect(container.textContent).toContain('Partial');
   });
 
-  it('resets duplicate acknowledgment when the modal reopens', () => {
+  it('INV-DUP-001 resets duplicate acknowledgment when the modal reopens', () => {
     const props = getBaseProps();
     props.validationWarnings = ['Recipient 2: Duplicate recipient matches Recipient 1'];
 
