@@ -62,6 +62,7 @@ export class BatchExecutionError extends Error {
   readonly recoverable: boolean;
   readonly hint?: string;
   readonly details?: string;
+  readonly cause?: unknown;
 
   constructor(options: BatchExecutionErrorOptions) {
     super(options.message);
