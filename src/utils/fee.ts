@@ -1,28 +1,74 @@
+import {
+  type SendFilFeePolicy,
+  type SendFilNetworkConfig,
+  getNetworkConfig,
+  getSupportedNetworkByChainId,
+} from '../lib/networks';
+
 export interface Recipient {
   address: string;
   amount: number;
 }
 
+function validateFeePolicy(
+  feePolicy: SendFilFeePolicy,
+): asserts feePolicy is SendFilFeePolicy & {
+  recipientA: string;
+  recipientB: string;
+} {
+  if (!feePolicy.recipientA || !feePolicy.recipientB) {
+    throw new Error('Fee addresses are not configured for the active network');
+  }
+}
+
+export function getFeePolicyForNetwork(
+  chainId?: number,
+): SendFilFeePolicy {
+  return getSupportedNetworkByChainId(chainId)?.feePolicy ?? getNetworkConfig('mainnet').feePolicy;
+}
+
+export function getFeeLabel(
+  chainId?: number,
+): string {
+  const network = getSupportedNetworkByChainId(chainId);
+  const feePolicy = network?.feePolicy;
+
+  if (network?.isTestnet && feePolicy && !feePolicy.enabled) {
+    return 'Platform fee (disabled on testnet)';
+  }
+
+  return `Platform fee (${(feePolicy ?? getNetworkConfig('mainnet').feePolicy).percent}%)`;
+}
+
 export function calculateFeeRows(
   recipients: Recipient[],
+  network: Pick<SendFilNetworkConfig, 'feePolicy'>,
 ): Recipient[] {
-  const FEE_PERCENT = Number(import.meta.env.VITE_FEE_PERCENT) || 1;
-  const FEE_SPLIT = Number(import.meta.env.VITE_FEE_SPLIT) || 0.5;
-  const FEE_ADDR_A = import.meta.env.VITE_FEE_ADDR_A as string;
-  const FEE_ADDR_B = import.meta.env.VITE_FEE_ADDR_B as string;
+  const feePolicy = network.feePolicy;
 
-  if (recipients.some(r => r.address === FEE_ADDR_A || r.address === FEE_ADDR_B)) {
+  if (!feePolicy.enabled) {
+    return recipients;
+  }
+
+  validateFeePolicy(feePolicy);
+
+  if (
+    recipients.some(
+      (recipient) =>
+        recipient.address === feePolicy.recipientA || recipient.address === feePolicy.recipientB,
+    )
+  ) {
     throw new Error('Fee address included in recipient list');
   }
 
-  const total = recipients.reduce((sum, r) => sum + r.amount, 0);
-  const feeTotal = (total * FEE_PERCENT) / 100;
-  const feeA = Math.floor(feeTotal * FEE_SPLIT * 1e6) / 1e6;
-  const feeB = Math.floor(feeTotal * (1 - FEE_SPLIT) * 1e6) / 1e6;
+  const total = recipients.reduce((sum, recipient) => sum + recipient.amount, 0);
+  const feeTotal = (total * feePolicy.percent) / 100;
+  const feeA = Math.floor(feeTotal * feePolicy.split * 1e6) / 1e6;
+  const feeB = Math.floor(feeTotal * (1 - feePolicy.split) * 1e6) / 1e6;
 
   return [
     ...recipients,
-    { address: FEE_ADDR_A, amount: feeA },
-    { address: FEE_ADDR_B, amount: feeB },
+    { address: feePolicy.recipientA, amount: feeA },
+    { address: feePolicy.recipientB, amount: feeB },
   ];
 }

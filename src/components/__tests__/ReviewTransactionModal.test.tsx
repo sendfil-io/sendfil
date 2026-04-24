@@ -8,10 +8,6 @@ import ReviewTransactionModal, {
 import { DEFAULT_BATCH_CONFIGURATION } from '../../lib/batchConfiguration';
 import { BatchExecutionError } from '../../lib/transaction/errorHandling';
 
-vi.mock('wagmi', () => ({
-  useChainId: () => 314,
-}));
-
 function getBaseProps(): ReviewTransactionModalProps {
   return {
     isOpen: true,
@@ -36,6 +32,9 @@ function getBaseProps(): ReviewTransactionModalProps {
     transactionHash: undefined,
     transactionError: undefined,
     batchConfiguration: DEFAULT_BATCH_CONFIGURATION,
+    chainId: 314,
+    networkLabel: 'Filecoin Mainnet',
+    feeLabel: 'Platform fee (1%)',
   };
 }
 
@@ -143,9 +142,26 @@ describe('ReviewTransactionModal', () => {
     });
 
     expect(container.textContent).toContain('Batch configuration');
+    expect(container.textContent).toContain('Filecoin Mainnet');
     expect(container.textContent).toContain('Single-signer');
     expect(container.textContent).toContain('Standard');
     expect(container.textContent).toContain('Partial');
+  });
+
+  it('uses the Calibration Filfox URL when rendering testnet transactions', () => {
+    const props = getBaseProps();
+    props.chainId = 314159;
+    props.networkLabel = 'Calibration Testnet';
+    props.transactionState = 'pending';
+    props.transactionHash = `0x${'a'.repeat(64)}` as `0x${string}`;
+
+    act(() => {
+      root.render(<ReviewTransactionModal {...props} />);
+    });
+
+    const link = container.querySelector('a[href]') as HTMLAnchorElement | null;
+    expect(link?.getAttribute('href')).toContain('https://calibration.filfox.info/en/message/');
+    expect(container.textContent).toContain('Calibration Testnet');
   });
 
   it('INV-DUP-001 resets duplicate acknowledgment when the modal reopens', () => {

@@ -1,9 +1,11 @@
 import {
   buildMulticallBatch,
   convertRecipientsToBatch,
+  type MulticallContractConfig,
   type ErrorMode,
   type MulticallBatchResult,
 } from './multicall';
+import { type SendFilNetworkConfig } from '../networks';
 
 export interface BatchExecutionRecipient {
   address: string;
@@ -16,6 +18,8 @@ export interface PreparedBatchExecution {
   recipients: BatchExecutionRecipient[];
   recipientCount: number;
   totalValueAttoFil: bigint;
+  networkKey: SendFilNetworkConfig['key'];
+  chainId: SendFilNetworkConfig['chainId'];
 }
 
 export interface BatchGasEstimate {
@@ -38,13 +42,18 @@ export interface BatchExecutionAdapter {
 export function prepareBatchExecution(
   recipients: BatchExecutionRecipient[],
   errorMode: ErrorMode,
+  network: Pick<SendFilNetworkConfig, 'key' | 'chainId' | 'multicall3Address' | 'filForwarderAddress'>,
 ): PreparedBatchExecution {
   if (recipients.length === 0) {
     throw new Error('No recipients provided');
   }
 
   const batchRecipients = convertRecipientsToBatch(recipients);
-  const batch = buildMulticallBatch(batchRecipients, errorMode);
+  const contracts: MulticallContractConfig = {
+    multicall3Address: network.multicall3Address,
+    filForwarderAddress: network.filForwarderAddress,
+  };
+  const batch = buildMulticallBatch(batchRecipients, errorMode, contracts);
 
   return {
     batch,
@@ -52,6 +61,8 @@ export function prepareBatchExecution(
     recipients,
     recipientCount: recipients.length,
     totalValueAttoFil: batch.value,
+    networkKey: network.key,
+    chainId: network.chainId,
   };
 }
 

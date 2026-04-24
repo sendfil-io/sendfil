@@ -5,10 +5,12 @@ import {
   encodeFilecoinAddressToBytes,
   validateAddressForSending,
 } from '../../utils/addressEncoder';
+import { getDefaultNetworkConfig } from '../networks';
 
-// Contract addresses (same on mainnet and Calibration testnet)
-export const MULTICALL3_ADDRESS = '0xcA11bde05977b3631167028862bE2a173976CA11' as const;
-export const FILFORWARDER_ADDRESS = '0x2b3ef6906429b580b7b2080de5ca893bc282c225' as const;
+export interface MulticallContractConfig {
+  multicall3Address: `0x${string}`;
+  filForwarderAddress: `0x${string}`;
+}
 
 // ABIs
 const filForwarderAbi = parseAbi([
@@ -50,6 +52,7 @@ export type ErrorMode = 'ATOMIC' | 'PARTIAL';
 function buildCall(
   recipient: BatchRecipient,
   allowFailure: boolean,
+  contracts: MulticallContractConfig,
 ): Call3Value {
   const { address, amount } = recipient;
 
@@ -78,7 +81,7 @@ function buildCall(
     const encodedAddress = encodeFilecoinAddressToBytes(address);
 
     return {
-      target: FILFORWARDER_ADDRESS,
+      target: contracts.filForwarderAddress,
       allowFailure,
       value: amount,
       callData: encodeFunctionData({
@@ -102,6 +105,10 @@ function buildCall(
 export function buildMulticallBatch(
   recipients: BatchRecipient[],
   errorMode: ErrorMode = 'PARTIAL',
+  contracts: MulticallContractConfig = {
+    multicall3Address: getDefaultNetworkConfig().multicall3Address,
+    filForwarderAddress: getDefaultNetworkConfig().filForwarderAddress,
+  },
 ): MulticallBatchResult {
   if (recipients.length === 0) {
     throw new Error('No recipients provided');
@@ -116,7 +123,7 @@ export function buildMulticallBatch(
 
   // Build Call3Value array
   const calls: Call3Value[] = recipients.map((recipient) =>
-    buildCall(recipient, allowFailure),
+    buildCall(recipient, allowFailure, contracts),
   );
 
   // Calculate total value
@@ -170,7 +177,7 @@ export function buildMulticallBatch(
   });
 
   return {
-    to: MULTICALL3_ADDRESS,
+    to: contracts.multicall3Address,
     data,
     value: totalValue,
     calls,

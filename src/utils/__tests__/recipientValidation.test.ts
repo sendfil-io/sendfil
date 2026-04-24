@@ -188,6 +188,18 @@ describe('INV-AMT-001 amount sign and presence rules', () => {
       },
     ]);
   });
+
+  it('rejects malformed non-numeric amount strings', () => {
+    const result = validateRecipientRows(
+      [{ address: MAINNET_F1, amount: '10 FIL' }],
+      { source: 'manual', expectedNetworkPrefix: 'f' },
+    );
+
+    expect(result.errors).toEqual([
+      'Recipient 1: Amount must be a positive FIL value with up to 18 decimal places',
+    ]);
+    expect(result.validRecipients).toEqual([]);
+  });
 });
 
 describe('INV-AMT-002 precision rules', () => {
@@ -305,5 +317,32 @@ describe('network-aware validation regression coverage', () => {
     expect(result.errors).toEqual([
       `Line 1: ${CALIBRATION_T1} does not match the current mainnet address format`,
     ]);
+  });
+
+  it('accepts Calibration-native recipients in the testnet flow', () => {
+    const result = validateRecipientRows(
+      [
+        { address: CALIBRATION_T1, amount: '1' },
+        { address: toF4(TWIN_ZERO_X_ADDRESS, 't'), amount: '2' },
+      ],
+      { source: 'manual', expectedNetworkPrefix: 't' },
+    );
+
+    expect(result.errors).toEqual([]);
+    expect(result.validRecipients).toHaveLength(2);
+  });
+
+  it('blocks mixed mainnet and Calibration native prefixes while disconnected', () => {
+    const result = validateRecipientRows(
+      [
+        { address: MAINNET_F1, amount: '1' },
+        { address: CALIBRATION_T1, amount: '2' },
+      ],
+      { source: 'manual' },
+    );
+
+    expect(result.errors).toContain(
+      'Batch mixes mainnet (f...) and Calibration (t...) native addresses. Keep all native recipients on one network before review.',
+    );
   });
 });

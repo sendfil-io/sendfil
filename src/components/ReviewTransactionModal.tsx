@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { useChainId } from 'wagmi';
 import {
   getDuplicateRecipientWarnings,
   isDuplicateRecipientWarning,
@@ -14,6 +13,7 @@ import {
   ERROR_MODE_COPY,
   type BatchExecutionError,
 } from '../lib/transaction/errorHandling';
+import { getFilfoxMessageUrl } from '../lib/networks';
 
 export type TransactionState = 'review' | 'signing' | 'pending' | 'confirmed' | 'failed';
 
@@ -52,6 +52,9 @@ export interface ReviewTransactionModalProps {
   transactionHash?: string;
   transactionError?: BatchExecutionError;
   batchConfiguration: BatchConfiguration;
+  chainId?: number;
+  networkLabel: string;
+  feeLabel: string;
 }
 
 // Format FIL amounts for display
@@ -92,6 +95,9 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
   transactionHash,
   transactionError,
   batchConfiguration,
+  chainId,
+  networkLabel,
+  feeLabel,
 }) => {
   const [showDetails, setShowDetails] = useState(false);
   const [showGasDetails, setShowGasDetails] = useState(false);
@@ -99,20 +105,9 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
   const [hasAcknowledgedDuplicateRecipients, setHasAcknowledgedDuplicateRecipients] =
     useState(false);
   const modalRef = useRef<HTMLDivElement>(null);
-  const chainId = useChainId();
-
-  // Determine if we're on testnet
-  const isTestnet = chainId === 314159; // Calibration testnet
-
-  // Get Filfox URL based on network
   const getFilfoxUrl = useCallback(
-    (hash: string) => {
-      const baseUrl = isTestnet
-        ? 'https://calibration.filfox.info/en/message/'
-        : 'https://filfox.info/en/message/';
-      return `${baseUrl}${hash}`;
-    },
-    [isTestnet],
+    (hash: string) => getFilfoxMessageUrl(hash, chainId),
+    [chainId],
   );
 
   // Calculate totals
@@ -294,7 +289,13 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
             Batch configuration
           </p>
-          <div className="mt-3 grid gap-3 sm:grid-cols-3">
+          <div className="mt-3 grid gap-3 sm:grid-cols-4">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-[0.16em] text-slate-400">
+                Network
+              </p>
+              <p className="mt-1 text-sm font-semibold text-slate-900">{networkLabel}</p>
+            </div>
             <div>
               <p className="text-xs font-medium uppercase tracking-[0.16em] text-slate-400">
                 Wallet type
@@ -345,7 +346,7 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
         </div>
 
         <div className="flex justify-between items-center">
-          <span className="text-gray-600">Platform fee (1%):</span>
+          <span className="text-gray-600">{feeLabel}:</span>
           <span className="font-medium">{formatFil(feeTotal)}</span>
         </div>
 
@@ -681,7 +682,15 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto px-6 py-5">{renderContent()}</div>
+        <div className="flex-1 overflow-y-auto px-6 py-5">
+          <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+              Network
+            </p>
+            <p className="mt-1 text-sm font-semibold text-slate-900">{networkLabel}</p>
+          </div>
+          {renderContent()}
+        </div>
 
         {/* Footer */}
         <div className="flex justify-end gap-3 border-t border-slate-200 px-6 py-4">

@@ -3,12 +3,17 @@ import { http, HttpResponse, delay } from 'msw';
 import { setupServer } from 'msw/node';
 const PRIMARY = 'http://primary';
 const FALLBACK = 'http://fallback';
+const CALIBRATION_PRIMARY = 'http://calibration-primary';
+const CALIBRATION_FALLBACK = 'http://calibration-fallback';
 
-vi.stubEnv('VITE_GLIF_RPC_URL_PRIMARY', PRIMARY);
-vi.stubEnv('VITE_GLIF_RPC_URL_FALLBACK', FALLBACK);
-vi.stubEnv('VITE_GLIF_RPC_TIMEOUT_MS', '50');
+vi.stubEnv('VITE_LOTUS_RPC_URL_MAINNET', PRIMARY);
+vi.stubEnv('VITE_LOTUS_RPC_FALLBACK_MAINNET', FALLBACK);
+vi.stubEnv('VITE_LOTUS_RPC_URL_CALIBRATION', CALIBRATION_PRIMARY);
+vi.stubEnv('VITE_LOTUS_RPC_FALLBACK_CALIBRATION', CALIBRATION_FALLBACK);
+vi.stubEnv('VITE_LOTUS_RPC_TIMEOUT_MS', '50');
 
 import * as DataProvider from '../index';
+import { getRpcConfig } from '../rpc';
 
 const server = setupServer();
 
@@ -59,5 +64,13 @@ describe('DataProvider', () => {
       }),
     );
     await expect(DataProvider.getBalance('f1')).rejects.toThrow('RPC timeout');
+  });
+
+  it('should resolve calibration-specific rpc config', () => {
+    expect(getRpcConfig('calibration')).toEqual({
+      primary: CALIBRATION_PRIMARY,
+      fallback: CALIBRATION_FALLBACK,
+      timeout: 50,
+    });
   });
 });

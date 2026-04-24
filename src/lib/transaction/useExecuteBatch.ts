@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import {
   useAccount,
+  useChainId,
   useSendTransaction,
   useWaitForTransactionReceipt,
   usePublicClient,
@@ -22,6 +23,10 @@ import {
   mapBatchExecutionError,
 } from './errorHandling';
 import { emitBatchExecutionTelemetry } from './telemetry';
+import {
+  getSupportedNetworkByChainId,
+  getSupportedNetworkListLabel,
+} from '../networks';
 
 export type BatchExecutionState =
   | 'idle'
@@ -74,8 +79,10 @@ export function useExecuteBatch(
   const executionSequence = useRef(0);
 
   const account = useAccount();
+  const chainId = useChainId();
   const publicClient = usePublicClient();
   const { sendTransactionAsync } = useSendTransaction();
+  const activeNetwork = getSupportedNetworkByChainId(chainId);
 
   // Watch for transaction confirmation
   const { isLoading: isConfirming, isSuccess, isError: txError, error: receiptError } =
@@ -101,6 +108,8 @@ export function useExecuteBatch(
         errorMode: pendingPreparedBatch.errorMode,
         recipientCount: pendingPreparedBatch.recipientCount,
         totalValueAttoFil: pendingPreparedBatch.totalValueAttoFil.toString(),
+        networkKey: pendingPreparedBatch.networkKey,
+        chainId: pendingPreparedBatch.chainId,
         txHash,
       });
       return;
@@ -122,6 +131,8 @@ export function useExecuteBatch(
         errorMode: pendingPreparedBatch.errorMode,
         recipientCount: pendingPreparedBatch.recipientCount,
         totalValueAttoFil: pendingPreparedBatch.totalValueAttoFil.toString(),
+        networkKey: pendingPreparedBatch.networkKey,
+        chainId: pendingPreparedBatch.chainId,
         txHash,
         errorCategory: mappedError.category,
         errorMessage: mappedError.details ?? mappedError.message,
@@ -173,7 +184,13 @@ export function useExecuteBatch(
       let prepared: PreparedBatchExecution | undefined;
 
       try {
-        prepared = prepareBatchExecution(recipients, errorMode);
+        if (!activeNetwork) {
+          throw new Error(
+            `Connect to ${getSupportedNetworkListLabel()} before estimating a batch.`,
+          );
+        }
+
+        prepared = prepareBatchExecution(recipients, errorMode, activeNetwork);
         const estimate = await estimatePreparedBatch(prepared);
 
         emitBatchExecutionTelemetry({
@@ -181,6 +198,8 @@ export function useExecuteBatch(
           errorMode,
           recipientCount: prepared.recipientCount,
           totalValueAttoFil: prepared.totalValueAttoFil.toString(),
+          networkKey: prepared.networkKey,
+          chainId: prepared.chainId,
           simulationResult: 'passed',
           gasLimit: estimate.gasLimit.toString(),
           estimatedFeeAttoFil: estimate.estimatedFee.toString(),
@@ -198,6 +217,8 @@ export function useExecuteBatch(
           errorMode,
           recipientCount: prepared?.recipientCount ?? recipients.length,
           totalValueAttoFil: prepared?.totalValueAttoFil.toString() ?? '0',
+          networkKey: prepared?.networkKey,
+          chainId: prepared?.chainId,
           simulationResult: 'failed',
           errorCategory: mappedError.category,
           errorMessage: mappedError.details ?? mappedError.message,
@@ -206,7 +227,7 @@ export function useExecuteBatch(
         throw mappedError;
       }
     },
-    [estimatePreparedBatch],
+    [activeNetwork, estimatePreparedBatch],
   );
 
   /**
@@ -229,13 +250,21 @@ export function useExecuteBatch(
       let failureStage: 'preflight' | 'execution' = 'preflight';
 
       try {
-        prepared = prepareBatchExecution(recipients, errorMode);
+        if (!activeNetwork) {
+          throw new Error(
+            `Connect to ${getSupportedNetworkListLabel()} before submitting a batch.`,
+          );
+        }
+
+        prepared = prepareBatchExecution(recipients, errorMode, activeNetwork);
 
         emitBatchExecutionTelemetry({
           event: 'batch_submission_requested',
           errorMode,
           recipientCount: prepared.recipientCount,
           totalValueAttoFil: prepared.totalValueAttoFil.toString(),
+          networkKey: prepared.networkKey,
+          chainId: prepared.chainId,
           simulationResult: errorMode === 'ATOMIC' ? 'passed' : 'skipped',
         });
 
@@ -265,6 +294,8 @@ export function useExecuteBatch(
           errorMode,
           recipientCount: prepared.recipientCount,
           totalValueAttoFil: prepared.totalValueAttoFil.toString(),
+          networkKey: prepared.networkKey,
+          chainId: prepared.chainId,
           txHash: hash,
         });
 
@@ -281,6 +312,8 @@ export function useExecuteBatch(
             errorMode,
             recipientCount: prepared.recipientCount,
             totalValueAttoFil: prepared.totalValueAttoFil.toString(),
+            networkKey: prepared.networkKey,
+            chainId: prepared.chainId,
             txHash: hash,
           });
         }
@@ -303,13 +336,15 @@ export function useExecuteBatch(
           errorMode,
           recipientCount: prepared?.recipientCount ?? recipients.length,
           totalValueAttoFil: prepared?.totalValueAttoFil.toString() ?? '0',
+          networkKey: prepared?.networkKey,
+          chainId: prepared?.chainId,
           errorCategory: mappedError.category,
           errorMessage: mappedError.details ?? mappedError.message,
         });
         throw mappedError;
       }
     },
-    [adapter, estimatePreparedBatch, sendTransactionAsync],
+    [activeNetwork, adapter, estimatePreparedBatch, sendTransactionAsync],
   );
 
   /**
