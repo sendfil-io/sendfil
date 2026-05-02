@@ -29,10 +29,8 @@ body {
   display: block;
 }
 
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
-}
+/* No unlayered h1 { font-size } — it overrides Tailwind @layer utilities and
+   made the main page title ~3.2em regardless of text-3xl / text-4xl classes. */
 
 /* Do not reset padding, border-radius, or border here — unlayered rules win over
    Tailwind @layer utilities and would flatten real buttons (choice cards, pills). */
