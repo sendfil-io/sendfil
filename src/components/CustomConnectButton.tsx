@@ -12,6 +12,9 @@ import {
 
 const E2E_MOCK_WALLET_ENABLED = import.meta.env.VITE_E2E_MOCK_WALLET === 'true';
 
+const primaryActionShadow =
+  'shadow-[0_18px_36px_-26px_rgba(31,105,255,0.82),0_14px_32px_-28px_rgba(60,212,160,0.22)]';
+
 export const CustomConnectButton: React.FC = () => {
   const [showAccountModal, setShowAccountModal] = useState(false);
   const { disconnect } = useDisconnect();
@@ -34,7 +37,7 @@ export const CustomConnectButton: React.FC = () => {
           {mockNetwork?.walletLabel ?? 'Filecoin Mainnet'}
         </div>
         <div
-          className="rounded-[22px] bg-[#4a84ea] px-4 py-4 text-left font-mono text-sm text-white shadow-[0_22px_35px_-28px_rgba(74,132,234,0.95)]"
+          className={`rounded-full bg-[#4a84ea] px-4 py-4 text-left font-mono text-sm text-white ${primaryActionShadow}`}
           data-testid="mock-wallet-chip"
         >
           <div className="text-base font-semibold">Test Wallet</div>
@@ -71,7 +74,7 @@ export const CustomConnectButton: React.FC = () => {
           <button
             type="button"
             onClick={openConnectModal}
-            className="w-full rounded-2xl bg-[#1f69ff] px-4 py-3 text-sm font-medium text-white shadow-[0_22px_35px_-28px_rgba(31,105,255,0.95)] transition-colors hover:bg-[#1857d4]"
+            className={`w-full rounded-full bg-[#1f69ff] px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-[#1857d4] ${primaryActionShadow}`}
           >
             Connect Wallet
           </button>
@@ -90,7 +93,7 @@ export const CustomConnectButton: React.FC = () => {
               <button
                 type="button"
                 onClick={openChainModal}
-                className={`w-full rounded-2xl border px-4 py-3 text-left text-sm font-medium transition-colors ${
+                className={`w-full rounded-full border px-4 py-3 text-left text-sm font-semibold transition-colors ${
                   isWrongNetwork
                     ? 'border-red-200 bg-red-50 text-red-800 hover:bg-red-100'
                     : 'border-slate-900 bg-slate-900 text-white hover:bg-slate-800'
@@ -114,7 +117,7 @@ export const CustomConnectButton: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setShowAccountModal(true)}
-                className="w-full rounded-[22px] bg-[#4a84ea] px-4 py-4 text-left text-white shadow-[0_22px_35px_-28px_rgba(74,132,234,0.95)] transition-colors hover:bg-[#3f77dd]"
+                className={`w-full rounded-full bg-[#4a84ea] px-4 py-4 text-left text-white transition-colors hover:bg-[#3f77dd] ${primaryActionShadow}`}
                 title={delegatedAddress}
               >
                 <div className="font-mono text-base font-semibold">{displayAddress}</div>
