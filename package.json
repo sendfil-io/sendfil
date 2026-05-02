@@ -13,8 +13,13 @@
     "build": "vite build",
     "lint": "eslint . --max-warnings=0",
     "test": "vitest run",
+    "test:unit": "vitest run",
+    "test:future": "VITEST_TEST_LANE=future vitest run",
     "typecheck": "tsc -b",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:e2e:smoke": "playwright test tests/e2e/review-flow.spec.ts",
+    "ci:verify": "yarn lint && yarn typecheck && yarn test:unit && yarn build",
+    "ci:all": "yarn ci:verify && yarn test:e2e:smoke"
   },
   "dependencies": {
     "@glif/filecoin-address": "^4.0.0",
@@ -33,6 +38,7 @@
   "devDependencies": {
     "@eslint/js": "^9.33.0",
     "@playwright/test": "^1.59.1",
+    "@tailwindcss/postcss": "^4.2.4",
     "@types/node": "^25.6.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",

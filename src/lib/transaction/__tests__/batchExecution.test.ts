@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { getDefaultNetworkConfig } from '../../networks';
 import { prepareBatchExecution } from '../batchExecution';
 
 describe('INV-EXEC-001 prepared batch determinism', () => {
@@ -13,8 +14,9 @@ describe('INV-EXEC-001 prepared batch determinism', () => {
         amount: 2.5,
       },
     ];
-    const preparedForEstimate = prepareBatchExecution(recipients, 'PARTIAL');
-    const preparedForSubmit = prepareBatchExecution(recipients, 'PARTIAL');
+    const network = getDefaultNetworkConfig();
+    const preparedForEstimate = prepareBatchExecution(recipients, 'PARTIAL', network);
+    const preparedForSubmit = prepareBatchExecution(recipients, 'PARTIAL', network);
 
     expect(preparedForEstimate).toEqual(preparedForSubmit);
     expect(preparedForEstimate).toMatchObject({

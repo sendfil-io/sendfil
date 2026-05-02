@@ -1,15 +1,13 @@
 import { getAddress } from 'viem';
 import { describe, expect, it } from 'vitest';
 import { toF4 } from '../../../utils/toF4';
-import {
-  buildMulticallBatch,
-  FILFORWARDER_ADDRESS,
-  MULTICALL3_ADDRESS,
-} from '../multicall';
+import { getDefaultNetworkConfig } from '../../networks';
+import { buildMulticallBatch } from '../multicall';
 
 const EVM_RECIPIENT = '0x1234567890abcdef1234567890abcdef12345678';
 const EVM_TWIN = toF4(EVM_RECIPIENT, 'f');
 const NATIVE_RECIPIENT = 'f1abjxfbp274xpdqcpuaykwkfb43omjotacm2p3za';
+const DEFAULT_NETWORK = getDefaultNetworkConfig();
 
 describe('buildMulticallBatch', () => {
   it('INV-ADDR-003 canonicalizes 0x and f4 twins to the same EVM transfer target', () => {
@@ -21,7 +19,7 @@ describe('buildMulticallBatch', () => {
       'PARTIAL',
     );
 
-    expect(batch.to).toBe(MULTICALL3_ADDRESS);
+    expect(batch.to).toBe(DEFAULT_NETWORK.multicall3Address);
     expect(batch.value).toBe(3n);
     expect(batch.recipientCount).toBe(2);
     expect(batch.calls).toEqual([
@@ -51,7 +49,7 @@ describe('buildMulticallBatch', () => {
 
     expect(batch.calls).toHaveLength(2);
     expect(batch.calls.every((call) => call.allowFailure)).toBe(true);
-    expect(batch.calls[1]?.target).toBe(FILFORWARDER_ADDRESS);
+    expect(batch.calls[1]?.target).toBe(DEFAULT_NETWORK.filForwarderAddress);
     expect(batch.calls[1]?.callData).not.toBe('0x');
   });
 

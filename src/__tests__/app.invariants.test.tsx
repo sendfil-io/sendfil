@@ -175,7 +175,7 @@ describe('INV-NET-001 wrong network gating', () => {
     ) as HTMLButtonElement;
 
     expect(container.textContent).toContain(
-      'Switch to Filecoin Mainnet (chain 314) to review and send this batch.',
+      'Switch to Filecoin Mainnet or Calibration to review and send this batch.',
     );
     expect(reviewButton.textContent).toContain('Switch Network to Review');
     expect(reviewButton.disabled).toBe(true);

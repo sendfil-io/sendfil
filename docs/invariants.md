@@ -26,7 +26,7 @@ Use this catalog before changing validation, network gating, review/send flow, R
 | `INV-BATCH-001` | Enforce the 500-recipient cap | `implemented` | validation | `src/utils/__tests__/recipientValidation.test.ts` |
 | `INV-DUP-001` | Duplicate recipients require explicit confirmation before Send | `implemented` | duplicate detection, review UI gating | `src/utils/__tests__/recipientValidation.test.ts`, `src/components/__tests__/ReviewTransactionModal.test.tsx`, `tests/e2e/review-flow.spec.ts` |
 | `INV-NET-001` | Wrong network disables Send | `implemented` | network/wallet gating, review UI gating | `src/__tests__/app.invariants.test.tsx` |
-| `INV-RPC-001` | Contract recipients detected via `eth_getCode` are blocked | `not implemented` | RPC contract-recipient check, review UI gating | `src/__tests__/contractRecipientGuard.test.tsx` |
+| `INV-RPC-001` | Contract recipients detected via `eth_getCode` are blocked | `not implemented` | RPC contract-recipient check, review UI gating | `src/__tests__/contractRecipientGuard.future.test.tsx` |
 | `INV-EXEC-001` | Review estimate and submission use the same execution config | `implemented` | estimate/execute flow, transaction builder | `src/lib/transaction/__tests__/batchExecution.test.ts`, `src/__tests__/app.invariants.test.tsx` |
 
 ## INV-ADDR-001 — Accept valid `f1/f2/f3/f4/0x` recipients
@@ -269,7 +269,7 @@ RPC contract-recipient check, review UI gating
 - Send is disabled and execution is not triggered when any EVM contract recipient is present.
 
 ### Tests
-- `src/__tests__/contractRecipientGuard.test.tsx`
+- `src/__tests__/contractRecipientGuard.future.test.tsx`
   - `describe('INV-RPC-001 contract recipient guard', ...)`
   - `it('does not require getCode for native f1 recipients')`
   - `it('blocks send when an EVM recipient resolves to deployed bytecode')`
@@ -278,6 +278,10 @@ RPC contract-recipient check, review UI gating
 `not implemented`
 
 Current repo note: the FEVM review/send flow does not currently perform a `getCode` check before enabling Send.
+
+Test lane note: this is a future/target test file. It is intentionally excluded
+from default `yarn test` and default CI until the implementation PR lands. Run it
+with `yarn test:future` when working on contract-recipient blocking.
 
 ## INV-EXEC-001 — Review estimate and submission use the same execution config
 
