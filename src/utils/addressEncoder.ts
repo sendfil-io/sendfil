@@ -3,6 +3,7 @@ import {
   ethAddressFromDelegated,
   Protocol,
 } from '@glif/filecoin-address';
+import { getAddress } from 'viem';
 
 /**
  * Encode a Filecoin address to bytes for use with FilForwarder.
@@ -57,7 +58,7 @@ export function getAddressType(
 
 /**
  * Normalize an address to its canonical EVM form if possible.
- * - 0x addresses: returned as-is
+ * - 0x addresses: returned in checksum form
  * - f4/t4 addresses: converted to 0x
  * - f1/f2/f3 addresses: returns null (need FilForwarder)
  */
@@ -67,7 +68,7 @@ export function normalizeToEvmAddress(
   const trimmed = address.trim();
 
   if (trimmed.startsWith('0x')) {
-    return trimmed as `0x${string}`;
+    return getAddress(trimmed);
   }
 
   if (trimmed.match(/^[ft]4/)) {
