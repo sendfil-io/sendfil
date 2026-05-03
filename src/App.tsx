@@ -810,7 +810,7 @@ f1cj...,3.3`;
 
           <div className="mt-6 rounded-[28px] border border-slate-200 bg-white px-4 py-4 shadow-[0_16px_40px_-32px_rgba(15,23,42,0.45)]">
             <ConfigurationChoiceGroup
-              title="Wallet Type"
+              title="Sender type"
               variant="segmented"
               selectedValue={batchConfiguration.senderWalletType}
               onSelect={(value) => handleSenderWalletTypeSelect(value as SenderWalletType)}
