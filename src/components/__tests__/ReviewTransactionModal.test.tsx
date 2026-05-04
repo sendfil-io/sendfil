@@ -143,8 +143,11 @@ describe('ReviewTransactionModal', () => {
 
     expect(container.textContent).toContain('Batch configuration');
     expect(container.textContent).toContain('Filecoin Mainnet');
+    expect(container.textContent).toContain('Sender type');
     expect(container.textContent).toContain('Single-signer');
+    expect(container.textContent).toContain('Method');
     expect(container.textContent).toContain('Standard');
+    expect(container.textContent).toContain('Error handling');
     expect(container.textContent).toContain('Partial');
   });
 
@@ -195,7 +198,7 @@ describe('ReviewTransactionModal', () => {
     expect(getButton(container, 'Send').disabled).toBe(true);
   });
 
-  it('renders atomic execution semantics in review mode', () => {
+  it('does not render execution semantics in review mode', () => {
     const props = getBaseProps();
     props.batchConfiguration = {
       ...DEFAULT_BATCH_CONFIGURATION,
@@ -206,8 +209,8 @@ describe('ReviewTransactionModal', () => {
       root.render(<ReviewTransactionModal {...props} />);
     });
 
-    expect(container.textContent).toContain('Execution semantics');
-    expect(container.textContent).toContain('Any failing transfer reverts the whole batch.');
+    expect(container.textContent).not.toContain('Execution semantics');
+    expect(container.textContent).not.toContain('Any failing transfer reverts the whole batch.');
   });
 
   it('blocks send when atomic preflight fails', () => {

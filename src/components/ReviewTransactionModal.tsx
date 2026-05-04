@@ -119,8 +119,8 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
   );
   const duplicateWarningsSignature = duplicateRecipientWarnings.join('|');
   const requiresDuplicateConfirmation = duplicateRecipientWarnings.length > 0;
-  const errorModeCopy = ERROR_MODE_COPY[batchConfiguration.errorHandling];
   const isAtomicMode = batchConfiguration.errorHandling === 'ATOMIC';
+  const errorModeCopy = ERROR_MODE_COPY[batchConfiguration.errorHandling];
   const hasBlockingAtomicPreflightError =
     isAtomicMode && Boolean(gasEstimationError);
 
@@ -289,16 +289,10 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
             Batch configuration
           </p>
-          <div className="mt-3 grid gap-3 sm:grid-cols-4">
+          <div className="mt-3 grid gap-3 sm:grid-cols-3">
             <div>
               <p className="text-xs font-medium uppercase tracking-[0.16em] text-slate-400">
-                Network
-              </p>
-              <p className="mt-1 text-sm font-semibold text-slate-900">{networkLabel}</p>
-            </div>
-            <div>
-              <p className="text-xs font-medium uppercase tracking-[0.16em] text-slate-400">
-                Wallet type
+                Sender type
               </p>
               <p className="mt-1 text-sm font-semibold text-slate-900">
                 {getSenderWalletTypeLabel(batchConfiguration.senderWalletType)}
@@ -321,23 +315,6 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
               </p>
             </div>
           </div>
-        </div>
-
-        <div
-          className={`rounded-xl border px-4 py-3 ${
-            isAtomicMode
-              ? 'border-blue-200 bg-blue-50'
-              : 'border-slate-200 bg-slate-50'
-          }`}
-          data-testid="error-mode-summary"
-        >
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-            Execution semantics
-          </p>
-          <p className="mt-2 text-sm font-semibold text-slate-900">
-            {errorModeCopy.reviewSummary}
-          </p>
-          <p className="mt-1 text-sm text-slate-600">{errorModeCopy.reviewDetail}</p>
         </div>
 
         <div className="flex justify-between items-center">
@@ -476,18 +453,13 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
     <div className="flex flex-col items-center py-8">
       <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-500 mb-4" />
       <h3 className="text-lg font-semibold mb-2">Transaction Pending</h3>
-      <p className="text-gray-600 text-center mb-2">Your batch is being processed...</p>
-      <p className="text-sm text-gray-500 text-center mb-4">
-        {isAtomicMode
-          ? 'Atomic mode will only finalize if every internal transfer succeeds.'
-          : 'Partial mode may still finalize successful transfers even if one call fails.'}
-      </p>
+      <p className="text-gray-600 text-center mb-4">Your batch is being processed...</p>
       {transactionHash && (
         <a
           href={getFilfoxUrl(transactionHash)}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-blue-600 hover:text-blue-800 flex items-center gap-1"
+          className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
         >
           View on Filfox ↗
         </a>
@@ -513,7 +485,7 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
           href={getFilfoxUrl(transactionHash)}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-blue-600 hover:text-blue-800 flex items-center gap-1 mb-4"
+          className="mb-4 inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
         >
           View on Filfox ↗
         </a>
