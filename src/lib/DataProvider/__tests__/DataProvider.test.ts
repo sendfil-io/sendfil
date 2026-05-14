@@ -73,4 +73,16 @@ describe('DataProvider', () => {
       timeout: 50,
     });
   });
+
+  it('should read balances from the requested network rpc lane', async () => {
+    server.use(
+      http.post(CALIBRATION_PRIMARY, () =>
+        HttpResponse.json({ jsonrpc: '2.0', id: 1, result: '456' }),
+      ),
+    );
+
+    const result = await DataProvider.getBalance('t1sender', 'calibration');
+
+    expect(result).toBe('456');
+  });
 });
