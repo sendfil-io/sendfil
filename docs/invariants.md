@@ -26,6 +26,7 @@ Use this catalog before changing validation, network gating, review/send flow, R
 | `INV-BATCH-001` | Enforce the 500-recipient cap | `implemented` | validation | `src/utils/__tests__/recipientValidation.test.ts` |
 | `INV-DUP-001` | Duplicate recipients require explicit confirmation before Send | `implemented` | duplicate detection, review UI gating | `src/utils/__tests__/recipientValidation.test.ts`, `src/components/__tests__/ReviewTransactionModal.test.tsx`, `tests/e2e/review-flow.spec.ts` |
 | `INV-NET-001` | Wrong network disables Send | `implemented` | network/wallet gating, review UI gating | `src/__tests__/app.invariants.test.tsx` |
+| `INV-BAL-001` | Submit-time balance recheck blocks EVM sends when current balance is insufficient | `implemented` | submit guard, wallet RPC | `src/lib/transaction/__tests__/submitBalanceCheck.test.ts`, `src/lib/transaction/__tests__/useExecuteBatch.submitBalance.test.tsx` |
 | `INV-RPC-001` | Contract recipients detected via `eth_getCode` are blocked | `not implemented` | RPC contract-recipient check, review UI gating | `src/__tests__/contractRecipientGuard.future.test.tsx` |
 | `INV-EXEC-001` | Review estimate and submission use the same execution config | `implemented` | estimate/execute flow, transaction builder | `src/lib/transaction/__tests__/batchExecution.test.ts`, `src/__tests__/app.invariants.test.tsx` |
 
@@ -249,6 +250,35 @@ network/wallet gating, review UI gating
 `implemented`
 
 Current repo note: the live block happens at the App review boundary, not by a wallet-driven switch action inside the review modal.
+
+## INV-BAL-001 — Submit-Time Balance Recheck
+
+### Rule
+The existing EVM/wagmi submit path must re-read the connected sender balance immediately before wallet submission. The batch must not be submitted unless current balance covers the prepared batch transfer value plus the latest estimated network fee.
+
+### Why this matters
+The review-time balance can become stale if the sender spends or receives FIL while the review modal is open. Sending without a fresh check can push an avoidable insufficient-funds request into the wallet.
+
+### Execution boundary
+submit guard, wallet RPC
+
+### Acceptance criteria
+- The recheck runs after submit-time gas estimation and before `sendTransactionAsync`.
+- Required balance includes prepared transfer value, which contains recipient rows and appended fee rows, plus estimated network fee.
+- If current balance is insufficient, wallet submission is not called.
+- Unsupported network state cannot bypass the submit guard.
+- Native Filecoin senders have an explicit unsupported/not-implemented helper path until native sender execution exists.
+
+### Tests
+- `src/lib/transaction/__tests__/submitBalanceCheck.test.ts`
+  - `describe('submit-time balance recheck helper', ...)`
+- `src/lib/transaction/__tests__/useExecuteBatch.submitBalance.test.tsx`
+  - `describe('useExecuteBatch submit-time balance recheck', ...)`
+
+### Status
+`implemented`
+
+Current repo note: this is implemented for the live EVM/wagmi sender path only. The helper is sender-aware, but native Filecoin sender submission is still not wired into the live app.
 
 ## INV-RPC-001 — Contract recipients detected via `eth_getCode` are blocked
 

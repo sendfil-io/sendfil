@@ -7,6 +7,8 @@ export type BatchExecutionErrorCategory =
   | 'SIMULATION_REVERT'
   | 'ONCHAIN_REVERT_ATOMIC'
   | 'RPC_FAILURE'
+  | 'UNSUPPORTED_NETWORK'
+  | 'UNSUPPORTED_SENDER'
   | 'UNKNOWN';
 
 export type BatchExecutionStage = 'preflight' | 'execution' | 'confirmation';
