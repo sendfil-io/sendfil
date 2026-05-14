@@ -340,3 +340,5 @@ estimate/execute flow, transaction builder
 
 ### Status
 `implemented`
+
+Current repo note: the live App path still estimates and submits through the EVM/wagmi `useExecuteBatch` flow. `src/lib/transaction/nativeBatchMessage.ts` can prepare the single native Filecoin `InvokeEVM` message for a native `f1`/`t1` sender from the same prepared Multicall3 batch payload, but native wallet signing/submission is not wired into the live app yet.
