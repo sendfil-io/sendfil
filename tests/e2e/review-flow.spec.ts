@@ -26,6 +26,14 @@ async function selectAtomicMode(page: Page) {
   await page.getByTestId('error-handling-atomic').click();
 }
 
+async function expectReviewShowsPartialHandling(page: Page) {
+  const reviewDialog = page.getByRole('dialog', { name: 'Review Batch' });
+
+  await expect(reviewDialog).toBeVisible();
+  await expect(reviewDialog.getByText('Error handling')).toBeVisible();
+  await expect(reviewDialog.getByText('Partial')).toBeVisible();
+}
+
 test('manual review can proceed without duplicate acknowledgment for unique recipients', async ({
   page,
 }) => {
@@ -97,9 +105,7 @@ test('atomic mode stays blocked and review continues with partial semantics', as
 
   await page.getByTestId('review-batch-button').click();
 
-  await expect(page.getByTestId('error-mode-summary')).toContainText(
-    'Some transfers may succeed even if others fail.',
-  );
+  await expectReviewShowsPartialHandling(page);
   await expect(page.getByTestId('send-batch-button')).toBeEnabled();
 
   await page.getByTestId('send-batch-button').click();
@@ -118,9 +124,7 @@ test('atomic selection remains blocked even for an atomic-only preflight case', 
 
   await page.getByTestId('review-batch-button').click();
 
-  await expect(page.getByTestId('error-mode-summary')).toContainText(
-    'Some transfers may succeed even if others fail.',
-  );
+  await expectReviewShowsPartialHandling(page);
   await expect(page.getByTestId('atomic-preflight-error')).toHaveCount(0);
   await expect(page.getByTestId('send-batch-button')).toBeEnabled();
 });
