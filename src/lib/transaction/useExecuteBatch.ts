@@ -22,6 +22,10 @@ import {
   BatchExecutionError,
   mapBatchExecutionError,
 } from './errorHandling';
+import {
+  createSubmitBalanceCheckError,
+  recheckSubmitBalance,
+} from './submitBalanceCheck';
 import { emitBatchExecutionTelemetry } from './telemetry';
 import {
   getSupportedNetworkByChainId,
@@ -80,9 +84,9 @@ export function useExecuteBatch(
 
   const account = useAccount();
   const chainId = useChainId();
-  const publicClient = usePublicClient();
-  const { sendTransactionAsync } = useSendTransaction();
   const activeNetwork = getSupportedNetworkByChainId(chainId);
+  const publicClient = usePublicClient({ chainId: activeNetwork?.chainId });
+  const { sendTransactionAsync } = useSendTransaction();
 
   // Watch for transaction confirmation
   const { isLoading: isConfirming, isSuccess, isError: txError, error: receiptError } =
@@ -268,11 +272,41 @@ export function useExecuteBatch(
           simulationResult: errorMode === 'ATOMIC' ? 'passed' : 'skipped',
         });
 
-        if (errorMode === 'ATOMIC') {
-          await estimatePreparedBatch(prepared);
+        if (adapter) {
+          if (errorMode === 'ATOMIC') {
+            await estimatePreparedBatch(prepared);
+          }
+        } else {
+          const submitEstimate = await estimatePreparedBatch(prepared);
+          failureStage = 'execution';
+
+          if (!account.address) {
+            throw new Error('No connected EVM account available for submit-time balance check.');
+          }
+
+          const balanceCheck = await recheckSubmitBalance({
+            sender: {
+              kind: 'evm',
+              address: account.address,
+              chainId,
+            },
+            network: activeNetwork,
+            transferTotalAttoFil: prepared.totalValueAttoFil,
+            estimatedNetworkFeeAttoFil: submitEstimate.estimatedFee,
+            readEvmBalance: async ({ address: senderAddress }) => {
+              if (!publicClient) {
+                throw new Error('Public client not available');
+              }
+
+              return publicClient.getBalance({ address: senderAddress });
+            },
+          });
+
+          if (!balanceCheck.ok) {
+            throw createSubmitBalanceCheckError(balanceCheck, errorMode);
+          }
         }
 
-        failureStage = 'execution';
         setState('signing');
 
         const submission = adapter
@@ -344,7 +378,15 @@ export function useExecuteBatch(
         throw mappedError;
       }
     },
-    [activeNetwork, adapter, estimatePreparedBatch, sendTransactionAsync],
+    [
+      account.address,
+      activeNetwork,
+      adapter,
+      chainId,
+      estimatePreparedBatch,
+      publicClient,
+      sendTransactionAsync,
+    ],
   );
 
   /**
