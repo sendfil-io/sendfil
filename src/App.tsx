@@ -33,6 +33,7 @@ import {
   getSupportedNetworkByChainId,
   getSupportedNetworkListLabel,
 } from './lib/networks';
+import { createEvmConnectedSender } from './lib/senders';
 
 interface Recipient {
   address: string;
@@ -301,19 +302,36 @@ function ConfigurationChoiceGroup({
 export default function App() {
   const account = useAccount();
   const walletChainId = useChainId();
-  const isConnected = E2E_MOCK_WALLET_ENABLED ? true : account.isConnected;
-  const address = E2E_MOCK_WALLET_ENABLED ? E2E_MOCK_ACCOUNT : account.address;
-  const chainId = E2E_MOCK_WALLET_ENABLED ? E2E_MOCK_CHAIN_ID : walletChainId;
-  const detectedNetwork = getSupportedNetworkByChainId(chainId);
-  const connectedNetwork = isConnected ? detectedNetwork : undefined;
-  const hasSupportedConnectedNetwork = isConnected && Boolean(connectedNetwork);
-  const isUnsupportedConnectedNetwork = isConnected && !detectedNetwork;
+  const connectedSender = React.useMemo(
+    () =>
+      createEvmConnectedSender({
+        address: E2E_MOCK_WALLET_ENABLED ? E2E_MOCK_ACCOUNT : account.address,
+        chainId: E2E_MOCK_WALLET_ENABLED ? E2E_MOCK_CHAIN_ID : walletChainId,
+        isConnected: E2E_MOCK_WALLET_ENABLED ? true : account.isConnected,
+      }),
+    [account.address, account.isConnected, walletChainId],
+  );
+  const isConnected = Boolean(connectedSender);
+  const address = connectedSender?.address;
+  const chainId = connectedSender?.chainId;
+  const connectedNetwork = connectedSender?.network;
+  const hasSupportedConnectedNetwork =
+    isConnected && connectedSender?.networkStatus === 'supported';
+  const isUnsupportedConnectedNetwork =
+    isConnected && connectedSender?.networkStatus === 'unsupported';
   const expectedNetworkPrefix = connectedNetwork?.nativePrefix;
   const feeLabel = getFeeLabel(connectedNetwork?.chainId);
   const { data: balanceData } = useBalance({
-    address: account.address,
+    address: connectedSender?.kind === 'evm' ? connectedSender.address : undefined,
     chainId: connectedNetwork?.chainId,
-    query: { enabled: Boolean(account.address && hasSupportedConnectedNetwork) },
+    query: {
+      enabled: Boolean(
+        connectedSender?.kind === 'evm' &&
+          connectedSender.address &&
+          hasSupportedConnectedNetwork &&
+          !E2E_MOCK_WALLET_ENABLED,
+      ),
+    },
   });
 
   const [inputMode, setInputMode] = React.useState<InputMode>('manual');

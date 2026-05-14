@@ -6,56 +6,76 @@ import type {
   TipSet,
   TransactionStatus,
 } from './types';
+import type { SendFilNetworkKey } from '../networks';
 
 /** Filecoin.WalletBalance */
-export const getBalance = (address: string) =>
-  callRpc<string>('Filecoin.WalletBalance', [address]);
+export const getBalance = (address: string, networkKey?: SendFilNetworkKey) =>
+  callRpc<string>('Filecoin.WalletBalance', [address], networkKey);
 
 /** Filecoin.MpoolGetNonce */
-export const getNonce = (address: string) =>
-  callRpc<number>('Filecoin.MpoolGetNonce', [address]);
+export const getNonce = (address: string, networkKey?: SendFilNetworkKey) =>
+  callRpc<number>('Filecoin.MpoolGetNonce', [address], networkKey);
 
 /** Filecoin.ChainHead – useful for health checks */
-export const getChainHead = () =>
-  callRpc<{ Height: number; Cids: { '/': string }[] }>('Filecoin.ChainHead'); 
+export const getChainHead = (networkKey?: SendFilNetworkKey) =>
+  callRpc<{ Height: number; Cids: { '/': string }[] }>('Filecoin.ChainHead', [], networkKey);
 
 /** Filecoin.GasEstimateMessageGas - Estimate gas for a message */
-export const estimateGas = (message: FilecoinMessage, spec?: unknown) =>
-  callRpc<FilecoinMessage>('Filecoin.GasEstimateMessageGas', [message, spec, []]);
+export const estimateGas = (
+  message: FilecoinMessage,
+  spec?: unknown,
+  networkKey?: SendFilNetworkKey,
+) =>
+  callRpc<FilecoinMessage>('Filecoin.GasEstimateMessageGas', [message, spec, []], networkKey);
 
 /** Filecoin.MpoolPush - Submit signed message to mempool */
-export const submitTransaction = (signedMessage: SignedMessage) =>
-  callRpc<{ '/': string }>('Filecoin.MpoolPush', [signedMessage]);
+export const submitTransaction = (
+  signedMessage: SignedMessage,
+  networkKey?: SendFilNetworkKey,
+) =>
+  callRpc<{ '/': string }>('Filecoin.MpoolPush', [signedMessage], networkKey);
 
 /** Filecoin.StateSearchMsg - Search for message by CID */
-export const searchMessage = (cid: { '/': string }) =>
+export const searchMessage = (cid: { '/': string }, networkKey?: SendFilNetworkKey) =>
   callRpc<{
     Message: { '/': string };
     Receipt: MessageReceipt;
     ReturnDec: unknown;
     TipSet: { '/': string };
     Height: number;
-  } | null>('Filecoin.StateSearchMsg', [null, cid, -1, true]);
+  } | null>('Filecoin.StateSearchMsg', [null, cid, -1, true], networkKey);
 
 /** Filecoin.StateGetReceipt - Get receipt for message CID */
-export const getTransactionReceipt = (cid: { '/': string }) =>
-  callRpc<MessageReceipt>('Filecoin.StateGetReceipt', [cid, null]);
+export const getTransactionReceipt = (
+  cid: { '/': string },
+  networkKey?: SendFilNetworkKey,
+) =>
+  callRpc<MessageReceipt>('Filecoin.StateGetReceipt', [cid, null], networkKey);
 
 /** Filecoin.ChainGetTipSet - Get tipset by key */
-export const getTipSet = (tipsetKey: Array<{ '/': string }>) =>
-  callRpc<TipSet>('Filecoin.ChainGetTipSet', [tipsetKey]);
+export const getTipSet = (
+  tipsetKey: Array<{ '/': string }>,
+  networkKey?: SendFilNetworkKey,
+) =>
+  callRpc<TipSet>('Filecoin.ChainGetTipSet', [tipsetKey], networkKey);
 
 /** Filecoin.MpoolPending - Get pending messages from mempool */
-export const getPendingMessages = (address?: string) =>
-  callRpc<FilecoinMessage[]>('Filecoin.MpoolPending', [address ? [address] : []]);
+export const getPendingMessages = (
+  address?: string,
+  networkKey?: SendFilNetworkKey,
+) =>
+  callRpc<FilecoinMessage[]>('Filecoin.MpoolPending', [address ? [address] : []], networkKey);
 
 /** Helper: Check transaction status by CID */
-export const getTransactionStatus = async (cidString: string): Promise<TransactionStatus> => {
+export const getTransactionStatus = async (
+  cidString: string,
+  networkKey?: SendFilNetworkKey,
+): Promise<TransactionStatus> => {
   try {
     const cid = { '/': cidString };
     
     // First try to find the message
-    const searchResult = await searchMessage(cid);
+    const searchResult = await searchMessage(cid, networkKey);
     
     if (searchResult) {
       // Message found and executed
@@ -85,10 +105,11 @@ export const getTransactionStatus = async (cidString: string): Promise<Transacti
 export const pollTransactionStatus = async (
   cidString: string,
   maxAttempts: number = 60,
-  intervalMs: number = 5000
+  intervalMs: number = 5000,
+  networkKey?: SendFilNetworkKey,
 ): Promise<TransactionStatus> => {
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const status = await getTransactionStatus(cidString);
+    const status = await getTransactionStatus(cidString, networkKey);
     
     if (status.status !== 'pending') {
       return status;
