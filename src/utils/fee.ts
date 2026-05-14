@@ -4,6 +4,7 @@ import {
   getNetworkConfig,
   getSupportedNetworkByChainId,
 } from '../lib/networks';
+import { validateRecipientRows } from './recipientValidation';
 
 export interface Recipient {
   address: string;
@@ -12,12 +13,33 @@ export interface Recipient {
 
 function validateFeePolicy(
   feePolicy: SendFilFeePolicy,
+  nativePrefix: SendFilNetworkConfig['nativePrefix'],
 ): asserts feePolicy is SendFilFeePolicy & {
   recipientA: string;
   recipientB: string;
 } {
   if (!feePolicy.recipientA || !feePolicy.recipientB) {
     throw new Error('Fee addresses are not configured for the active network');
+  }
+
+  const validation = validateRecipientRows(
+    [
+      { address: feePolicy.recipientA, amount: '1' },
+      { address: feePolicy.recipientB, amount: '1' },
+    ],
+    {
+      source: 'manual',
+      expectedNetworkPrefix: nativePrefix,
+      maxRecipients: 2,
+    },
+  );
+
+  if (validation.errors.length > 0) {
+    throw new Error(
+      `Invalid fee address configuration: ${validation.errors
+        .map((error) => error.replace(/^Recipient \d+:\s*/, ''))
+        .join('; ')}`,
+    );
   }
 }
 
@@ -42,7 +64,7 @@ export function getFeeLabel(
 
 export function calculateFeeRows(
   recipients: Recipient[],
-  network: Pick<SendFilNetworkConfig, 'feePolicy'>,
+  network: Pick<SendFilNetworkConfig, 'feePolicy' | 'nativePrefix'>,
 ): Recipient[] {
   const feePolicy = network.feePolicy;
 
@@ -50,7 +72,7 @@ export function calculateFeeRows(
     return recipients;
   }
 
-  validateFeePolicy(feePolicy);
+  validateFeePolicy(feePolicy, network.nativePrefix);
 
   if (
     recipients.some(

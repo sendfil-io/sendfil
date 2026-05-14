@@ -37,6 +37,16 @@ const CALIBRATION_T1 = newSecp256k1Address(
   CoinType.TEST,
 ).toString();
 
+const CALIBRATION_T2 = newActorAddress(
+  Uint8Array.from([4, 3, 2, 1]),
+  CoinType.TEST,
+).toString();
+
+const CALIBRATION_T3 = newBLSAddress(
+  Uint8Array.from({ length: 48 }, (_, index) => index + 70),
+  CoinType.TEST,
+).toString();
+
 const ZERO_X_ADDRESS = '0x1234567890abcdef1234567890abcdef12345678';
 const TWIN_ZERO_X_ADDRESS = '0xe764Acf02D8B7c21d2B6A8f0a96C78541e0DC3fd';
 
@@ -319,17 +329,40 @@ describe('network-aware validation regression coverage', () => {
     ]);
   });
 
-  it('accepts Calibration-native recipients in the testnet flow', () => {
+  it('rejects mainnet prefixes in the Calibration flow', () => {
+    const result = validateRecipientRows(
+      [{ address: MAINNET_F1, amount: '1' }],
+      { source: 'manual', expectedNetworkPrefix: 't' },
+    );
+
+    expect(result.errors).toEqual([
+      `Recipient 1: ${MAINNET_F1} does not match the current Calibration address format`,
+    ]);
+    expect(result.validRecipients).toEqual([]);
+  });
+
+  it('accepts Calibration t1, t2, t3, t4, and 0x recipients in the testnet flow', () => {
+    const calibrationT4 = toF4(TWIN_ZERO_X_ADDRESS, 't');
+
     const result = validateRecipientRows(
       [
         { address: CALIBRATION_T1, amount: '1' },
-        { address: toF4(TWIN_ZERO_X_ADDRESS, 't'), amount: '2' },
+        { address: CALIBRATION_T2, amount: '2' },
+        { address: CALIBRATION_T3, amount: '3' },
+        { address: calibrationT4, amount: '4' },
+        { address: ZERO_X_ADDRESS, amount: '5' },
       ],
       { source: 'manual', expectedNetworkPrefix: 't' },
     );
 
     expect(result.errors).toEqual([]);
-    expect(result.validRecipients).toHaveLength(2);
+    expect(result.validRecipients).toEqual([
+      { address: CALIBRATION_T1, amount: '1', lineNumber: 1 },
+      { address: CALIBRATION_T2, amount: '2', lineNumber: 2 },
+      { address: CALIBRATION_T3, amount: '3', lineNumber: 3 },
+      { address: calibrationT4, amount: '4', lineNumber: 4 },
+      { address: getAddress(ZERO_X_ADDRESS), amount: '5', lineNumber: 5 },
+    ]);
   });
 
   it('blocks mixed mainnet and Calibration native prefixes while disconnected', () => {

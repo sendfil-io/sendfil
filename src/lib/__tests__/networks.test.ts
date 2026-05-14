@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  SUPPORTED_WAGMI_CHAINS,
   getDefaultNetworkKey,
   getFilfoxMessageUrl,
   getNetworkConfig,
@@ -16,6 +17,18 @@ describe('networks', () => {
     expect(getSupportedNetworkByChainId(314)?.key).toBe('mainnet');
     expect(getSupportedNetworkByChainId(314159)?.key).toBe('calibration');
     expect(getSupportedNetworkByChainId(1)).toBeUndefined();
+  });
+
+  it('exposes both Filecoin chains to wagmi', () => {
+    expect(SUPPORTED_WAGMI_CHAINS.map((chain) => chain.id)).toEqual([314, 314159]);
+  });
+
+  it('resolves FEVM RPC URLs per supported network', () => {
+    vi.stubEnv('VITE_FEVM_RPC_URL_MAINNET', 'http://fevm-mainnet');
+    vi.stubEnv('VITE_FEVM_RPC_URL_CALIBRATION', 'http://fevm-calibration');
+
+    expect(getNetworkConfig('mainnet').fevmRpcUrl).toBe('http://fevm-mainnet');
+    expect(getNetworkConfig('calibration').fevmRpcUrl).toBe('http://fevm-calibration');
   });
 
   it('builds Filfox message URLs for both supported networks', () => {
@@ -43,6 +56,18 @@ describe('networks', () => {
     expect(mainnet.feePolicy.recipientA).toBe('f1mainfeea');
     expect(mainnet.feePolicy.recipientB).toBe('f1mainfeeb');
     expect(calibration.feePolicy.enabled).toBe(false);
+  });
+
+  it('enables calibration fees only when the calibration env says so', () => {
+    vi.stubEnv('VITE_FEE_ENABLED_CALIBRATION', 'true');
+    vi.stubEnv('VITE_FEE_ADDR_A_CALIBRATION', 't1fee-a');
+    vi.stubEnv('VITE_FEE_ADDR_B_CALIBRATION', 't1fee-b');
+
+    const calibration = getNetworkConfig('calibration');
+
+    expect(calibration.feePolicy.enabled).toBe(true);
+    expect(calibration.feePolicy.recipientA).toBe('t1fee-a');
+    expect(calibration.feePolicy.recipientB).toBe('t1fee-b');
   });
 
   it('resolves lotus rpc config per network', () => {

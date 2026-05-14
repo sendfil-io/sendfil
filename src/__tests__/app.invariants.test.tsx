@@ -4,7 +4,10 @@ import { JSDOM } from 'jsdom';
 import { createRoot, type Root } from 'react-dom/client';
 import { getAddress } from 'viem';
 import App from '../App';
-import type { RecipientValidationResult } from '../utils/recipientValidation';
+import {
+  validateRecipientRows,
+  type RecipientValidationResult,
+} from '../utils/recipientValidation';
 
 const FEE_A = '0x1111111111111111111111111111111111111111';
 const FEE_B = '0x2222222222222222222222222222222222222222';
@@ -186,6 +189,66 @@ describe('INV-NET-001 wrong network gating', () => {
     expect(estimateBatchMock).not.toHaveBeenCalled();
     expect(executeBatchMock).not.toHaveBeenCalled();
     expect(container.textContent).not.toContain('Review Batch');
+  });
+
+  it('allows the current EVM sender path on Calibration without default fee rows', async () => {
+    mockChainId = 314159;
+
+    await act(async () => {
+      root.render(<App />);
+    });
+
+    expect(vi.mocked(validateRecipientRows)).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.objectContaining({
+        source: 'manual',
+        expectedNetworkPrefix: 't',
+      }),
+    );
+
+    click(getElementByTestId(container, 'review-batch-button'));
+    await flushAsyncWork();
+
+    expect(container.textContent).toContain('Calibration Testnet');
+    expect(estimateBatchMock).toHaveBeenCalledWith(
+      [{ address: getAddress(RECIPIENT), amount: 1 }],
+      'PARTIAL',
+    );
+
+    click(getElementByTestId(container, 'send-batch-button'));
+    await flushAsyncWork();
+
+    expect(executeBatchMock).toHaveBeenCalledWith(
+      [{ address: getAddress(RECIPIENT), amount: 1 }],
+      'PARTIAL',
+    );
+  });
+
+  it('keeps Calibration wrong-prefix batches from estimating or sending', async () => {
+    const wrongPrefixRecipient = 'f1abjxfbp274xpdqcpuaykwkfb43omjotacm2p3za';
+    mockChainId = 314159;
+    mockValidationResult = {
+      validRecipients: [],
+      errors: [
+        `${wrongPrefixRecipient} does not match the current Calibration address format`,
+      ],
+      warnings: [],
+      nonEmptyRowCount: 1,
+    };
+
+    await act(async () => {
+      root.render(<App />);
+    });
+
+    click(getElementByTestId(container, 'review-batch-button'));
+    await flushAsyncWork();
+
+    expect(container.textContent).toContain(
+      `${wrongPrefixRecipient} does not match the current Calibration address format`,
+    );
+    expect(getElementByTestId(container, 'send-batch-button')).toHaveProperty('disabled', true);
+    expect(estimateBatchMock).not.toHaveBeenCalled();
+    expect(executeBatchMock).not.toHaveBeenCalled();
   });
 });
 

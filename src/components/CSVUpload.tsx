@@ -1,6 +1,5 @@
 import React, { useCallback, useState } from 'react';
 import Papa, { type ParseResult } from 'papaparse';
-import { validateRecipientRows } from '../utils/recipientValidation';
 
 export interface CSVRecipient {
   receiverAddress: string;
@@ -84,35 +83,10 @@ export const CSVUpload: React.FC<CSVUploadProps> = ({
               });
             }
 
-            const validationResult =
-              errors.length === 0
-                ? validateRecipientRows(
-                    parsedRecipients.map((recipient) => ({
-                      address: recipient.receiverAddress,
-                      amount: recipient.value,
-                      lineNumber: recipient.lineNumber,
-                    })),
-                    {
-                      source: 'csv',
-                      expectedNetworkPrefix,
-                      requireAtLeastOneRecipient: true,
-                    },
-                  )
-                : {
-                    validRecipients: [],
-                    errors: [],
-                    warnings: [],
-                    nonEmptyRowCount: 0,
-                  };
-
             onUpload({
-              recipients: validationResult.validRecipients.map((recipient) => ({
-                receiverAddress: recipient.address,
-                value: recipient.amount,
-                lineNumber: recipient.lineNumber,
-              })),
-              errors: [...errors, ...validationResult.errors],
-              warnings: validationResult.warnings,
+              recipients: errors.length === 0 ? parsedRecipients : [],
+              errors,
+              warnings: [],
             });
             setIsProcessing(false);
           },
@@ -136,7 +110,7 @@ export const CSVUpload: React.FC<CSVUploadProps> = ({
         setIsProcessing(false);
       }
     },
-    [expectedNetworkPrefix, onUpload],
+    [onUpload],
   );
 
   const handleDrop = useCallback(
