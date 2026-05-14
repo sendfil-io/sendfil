@@ -11,7 +11,10 @@ import UnavailableCapabilityModal from './components/UnavailableCapabilityModal'
 import { useAccount, useBalance, useChainId } from 'wagmi';
 import { formatUnits } from 'viem';
 import { calculateFeeRows, getFeeLabel } from './utils/fee';
-import { validateRecipientRows } from './utils/recipientValidation';
+import {
+  validateRecipientRows,
+  type RecipientValidationResult,
+} from './utils/recipientValidation';
 import {
   DEFAULT_BATCH_CONFIGURATION,
   getErrorHandlingLabel,
@@ -77,6 +80,15 @@ function createEmptyManualInteractions(count = 3): ManualRecipientInteraction[] 
     addressTouched: false,
     amountTouched: false,
   }));
+}
+
+function createEmptyRecipientValidationResult(): RecipientValidationResult {
+  return {
+    validRecipients: [],
+    errors: [],
+    warnings: [],
+    nonEmptyRowCount: 0,
+  };
 }
 
 function formatSummaryFil(amount: number): string {
@@ -474,6 +486,18 @@ export default function App() {
     [csvData],
   );
 
+  const csvValidation = React.useMemo(
+    () =>
+      csvData.length > 0
+        ? validateRecipientRows(csvRecipients, {
+            source: 'csv',
+            expectedNetworkPrefix,
+            requireAtLeastOneRecipient: true,
+          })
+        : createEmptyRecipientValidationResult(),
+    [csvData.length, csvRecipients, expectedNetworkPrefix],
+  );
+
   const hasEnteredData =
     inputMode === 'manual'
       ? manualValidation.nonEmptyRowCount > 0
@@ -510,13 +534,15 @@ export default function App() {
 
   const validRecipients = React.useMemo(
     () =>
-      (inputMode === 'manual' ? manualValidation.validRecipients : csvRecipients).map(
-        (recipient) => ({
-          address: recipient.address,
-          amount: Number(recipient.amount),
-        }),
-      ),
-    [csvRecipients, inputMode, manualValidation.validRecipients],
+      (
+        inputMode === 'manual'
+          ? manualValidation.validRecipients
+          : csvValidation.validRecipients
+      ).map((recipient) => ({
+        address: recipient.address,
+        amount: Number(recipient.amount),
+      })),
+    [csvValidation.validRecipients, inputMode, manualValidation.validRecipients],
   );
   const selectedErrorMode: ErrorHandlingPreference = 'PARTIAL';
   const feeComputation = React.useMemo(() => {
@@ -566,14 +592,25 @@ export default function App() {
         ]
       : [
           ...csvErrors,
+          ...csvValidation.errors,
           ...(feeComputation.error ? [feeComputation.error] : []),
           ...networkValidationErrors,
         ];
+  const activeBlockingValidationErrors =
+    inputMode === 'manual'
+      ? [
+          ...manualValidation.errors,
+          ...(feeComputation.error ? [feeComputation.error] : []),
+          ...networkValidationErrors,
+        ]
+      : activeValidationErrors;
   const activeValidationWarnings =
-    inputMode === 'manual' ? manualValidation.warnings : csvWarnings;
+    inputMode === 'manual'
+      ? manualValidation.warnings
+      : [...csvWarnings, ...csvValidation.warnings];
 
   const draftRecipientCount =
-    inputMode === 'manual' ? manualValidation.nonEmptyRowCount : csvData.length;
+    inputMode === 'manual' ? manualValidation.nonEmptyRowCount : csvValidation.nonEmptyRowCount;
   const hasReviewableRows = draftRecipientCount > 0;
 
   const recipientTotal = validRecipients.reduce((sum, recipient) => sum + recipient.amount, 0);
@@ -688,7 +725,7 @@ export default function App() {
       return;
     }
 
-    if (validRecipients.length > 0 && activeValidationErrors.length === 0) {
+    if (validRecipients.length > 0 && activeBlockingValidationErrors.length === 0) {
       setIsEstimatingGas(true);
 
       try {
@@ -732,6 +769,15 @@ export default function App() {
   };
 
   const handleConfirmTransaction = async () => {
+    if (
+      !isConnected ||
+      !address ||
+      isNetworkMismatch ||
+      activeBlockingValidationErrors.length > 0
+    ) {
+      return;
+    }
+
     try {
       await executeBatch(feeComputation.recipients, selectedErrorMode);
     } catch {
@@ -1193,7 +1239,10 @@ f1cj...,3.3`;
                         messages={[
                           `${csvData.length} recipients imported from the uploaded file.`,
                           `Current valid total: ${formatSummaryFil(
-                            csvData.reduce((sum, recipient) => sum + Number(recipient.value), 0),
+                            csvValidation.validRecipients.reduce(
+                              (sum, recipient) => sum + Number(recipient.amount),
+                              0,
+                            ),
                           )}.`,
                         ]}
                         tone="info"
