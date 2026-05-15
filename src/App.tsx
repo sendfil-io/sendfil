@@ -8,7 +8,7 @@ import ReviewTransactionModal, {
   GasEstimate,
 } from './components/ReviewTransactionModal';
 import UnavailableCapabilityModal from './components/UnavailableCapabilityModal';
-import { useAccount, useBalance, useChainId } from 'wagmi';
+import { useBalance } from 'wagmi';
 import { formatUnits } from 'viem';
 import { calculateFeeRows, getFeeLabel } from './utils/fee';
 import {
@@ -36,7 +36,7 @@ import {
   getSupportedNetworkByChainId,
   getSupportedNetworkListLabel,
 } from './lib/networks';
-import { createEvmConnectedSender } from './lib/senders';
+import { useConnectedSender } from './lib/senders';
 
 interface Recipient {
   address: string;
@@ -312,34 +312,39 @@ function ConfigurationChoiceGroup({
 }
 
 export default function App() {
-  const account = useAccount();
-  const walletChainId = useChainId();
-  const connectedSender = React.useMemo(
-    () =>
-      createEvmConnectedSender({
-        address: E2E_MOCK_WALLET_ENABLED ? E2E_MOCK_ACCOUNT : account.address,
-        chainId: E2E_MOCK_WALLET_ENABLED ? E2E_MOCK_CHAIN_ID : walletChainId,
-        isConnected: E2E_MOCK_WALLET_ENABLED ? true : account.isConnected,
-      }),
-    [account.address, account.isConnected, walletChainId],
+  const e2eMockWallet = React.useMemo(
+    () => ({
+      enabled: E2E_MOCK_WALLET_ENABLED,
+      address: E2E_MOCK_ACCOUNT,
+      chainId: E2E_MOCK_CHAIN_ID,
+    }),
+    [],
   );
-  const isConnected = Boolean(connectedSender);
-  const address = connectedSender?.address;
-  const chainId = connectedSender?.chainId;
-  const connectedNetwork = connectedSender?.network;
-  const hasSupportedConnectedNetwork =
-    isConnected && connectedSender?.networkStatus === 'supported';
-  const isUnsupportedConnectedNetwork =
-    isConnected && connectedSender?.networkStatus === 'unsupported';
-  const expectedNetworkPrefix = connectedNetwork?.nativePrefix;
+  const connectedSenderState = useConnectedSender({
+    e2eMockWallet,
+  });
+  const {
+    connectedSender,
+    isConnected,
+    address,
+    chainId,
+    connectedNetwork,
+    hasSupportedConnectedNetwork,
+    isUnsupportedConnectedNetwork,
+    expectedNetworkPrefix,
+    balanceSource,
+    canUseLiveSendPath,
+    liveSendPathUnavailableReason,
+  } = connectedSenderState;
   const feeLabel = getFeeLabel(connectedNetwork?.chainId);
+  const evmBalanceSource =
+    balanceSource.kind === 'evm-wagmi' ? balanceSource : undefined;
   const { data: balanceData } = useBalance({
-    address: connectedSender?.kind === 'evm' ? connectedSender.address : undefined,
-    chainId: connectedNetwork?.chainId,
+    address: evmBalanceSource?.address,
+    chainId: evmBalanceSource?.chainId,
     query: {
       enabled: Boolean(
-        connectedSender?.kind === 'evm' &&
-          connectedSender.address &&
+        evmBalanceSource?.enabled &&
           hasSupportedConnectedNetwork &&
           !E2E_MOCK_WALLET_ENABLED,
       ),
@@ -660,7 +665,8 @@ export default function App() {
     [manualRecipients],
   );
 
-  const reviewDisabled = !isConnected || isNetworkMismatch || !hasReviewableRows;
+  const reviewDisabled =
+    !isConnected || !canUseLiveSendPath || isNetworkMismatch || !hasReviewableRows;
   const transactionState: TransactionState =
     executionState === 'idle'
       ? 'review'
@@ -675,6 +681,10 @@ export default function App() {
 
     if (isNetworkMismatch) {
       return `Switch to ${getSupportedNetworkListLabel()} before continuing.`;
+    }
+
+    if (!canUseLiveSendPath) {
+      return liveSendPathUnavailableReason ?? 'The connected sender cannot review or send yet.';
     }
 
     if (!hasReviewableRows) {
@@ -701,13 +711,21 @@ export default function App() {
     activeValidationWarnings.length,
     hasReviewableRows,
     inputMode,
+    canUseLiveSendPath,
     isConnected,
     isNetworkMismatch,
+    liveSendPathUnavailableReason,
     manualIncompleteRowCount,
   ]);
 
   const handleReview = async () => {
-    if (!isConnected || !address || isNetworkMismatch || !hasReviewableRows) {
+    if (
+      !isConnected ||
+      !canUseLiveSendPath ||
+      !address ||
+      isNetworkMismatch ||
+      !hasReviewableRows
+    ) {
       return;
     }
 
@@ -789,6 +807,7 @@ export default function App() {
   const handleConfirmTransaction = async () => {
     if (
       !isConnected ||
+      !canUseLiveSendPath ||
       !address ||
       isNetworkMismatch ||
       activeBlockingValidationErrors.length > 0
@@ -930,7 +949,7 @@ f1cj...,3.3`;
               </p>
             </header>
 
-            <NetworkBanner />
+            <NetworkBanner connectedSender={connectedSender} />
 
             <div className="mb-6 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div className="inline-flex rounded-full border border-slate-200 bg-white p-1 shadow-sm">
@@ -1340,6 +1359,8 @@ f1cj...,3.3`;
                       ? 'Connect Wallet to Review'
                       : isNetworkMismatch
                         ? 'Switch Network to Review'
+                        : !canUseLiveSendPath
+                          ? 'Sender Not Available'
                         : `Review Batch${draftRecipientCount > 0 ? ` (${draftRecipientCount})` : ''}`}
                   </button>
                 </div>

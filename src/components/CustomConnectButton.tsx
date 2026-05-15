@@ -6,9 +6,10 @@ import {
   getSupportedNetworkListLabel,
 } from '../lib/networks';
 import {
-  convertEthToDelegatedAddress,
-  truncateAddress,
-} from '../utils/addressConverter';
+  createEvmConnectedSender,
+  getSenderDisplayAddress,
+} from '../lib/senders';
+import { truncateAddress } from '../utils/addressConverter';
 
 const E2E_MOCK_WALLET_ENABLED = import.meta.env.VITE_E2E_MOCK_WALLET === 'true';
 
@@ -64,10 +65,17 @@ export const CustomConnectButton: React.FC = () => {
           chain &&
           (!authenticationStatus || authenticationStatus === 'authenticated');
         const supportedNetwork = chain ? getSupportedNetworkByChainId(chain.id) : undefined;
-        const delegatedAddress =
+        const connectedSender =
           account && supportedNetwork
-            ? convertEthToDelegatedAddress(account.address, supportedNetwork.chainId)
-            : account?.address;
+            ? createEvmConnectedSender({
+                address: account.address,
+                chainId: supportedNetwork.chainId,
+                isConnected: true,
+              })
+            : undefined;
+        const senderDisplayAddress = connectedSender
+          ? getSenderDisplayAddress(connectedSender)
+          : account?.address;
         const networkLabel = supportedNetwork?.walletLabel ?? chain?.name;
 
         const renderDisconnectedState = () => (
@@ -85,7 +93,7 @@ export const CustomConnectButton: React.FC = () => {
             return null;
           }
 
-          const displayAddress = truncateAddress(delegatedAddress ?? account.address, 5);
+          const displayAddress = truncateAddress(senderDisplayAddress ?? account.address, 5);
           const isWrongNetwork = chain.unsupported || !supportedNetwork;
 
           return (
@@ -118,7 +126,7 @@ export const CustomConnectButton: React.FC = () => {
                 type="button"
                 onClick={() => setShowAccountModal(true)}
                 className={`w-full rounded-full bg-[#4a84ea] px-4 py-4 text-left text-white transition-colors hover:bg-[#3f77dd] ${primaryActionShadow}`}
-                title={delegatedAddress}
+                title={senderDisplayAddress}
               >
                 <div className="font-mono text-base font-semibold">{displayAddress}</div>
                 <div className="mt-1 text-sm text-blue-100">{account.displayBalance || '0 FIL'}</div>
@@ -159,7 +167,7 @@ export const CustomConnectButton: React.FC = () => {
                     </div>
 
                     <h3 className="font-mono text-base font-semibold text-slate-950">
-                      {delegatedAddress ?? account.address}
+                      {senderDisplayAddress ?? account.address}
                     </h3>
                     <p className="mt-2 text-sm text-slate-500">{networkLabel}</p>
                     <p className="mt-2 text-sm text-slate-500">
@@ -170,7 +178,7 @@ export const CustomConnectButton: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => {
-                          copyToClipboard(delegatedAddress ?? account.address);
+                          copyToClipboard(senderDisplayAddress ?? account.address);
                           setShowAccountModal(false);
                         }}
                         className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:bg-slate-100"

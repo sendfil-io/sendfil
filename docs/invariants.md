@@ -25,7 +25,7 @@ Use this catalog before changing validation, network gating, review/send flow, R
 | `INV-AMT-002` | Reject values with more than 18 decimal places | `implemented` | validation, amount parsing | `src/utils/__tests__/recipientValidation.test.ts` |
 | `INV-BATCH-001` | Enforce the 500-recipient cap | `implemented` | validation | `src/utils/__tests__/recipientValidation.test.ts` |
 | `INV-DUP-001` | Duplicate recipients require explicit confirmation before Send | `implemented` | duplicate detection, review UI gating | `src/utils/__tests__/recipientValidation.test.ts`, `src/components/__tests__/ReviewTransactionModal.test.tsx`, `tests/e2e/review-flow.spec.ts` |
-| `INV-NET-001` | Wrong network disables Send | `implemented` | network/wallet gating, review UI gating | `src/__tests__/app.invariants.test.tsx` |
+| `INV-NET-001` | Wrong network disables Send | `implemented` | network/wallet gating, review UI gating | `src/lib/senders/__tests__/connectedSender.test.ts`, `src/__tests__/app.invariants.test.tsx` |
 | `INV-BAL-001` | Submit-time balance recheck blocks EVM sends when current balance is insufficient | `implemented` | submit guard, wallet RPC | `src/lib/transaction/__tests__/submitBalanceCheck.test.ts`, `src/lib/transaction/__tests__/useExecuteBatch.submitBalance.test.tsx` |
 | `INV-RPC-001` | Contract recipients detected via `eth_getCode` are blocked | `not implemented` | RPC contract-recipient check, review UI gating | `src/__tests__/contractRecipientGuard.future.test.tsx` |
 | `INV-EXEC-001` | Review estimate and submission use the same execution config | `implemented` | estimate/execute flow, transaction builder | `src/lib/transaction/__tests__/batchExecution.test.ts`, `src/lib/transaction/__tests__/nativeBatchPreflight.test.ts`, `src/__tests__/app.invariants.test.tsx` |
@@ -245,11 +245,15 @@ network/wallet gating, review UI gating
 - `src/__tests__/app.invariants.test.tsx`
   - `describe('INV-NET-001 wrong network gating', ...)`
   - `it('blocks review and send while the wallet is connected to an unsupported chain')`
+- `src/lib/senders/__tests__/connectedSender.test.ts`
+  - `describe('connected sender state', ...)`
+  - `it('keeps unsupported EVM networks connected but disables network-scoped reads')`
+  - `it('models native f1/t1 senders as unsupported by the live send path until signing is wired')`
 
 ### Status
 `implemented`
 
-Current repo note: the live block happens at the App review boundary, not by a wallet-driven switch action inside the review modal.
+Current repo note: the live block happens at the App review boundary, not by a wallet-driven switch action inside the review modal. `src/lib/senders/useConnectedSender.ts` now centralizes the live connected-sender state for the App. It exposes the current EVM/wagmi sender as the only live send-capable path and keeps native Filecoin sender models/provider placeholders from enabling review or send until native wallet signing is actually wired.
 
 ## INV-BAL-001 — Submit-Time Balance Recheck
 
