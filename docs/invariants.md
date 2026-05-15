@@ -28,7 +28,7 @@ Use this catalog before changing validation, network gating, review/send flow, R
 | `INV-NET-001` | Wrong network disables Send | `implemented` | network/wallet gating, review UI gating | `src/__tests__/app.invariants.test.tsx` |
 | `INV-BAL-001` | Submit-time balance recheck blocks EVM sends when current balance is insufficient | `implemented` | submit guard, wallet RPC | `src/lib/transaction/__tests__/submitBalanceCheck.test.ts`, `src/lib/transaction/__tests__/useExecuteBatch.submitBalance.test.tsx` |
 | `INV-RPC-001` | Contract recipients detected via `eth_getCode` are blocked | `not implemented` | RPC contract-recipient check, review UI gating | `src/__tests__/contractRecipientGuard.future.test.tsx` |
-| `INV-EXEC-001` | Review estimate and submission use the same execution config | `implemented` | estimate/execute flow, transaction builder | `src/lib/transaction/__tests__/batchExecution.test.ts`, `src/__tests__/app.invariants.test.tsx` |
+| `INV-EXEC-001` | Review estimate and submission use the same execution config | `implemented` | estimate/execute flow, transaction builder | `src/lib/transaction/__tests__/batchExecution.test.ts`, `src/lib/transaction/__tests__/nativeBatchPreflight.test.ts`, `src/__tests__/app.invariants.test.tsx` |
 
 ## INV-ADDR-001 — Accept valid `f1/f2/f3/f4/0x` recipients
 
@@ -334,6 +334,9 @@ estimate/execute flow, transaction builder
 - `src/lib/transaction/__tests__/batchExecution.test.ts`
   - `describe('INV-EXEC-001 prepared batch determinism', ...)`
   - `it('produces the same prepared execution config for estimate and submit inputs')`
+- `src/lib/transaction/__tests__/nativeBatchPreflight.test.ts`
+  - `describe('native Filecoin batch preflight', ...)`
+  - `it('preserves the existing Multicall3 payload and ATOMIC call semantics')`
 - `src/__tests__/app.invariants.test.tsx`
   - `describe('INV-EXEC-001 review and submit alignment', ...)`
   - `it('passes the same execution config to estimate and execute in the live app flow')`
@@ -341,4 +344,4 @@ estimate/execute flow, transaction builder
 ### Status
 `implemented`
 
-Current repo note: the live App path still estimates and submits through the EVM/wagmi `useExecuteBatch` flow. `src/lib/transaction/nativeBatchMessage.ts` can prepare the single native Filecoin `InvokeEVM` message for a native `f1`/`t1` sender from the same prepared Multicall3 batch payload, but native wallet signing/submission is not wired into the live app yet.
+Current repo note: the live App path still estimates and submits through the EVM/wagmi `useExecuteBatch` flow. `src/lib/transaction/nativeBatchMessage.ts` can prepare the single native Filecoin `InvokeEVM` message for a native `f1`/`t1` sender from the same prepared Multicall3 batch payload, and `src/lib/transaction/nativeBatchPreflight.ts` can fetch the native nonce and Lotus gas estimate for that message. Native wallet signing/submission and review UI routing are not wired into the live app yet.
