@@ -4,11 +4,19 @@ import {
   getSupportedNetworkByChainId,
   getSupportedNetworkListLabel,
 } from '../lib/networks';
+import type { ConnectedSender } from '../lib/senders';
 
-const NetworkBanner: React.FC = () => {
-  const chainId = useChainId();
-  const { isConnected } = useAccount();
-  const network = getSupportedNetworkByChainId(chainId);
+interface NetworkBannerProps {
+  connectedSender?: ConnectedSender;
+}
+
+const NetworkBanner: React.FC<NetworkBannerProps> = ({ connectedSender }) => {
+  const wagmiChainId = useChainId();
+  const { isConnected: isWagmiConnected } = useAccount();
+  const chainId = connectedSender?.chainId ?? wagmiChainId;
+  const isConnected = Boolean(connectedSender) || isWagmiConnected;
+  const network =
+    connectedSender?.network ?? getSupportedNetworkByChainId(chainId);
 
   if (!isConnected || !chainId) return null;
   if (!network) {
