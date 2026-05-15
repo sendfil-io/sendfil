@@ -158,6 +158,51 @@ describe('native Filecoin provider boundary', () => {
     });
   });
 
+  it('can expose FilSnap and Ledger as separate Calibration testnet providers', () => {
+    const providers = getNativeFilecoinWalletProviders({
+      featureEnabled: true,
+      calibrationTestnetSendEnabled: true,
+      ledgerCalibrationTestnetSendEnabled: true,
+      ethereumProvider: createMockEthereumProvider(),
+      ledgerWebHidAvailable: () => true,
+    });
+
+    expect(providers.map((provider) => provider.metadata.id)).toEqual([
+      'filsnap-calibration',
+      'ledger-filecoin-calibration',
+    ]);
+    expect(providers.map((provider) => provider.metadata.status)).toEqual([
+      'available',
+      'available',
+    ]);
+    expect(
+      providers.every(
+        (provider) =>
+          provider.metadata.capabilities.canSubmit &&
+          provider.metadata.capabilities.oneApprovalPerBatch,
+      ),
+    ).toBe(true);
+  });
+
+  it('can expose only the Ledger testnet provider when FilSnap is not enabled', () => {
+    const providers = getNativeFilecoinWalletProviders({
+      featureEnabled: true,
+      calibrationTestnetSendEnabled: false,
+      ledgerCalibrationTestnetSendEnabled: true,
+      ledgerWebHidAvailable: () => false,
+    });
+
+    expect(providers).toHaveLength(1);
+    expect(providers[0].metadata).toMatchObject({
+      id: 'ledger-filecoin-calibration',
+      status: 'disabled',
+      capabilities: {
+        canConnect: false,
+        canSubmit: false,
+      },
+    });
+  });
+
   it('connects a FilSnap Calibration t1 account through MetaMask Snaps', async () => {
     const ethereumProvider = createMockEthereumProvider();
     const provider = createFilsnapCalibrationProvider({ ethereumProvider });

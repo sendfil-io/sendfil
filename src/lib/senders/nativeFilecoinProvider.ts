@@ -9,6 +9,10 @@ import {
   createFilsnapCalibrationProvider,
   type FilsnapEthereumProvider,
 } from './filsnapProvider';
+import {
+  createLedgerFilecoinCalibrationProvider,
+  type LedgerFilecoinRuntime,
+} from './ledgerFilecoinProvider';
 
 type NativeFilecoinFeatureEnv = Record<string, string | undefined>;
 
@@ -65,24 +69,49 @@ function isNativeFilecoinTestnetSendEnabled(
   return env.VITE_NATIVE_FILECOIN_TESTNET_SEND_ENABLED === 'true';
 }
 
+function isLedgerFilecoinTestnetSendEnabled(
+  env: NativeFilecoinFeatureEnv = import.meta.env as unknown as NativeFilecoinFeatureEnv,
+): boolean {
+  return env.VITE_LEDGER_FILECOIN_TESTNET_SEND_ENABLED === 'true';
+}
+
 export function getNativeFilecoinWalletProviders({
   featureEnabled = isNativeFilecoinSenderFeatureEnabled(),
   calibrationTestnetSendEnabled = isNativeFilecoinTestnetSendEnabled(),
+  ledgerCalibrationTestnetSendEnabled = isLedgerFilecoinTestnetSendEnabled(),
   ethereumProvider,
+  ledgerWebHidAvailable,
+  ledgerRuntime,
 }: {
   featureEnabled?: boolean;
   calibrationTestnetSendEnabled?: boolean;
+  ledgerCalibrationTestnetSendEnabled?: boolean;
   ethereumProvider?: FilsnapEthereumProvider;
+  ledgerWebHidAvailable?: () => boolean;
+  ledgerRuntime?: () => Promise<LedgerFilecoinRuntime>;
 } = {}): NativeFilecoinWalletProvider[] {
   if (!featureEnabled) {
     return [];
   }
 
+  const providers: NativeFilecoinWalletProvider[] = [];
+
   if (calibrationTestnetSendEnabled) {
-    return [createFilsnapCalibrationProvider({ ethereumProvider })];
+    providers.push(createFilsnapCalibrationProvider({ ethereumProvider }));
   }
 
-  return [createUnsupportedNativeFilecoinProvider()];
+  if (ledgerCalibrationTestnetSendEnabled) {
+    providers.push(
+      createLedgerFilecoinCalibrationProvider({
+        isWebHidAvailable: ledgerWebHidAvailable,
+        loadRuntime: ledgerRuntime,
+      }),
+    );
+  }
+
+  return providers.length > 0
+    ? providers
+    : [createUnsupportedNativeFilecoinProvider()];
 }
 
 export async function getNativeFilecoinSenderBalanceAttoFil(

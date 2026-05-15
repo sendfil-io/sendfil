@@ -64,9 +64,16 @@ Copy `.env.example` to `.env.local` and set:
 Optional native Filecoin sender testing on Calibration:
 
 - `VITE_NATIVE_FILECOIN_WALLET_ENABLED=true`
-- `VITE_NATIVE_FILECOIN_TESTNET_SEND_ENABLED=true`
+- `VITE_NATIVE_FILECOIN_TESTNET_SEND_ENABLED=true` enables the FilSnap Calibration test path
 - `VITE_FILSNAP_SNAP_ID` defaults to `npm:filsnap`
 - `VITE_FILSNAP_VERSION` is optional
+- `VITE_LEDGER_FILECOIN_TESTNET_SEND_ENABLED=true` enables the Ledger Calibration test path
+
+Ledger support is intentionally Calibration-only in this branch. It requires a
+Chromium browser with WebHID, a connected Ledger with the Filecoin app open, and
+manual confirmation of the `t1` account and signing prompt on the device. CI
+tests cover provider behavior, serialization, and Lotus submission shape, but
+they do not verify real hardware signing.
 
 Calibration defaults to fee injection disabled. If you want testnet fee rows, also set:
 

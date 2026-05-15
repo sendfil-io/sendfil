@@ -255,80 +255,116 @@ function NativeFilecoinSenderPanel({
   providers: NativeFilecoinWalletProvider[];
   isConnecting: boolean;
   connectionError?: string;
-  onConnect: () => void;
+  onConnect: (provider: NativeFilecoinWalletProvider) => void;
   onDisconnect: () => void;
 }) {
   if (providers.length === 0) {
     return null;
   }
 
-  const provider = providers[0];
-  const isConnected = Boolean(nativeSender);
-  const isConnectable = Boolean(provider?.metadata.capabilities.canConnect);
-
   return (
     <div
       className="mt-4 rounded-[28px] border border-slate-200 bg-white px-4 py-4 shadow-[0_16px_40px_-32px_rgba(15,23,42,0.45)]"
       data-testid="native-filecoin-sender-panel"
     >
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h3 className="text-sm font-semibold text-slate-950">Native sender</h3>
-          <p className="mt-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-            FilSnap Calibration
-          </p>
-        </div>
-        <span
-          className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] ${
-            isConnected
-              ? 'bg-emerald-50 text-emerald-700'
-              : provider?.metadata.status === 'available'
-                ? 'bg-blue-50 text-blue-700'
-                : 'bg-slate-100 text-slate-500'
-          }`}
-        >
-          {isConnected
+      <h3 className="text-sm font-semibold text-slate-950">Native sender</h3>
+      <p className="mt-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+        Calibration testnet
+      </p>
+
+      <div className="mt-4 space-y-3">
+        {providers.map((provider) => {
+          const isConnected =
+            nativeSender?.provider.id === provider.metadata.id;
+          const hasDifferentNativeSender =
+            Boolean(nativeSender) && !isConnected;
+          const isConnectable = provider.metadata.capabilities.canConnect;
+          const isDisabled =
+            !isConnected &&
+            (!isConnectable || hasDifferentNativeSender || isConnecting);
+          const statusLabel = isConnected
             ? 't1 active'
-            : provider?.metadata.status === 'available'
+            : provider.metadata.status === 'available'
               ? 'testnet'
-              : provider?.metadata.status ?? 'planned'}
-        </span>
+              : provider.metadata.status;
+
+          return (
+            <div
+              key={provider.metadata.id}
+              className={`rounded-2xl border px-3 py-3 ${
+                isConnected
+                  ? 'border-emerald-200 bg-emerald-50/60'
+                  : 'border-slate-200 bg-slate-50/70'
+              }`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">
+                    {provider.metadata.name}
+                  </p>
+                  <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                    native t1
+                  </p>
+                </div>
+                <span
+                  className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] ${
+                    isConnected
+                      ? 'bg-emerald-100 text-emerald-700'
+                      : provider.metadata.status === 'available'
+                        ? 'bg-blue-50 text-blue-700'
+                        : 'bg-slate-200 text-slate-500'
+                  }`}
+                >
+                  {statusLabel}
+                </span>
+              </div>
+
+              {isConnected && nativeSender && (
+                <p className="mt-3 rounded-xl bg-white/85 px-3 py-2 font-mono text-xs text-slate-700">
+                  {formatCompactAddress(nativeSender.address)}
+                </p>
+              )}
+
+              {(provider.metadata.notice ||
+                provider.metadata.unavailableReason) && (
+                <p className="mt-3 text-xs leading-5 text-slate-500">
+                  {provider.metadata.notice ??
+                    provider.metadata.unavailableReason}
+                </p>
+              )}
+
+              <button
+                type="button"
+                onClick={() =>
+                  isConnected ? onDisconnect() : onConnect(provider)
+                }
+                disabled={isDisabled}
+                className={`mt-4 w-full rounded-full px-4 py-2.5 text-sm font-semibold transition-colors ${
+                  isDisabled
+                    ? 'cursor-not-allowed bg-slate-200 text-slate-500'
+                    : 'bg-slate-950 text-white hover:bg-slate-800'
+                }`}
+              >
+                {isConnected
+                  ? 'Disconnect t1'
+                  : isConnecting
+                    ? 'Connecting...'
+                    : hasDifferentNativeSender
+                      ? 'Disconnect active t1'
+                      : isConnectable
+                        ? `Connect ${provider.metadata.name}`
+                        : provider.metadata.status === 'planned'
+                          ? 'Native wallet planned'
+                          : 'Unavailable'}
+              </button>
+            </div>
+          );
+        })}
       </div>
-
-      {nativeSender && (
-        <p className="mt-3 rounded-2xl bg-slate-50 px-3 py-2 font-mono text-xs text-slate-700">
-          {formatCompactAddress(nativeSender.address)}
-        </p>
-      )}
-
-      {!nativeSender && provider?.metadata.unavailableReason && (
-        <p className="mt-3 text-xs leading-5 text-slate-500">
-          {provider.metadata.unavailableReason}
-        </p>
-      )}
 
       {connectionError && (
         <p className="mt-3 text-xs leading-5 text-red-700">{connectionError}</p>
       )}
-
-      <button
-        type="button"
-        onClick={isConnected ? onDisconnect : onConnect}
-        disabled={!isConnected && (!isConnectable || isConnecting)}
-        className={`mt-4 w-full rounded-full px-4 py-2.5 text-sm font-semibold transition-colors ${
-          !isConnected && (!isConnectable || isConnecting)
-            ? 'cursor-not-allowed bg-slate-200 text-slate-500'
-            : 'bg-slate-950 text-white hover:bg-slate-800'
-        }`}
-      >
-        {isConnected
-          ? 'Disconnect t1'
-          : isConnecting
-            ? 'Connecting...'
-            : isConnectable
-              ? 'Connect FilSnap'
-              : 'Native wallet planned'}
-      </button>
     </div>
   );
 }
@@ -597,16 +633,13 @@ export default function App() {
     setNativeExecution({ state: 'idle' });
   };
 
-  const handleConnectNativeFilecoin = async () => {
-    const provider =
-      nativeFilecoinProviders.find(
-        (candidate) => candidate.metadata.capabilities.canConnect,
-      ) ?? nativeFilecoinProviders[0];
-
-    if (!provider || !provider.metadata.capabilities.canConnect) {
+  const handleConnectNativeFilecoin = async (
+    provider: NativeFilecoinWalletProvider,
+  ) => {
+    if (!provider.metadata.capabilities.canConnect) {
       openUnavailableCapabilityNotice(
         'Native sender is not available',
-        provider?.metadata.unavailableReason ??
+        provider.metadata.unavailableReason ??
           'No native Filecoin wallet provider is available in this browser session.',
       );
       return;
@@ -625,7 +658,8 @@ export default function App() {
 
       if (!senderResult.sender) {
         throw new Error(
-          senderResult.error ?? 'FilSnap did not return a supported t1 account.',
+          senderResult.error ??
+            `${provider.metadata.name} did not return a supported t1 account.`,
         );
       }
 
@@ -637,9 +671,12 @@ export default function App() {
       const message =
         error instanceof Error
           ? error.message
-          : 'FilSnap connection failed unexpectedly.';
+          : `${provider.metadata.name} connection failed unexpectedly.`;
       setNativeFilecoinConnectionError(message);
-      openUnavailableCapabilityNotice('FilSnap connection failed', message);
+      openUnavailableCapabilityNotice(
+        `${provider.metadata.name} connection failed`,
+        message,
+      );
     } finally {
       setIsNativeFilecoinConnecting(false);
     }

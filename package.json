@@ -23,9 +23,13 @@
   },
   "dependencies": {
     "@glif/filecoin-address": "^4.0.0",
+    "@ipld/dag-cbor": "^10.0.1",
+    "@ledgerhq/hw-transport-webhid": "^6.35.2",
     "@rainbow-me/rainbowkit": "^2.2.11",
     "@tanstack/react-query": "^5.100.10",
     "@types/papaparse": "^5.5.2",
+    "@zondax/ledger-filecoin": "^3.0.7",
+    "buffer": "^6.0.3",
     "p-retry": "^7.1.1",
     "p-timeout": "^7.0.1",
     "papaparse": "^5.5.3",

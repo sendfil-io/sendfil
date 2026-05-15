@@ -26,6 +26,7 @@ export interface SenderProviderMetadata {
   kind: SenderProviderKind;
   status: SenderProviderStatus;
   capabilities: SenderProviderCapabilities;
+  notice?: string;
   unavailableReason?: string;
 }
 
