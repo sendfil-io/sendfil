@@ -28,15 +28,29 @@ import {
   attoFilBigIntToFil,
   type BatchGasEstimate,
 } from './lib/transaction/batchExecution';
-import { BatchExecutionError } from './lib/transaction/errorHandling';
+import {
+  BatchExecutionError,
+  mapBatchExecutionError,
+} from './lib/transaction/errorHandling';
 import { createMockBatchExecutionAdapter } from './lib/transaction/mockAdapter';
+import { submitPreparedNativeBatch } from './lib/transaction/nativeBatchExecution';
+import {
+  preflightNativeBatch,
+  type PreparedNativeBatchPreflight,
+} from './lib/transaction/nativeBatchPreflight';
 import { useExecuteBatch } from './lib/transaction/useExecuteBatch';
 import {
   getNetworkConfig,
   getSupportedNetworkByChainId,
   getSupportedNetworkListLabel,
 } from './lib/networks';
-import { useConnectedSender } from './lib/senders';
+import {
+  createNativeFilecoinConnectedSender,
+  getNativeFilecoinWalletProviders,
+  useConnectedSender,
+  type NativeFilecoinConnectedSender,
+  type NativeFilecoinWalletProvider,
+} from './lib/senders';
 
 interface Recipient {
   address: string;
@@ -63,6 +77,12 @@ interface UnavailableCapabilityNotice {
 
 type InputMode = 'manual' | 'csv';
 
+interface NativeExecutionSnapshot {
+  state: 'idle' | 'signing' | 'pending' | 'confirmed' | 'failed';
+  cid?: string;
+  error?: BatchExecutionError;
+}
+
 const E2E_MOCK_WALLET_ENABLED = import.meta.env.VITE_E2E_MOCK_WALLET === 'true';
 const E2E_SKIP_GAS_ESTIMATION = import.meta.env.VITE_E2E_SKIP_GAS_ESTIMATION === 'true';
 const E2E_MOCK_SEND_DELAY_MS = Number(import.meta.env.VITE_E2E_SEND_DELAY_MS ?? '3000');
@@ -71,6 +91,8 @@ const E2E_MOCK_BALANCE_FIL = 1000;
 const E2E_MOCK_CHAIN_ID =
   getSupportedNetworkByChainId(Number(import.meta.env.VITE_E2E_CHAIN_ID ?? '314'))?.chainId ??
   getNetworkConfig('mainnet').chainId;
+
+const NATIVE_FILECOIN_TESTNET_NETWORK_KEY = 'calibration' as const;
 
 function createEmptyRecipients(count = 3): Recipient[] {
   return Array.from({ length: count }, () => ({ address: '', amount: '' }));
@@ -98,6 +120,14 @@ function formatSummaryFil(amount: number): string {
   return `${amount.toLocaleString(undefined, {
     maximumFractionDigits: amount >= 1 ? 4 : 6,
   })} FIL`;
+}
+
+function formatCompactAddress(address: string): string {
+  if (address.length <= 18) {
+    return address;
+  }
+
+  return `${address.slice(0, 9)}...${address.slice(-7)}`;
 }
 
 function collectManualRowIssues(messages: string[]): Record<number, string[]> {
@@ -213,6 +243,96 @@ function SummaryPanel({
   );
 }
 
+function NativeFilecoinSenderPanel({
+  nativeSender,
+  providers,
+  isConnecting,
+  connectionError,
+  onConnect,
+  onDisconnect,
+}: {
+  nativeSender?: NativeFilecoinConnectedSender;
+  providers: NativeFilecoinWalletProvider[];
+  isConnecting: boolean;
+  connectionError?: string;
+  onConnect: () => void;
+  onDisconnect: () => void;
+}) {
+  if (providers.length === 0) {
+    return null;
+  }
+
+  const provider = providers[0];
+  const isConnected = Boolean(nativeSender);
+  const isConnectable = Boolean(provider?.metadata.capabilities.canConnect);
+
+  return (
+    <div
+      className="mt-4 rounded-[28px] border border-slate-200 bg-white px-4 py-4 shadow-[0_16px_40px_-32px_rgba(15,23,42,0.45)]"
+      data-testid="native-filecoin-sender-panel"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-950">Native sender</h3>
+          <p className="mt-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+            FilSnap Calibration
+          </p>
+        </div>
+        <span
+          className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] ${
+            isConnected
+              ? 'bg-emerald-50 text-emerald-700'
+              : provider?.metadata.status === 'available'
+                ? 'bg-blue-50 text-blue-700'
+                : 'bg-slate-100 text-slate-500'
+          }`}
+        >
+          {isConnected
+            ? 't1 active'
+            : provider?.metadata.status === 'available'
+              ? 'testnet'
+              : provider?.metadata.status ?? 'planned'}
+        </span>
+      </div>
+
+      {nativeSender && (
+        <p className="mt-3 rounded-2xl bg-slate-50 px-3 py-2 font-mono text-xs text-slate-700">
+          {formatCompactAddress(nativeSender.address)}
+        </p>
+      )}
+
+      {!nativeSender && provider?.metadata.unavailableReason && (
+        <p className="mt-3 text-xs leading-5 text-slate-500">
+          {provider.metadata.unavailableReason}
+        </p>
+      )}
+
+      {connectionError && (
+        <p className="mt-3 text-xs leading-5 text-red-700">{connectionError}</p>
+      )}
+
+      <button
+        type="button"
+        onClick={isConnected ? onDisconnect : onConnect}
+        disabled={!isConnected && (!isConnectable || isConnecting)}
+        className={`mt-4 w-full rounded-full px-4 py-2.5 text-sm font-semibold transition-colors ${
+          !isConnected && (!isConnectable || isConnecting)
+            ? 'cursor-not-allowed bg-slate-200 text-slate-500'
+            : 'bg-slate-950 text-white hover:bg-slate-800'
+        }`}
+      >
+        {isConnected
+          ? 'Disconnect t1'
+          : isConnecting
+            ? 'Connecting...'
+            : isConnectable
+              ? 'Connect FilSnap'
+              : 'Native wallet planned'}
+      </button>
+    </div>
+  );
+}
+
 const choiceCardSelectedShadow =
   'shadow-[0_18px_36px_-26px_rgba(31,105,255,0.82),0_14px_32px_-28px_rgba(60,212,160,0.22)]';
 
@@ -320,8 +440,22 @@ export default function App() {
     }),
     [],
   );
+  const nativeFilecoinProviders = React.useMemo(
+    () => getNativeFilecoinWalletProviders(),
+    [],
+  );
+  const [nativeFilecoinProvider, setNativeFilecoinProvider] =
+    React.useState<NativeFilecoinWalletProvider | undefined>(undefined);
+  const [nativeFilecoinSender, setNativeFilecoinSender] =
+    React.useState<NativeFilecoinConnectedSender | undefined>(undefined);
+  const [isNativeFilecoinConnecting, setIsNativeFilecoinConnecting] =
+    React.useState(false);
+  const [nativeFilecoinConnectionError, setNativeFilecoinConnectionError] =
+    React.useState<string | undefined>(undefined);
   const connectedSenderState = useConnectedSender({
     e2eMockWallet,
+    nativeFilecoinSender,
+    nativeFilecoinProviders,
   });
   const {
     connectedSender,
@@ -350,6 +484,10 @@ export default function App() {
       ),
     },
   });
+  const nativeBalanceSource =
+    balanceSource.kind === 'native-filecoin-lotus' ? balanceSource : undefined;
+  const [nativeBalanceAttoFil, setNativeBalanceAttoFil] =
+    React.useState<bigint | undefined>(undefined);
 
   const [inputMode, setInputMode] = React.useState<InputMode>('manual');
   const [manualRecipients, setManualRecipients] = React.useState<Recipient[]>(() =>
@@ -386,12 +524,56 @@ export default function App() {
     estimateBatch,
     executeBatch,
     state: executionState,
-    txHash: transactionHash,
-    error: transactionError,
+    txHash: evmTransactionHash,
+    error: evmTransactionError,
     reset: resetExecution,
   } = useExecuteBatch({
     adapter: batchExecutionAdapter,
   });
+  const [nativeBatchPreflight, setNativeBatchPreflight] =
+    React.useState<PreparedNativeBatchPreflight | undefined>(undefined);
+  const [nativeExecution, setNativeExecution] =
+    React.useState<NativeExecutionSnapshot>({ state: 'idle' });
+
+  React.useEffect(() => {
+    if (
+      !nativeBalanceSource?.enabled ||
+      !nativeFilecoinProvider ||
+      !nativeFilecoinSender
+    ) {
+      setNativeBalanceAttoFil(undefined);
+      return undefined;
+    }
+
+    let isCancelled = false;
+
+    nativeFilecoinProvider
+      .getBalance({
+        address: nativeBalanceSource.address,
+        networkKey: nativeBalanceSource.networkKey,
+        nativePrefix: nativeFilecoinSender.nativePrefix,
+      })
+      .then((balance) => {
+        if (!isCancelled) {
+          setNativeBalanceAttoFil(balance);
+        }
+      })
+      .catch(() => {
+        if (!isCancelled) {
+          setNativeBalanceAttoFil(undefined);
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [
+    nativeBalanceSource?.address,
+    nativeBalanceSource?.enabled,
+    nativeBalanceSource?.networkKey,
+    nativeFilecoinProvider,
+    nativeFilecoinSender,
+  ]);
 
   const handleCSVUpload = (result: CSVUploadResult) => {
     setCsvData(result.recipients);
@@ -408,6 +590,71 @@ export default function App() {
 
   const openUnavailableCapabilityNotice = (title: string, description: string) => {
     setUnavailableCapabilityNotice({ title, description });
+  };
+
+  const resetNativeExecution = () => {
+    setNativeBatchPreflight(undefined);
+    setNativeExecution({ state: 'idle' });
+  };
+
+  const handleConnectNativeFilecoin = async () => {
+    const provider =
+      nativeFilecoinProviders.find(
+        (candidate) => candidate.metadata.capabilities.canConnect,
+      ) ?? nativeFilecoinProviders[0];
+
+    if (!provider || !provider.metadata.capabilities.canConnect) {
+      openUnavailableCapabilityNotice(
+        'Native sender is not available',
+        provider?.metadata.unavailableReason ??
+          'No native Filecoin wallet provider is available in this browser session.',
+      );
+      return;
+    }
+
+    setIsNativeFilecoinConnecting(true);
+    setNativeFilecoinConnectionError(undefined);
+
+    try {
+      const account = await provider.connect();
+      const senderResult = createNativeFilecoinConnectedSender({
+        address: account.address,
+        provider: provider.metadata,
+        expectedNetworkKey: NATIVE_FILECOIN_TESTNET_NETWORK_KEY,
+      });
+
+      if (!senderResult.sender) {
+        throw new Error(
+          senderResult.error ?? 'FilSnap did not return a supported t1 account.',
+        );
+      }
+
+      resetExecution();
+      resetNativeExecution();
+      setNativeFilecoinProvider(provider);
+      setNativeFilecoinSender(senderResult.sender);
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'FilSnap connection failed unexpectedly.';
+      setNativeFilecoinConnectionError(message);
+      openUnavailableCapabilityNotice('FilSnap connection failed', message);
+    } finally {
+      setIsNativeFilecoinConnecting(false);
+    }
+  };
+
+  const handleDisconnectNativeFilecoin = async () => {
+    try {
+      await nativeFilecoinProvider?.disconnect();
+    } finally {
+      resetNativeExecution();
+      setNativeBalanceAttoFil(undefined);
+      setNativeFilecoinProvider(undefined);
+      setNativeFilecoinSender(undefined);
+      setNativeFilecoinConnectionError(undefined);
+    }
   };
 
   const handleSenderWalletTypeSelect = (value: SenderWalletType) => {
@@ -641,9 +888,13 @@ export default function App() {
 
   const walletBalance = E2E_MOCK_WALLET_ENABLED
     ? E2E_MOCK_BALANCE_FIL
-    : balanceData
-      ? Number(formatUnits(balanceData.value, balanceData.decimals))
-      : 0;
+    : nativeBalanceSource
+      ? nativeBalanceAttoFil !== undefined
+        ? attoFilBigIntToFil(nativeBalanceAttoFil)
+        : 0
+      : balanceData
+        ? Number(formatUnits(balanceData.value, balanceData.decimals))
+        : 0;
   const estimatedNetworkFee = gasEstimate?.estimatedFeeInFil || 0;
   const insufficientBalance = walletBalance < recipientTotal + feeTotal + estimatedNetworkFee;
 
@@ -667,12 +918,26 @@ export default function App() {
 
   const reviewDisabled =
     !isConnected || !canUseLiveSendPath || isNetworkMismatch || !hasReviewableRows;
-  const transactionState: TransactionState =
+  const evmReviewTransactionState: TransactionState =
     executionState === 'idle'
       ? 'review'
       : executionState === 'building'
         ? 'signing'
         : executionState;
+  const nativeReviewTransactionState: TransactionState =
+    nativeExecution.state === 'idle' ? 'review' : nativeExecution.state;
+  const transactionState: TransactionState =
+    connectedSender?.kind === 'native-filecoin'
+      ? nativeReviewTransactionState
+      : evmReviewTransactionState;
+  const transactionHash =
+    connectedSender?.kind === 'native-filecoin'
+      ? nativeExecution.cid
+      : evmTransactionHash;
+  const transactionError =
+    connectedSender?.kind === 'native-filecoin'
+      ? nativeExecution.error
+      : evmTransactionError;
 
   const reviewHint = React.useMemo(() => {
     if (!isConnected) {
@@ -752,11 +1017,16 @@ export default function App() {
     }
 
     resetExecution();
+    resetNativeExecution();
     setGasEstimate(undefined);
     setGasEstimationError(undefined);
     setIsReviewModalOpen(true);
 
-    if (E2E_SKIP_GAS_ESTIMATION && !batchExecutionAdapter) {
+    if (
+      E2E_SKIP_GAS_ESTIMATION &&
+      !batchExecutionAdapter &&
+      connectedSender?.kind !== 'native-filecoin'
+    ) {
       setGasEstimate(createFallbackReviewGasEstimate(feeComputation.recipients.length));
       return;
     }
@@ -765,11 +1035,36 @@ export default function App() {
       setIsEstimatingGas(true);
 
       try {
-        const estimate = await estimateBatch(
-          feeComputation.recipients,
-          selectedErrorMode,
-        );
-        setGasEstimate(toReviewGasEstimate(estimate));
+        if (connectedSender?.kind === 'native-filecoin') {
+          if (!connectedNetwork || connectedNetwork.key !== NATIVE_FILECOIN_TESTNET_NETWORK_KEY) {
+            throw new BatchExecutionError({
+              category: 'UNSUPPORTED_NETWORK',
+              title: 'Native testnet sender required',
+              message:
+                'Native Filecoin sender testing is currently limited to Calibration t1 accounts.',
+              errorMode: selectedErrorMode,
+              stage: 'preflight',
+              recoverable: true,
+              hint: 'Connect a FilSnap Calibration account before reviewing this batch.',
+            });
+          }
+
+          const nativePreflight = await preflightNativeBatch({
+            sender: connectedSender,
+            recipients: feeComputation.recipients,
+            errorMode: selectedErrorMode,
+            network: connectedNetwork,
+          });
+
+          setNativeBatchPreflight(nativePreflight);
+          setGasEstimate(toReviewGasEstimate(nativePreflight.gasEstimate));
+        } else {
+          const estimate = await estimateBatch(
+            feeComputation.recipients,
+            selectedErrorMode,
+          );
+          setGasEstimate(toReviewGasEstimate(estimate));
+        }
       } catch (error) {
         setGasEstimationError(
           error instanceof BatchExecutionError
@@ -801,6 +1096,7 @@ export default function App() {
 
     if (transactionState !== 'pending') {
       resetExecution();
+      resetNativeExecution();
     }
   };
 
@@ -812,6 +1108,57 @@ export default function App() {
       isNetworkMismatch ||
       activeBlockingValidationErrors.length > 0
     ) {
+      return;
+    }
+
+    if (connectedSender?.kind === 'native-filecoin') {
+      if (!nativeBatchPreflight || !nativeFilecoinProvider || !connectedNetwork) {
+        setNativeExecution({
+          state: 'failed',
+          error: new BatchExecutionError({
+            category: 'UNSUPPORTED_SENDER',
+            title: 'Native batch is not ready',
+            message:
+              'The native Filecoin batch was not prepared for this sender. Please review again.',
+            errorMode: selectedErrorMode,
+            stage: 'execution',
+            recoverable: true,
+            hint: 'Close review, reopen it, and retry the native testnet send.',
+          }),
+        });
+        return;
+      }
+
+      setNativeExecution({ state: 'signing' });
+
+      try {
+        const result = await submitPreparedNativeBatch({
+          preflight: nativeBatchPreflight,
+          provider: nativeFilecoinProvider,
+          network: connectedNetwork,
+          errorMode: selectedErrorMode,
+          onSubmitted: ({ cid }) => {
+            setNativeExecution({ state: 'pending', cid });
+          },
+        });
+
+        setNativeExecution({ state: 'confirmed', cid: result.cid });
+      } catch (error) {
+        const mappedError =
+          error instanceof BatchExecutionError
+            ? error
+            : mapBatchExecutionError(error, {
+                errorMode: selectedErrorMode,
+                stage: 'execution',
+              });
+
+        setNativeExecution((current) => ({
+          state: 'failed',
+          cid: current.cid,
+          error: mappedError,
+        }));
+      }
+
       return;
     }
 
@@ -890,6 +1237,15 @@ f1cj...,3.3`;
           </div>
 
           <CustomConnectButton />
+
+          <NativeFilecoinSenderPanel
+            nativeSender={nativeFilecoinSender}
+            providers={nativeFilecoinProviders}
+            isConnecting={isNativeFilecoinConnecting}
+            connectionError={nativeFilecoinConnectionError}
+            onConnect={handleConnectNativeFilecoin}
+            onDisconnect={handleDisconnectNativeFilecoin}
+          />
 
           <div className="mt-6 rounded-[28px] border border-slate-200 bg-white px-4 py-4 shadow-[0_16px_40px_-32px_rgba(15,23,42,0.45)]">
             <ConfigurationChoiceGroup

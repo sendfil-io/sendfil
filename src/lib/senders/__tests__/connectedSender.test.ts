@@ -11,7 +11,7 @@ import {
   resolveConnectedSenderState,
 } from '../connectedSender';
 import { createNativeFilecoinConnectedSender } from '../senderModel';
-import type { NativeFilecoinWalletProvider } from '../types';
+import type { NativeFilecoinWalletProvider, SenderProviderMetadata } from '../types';
 
 const EVM_ADDRESS = '0x1234567890abcdef1234567890abcdef12345678';
 
@@ -25,10 +25,29 @@ const CALIBRATION_T1 = newSecp256k1Address(
   CoinType.TEST,
 ).toString();
 
-function getNativeSender(address: string) {
+const FILSNAP_CALIBRATION_METADATA: SenderProviderMetadata = {
+  id: 'filsnap-calibration',
+  name: 'FilSnap Calibration',
+  kind: 'native-filecoin-wallet',
+  status: 'available',
+  capabilities: {
+    canConnect: true,
+    canDisconnect: false,
+    canDetectNetwork: true,
+    canReadBalance: true,
+    canSignBatch: true,
+    canSubmit: true,
+    oneApprovalPerBatch: true,
+  },
+};
+
+function getNativeSender(
+  address: string,
+  provider: SenderProviderMetadata = NATIVE_FILECOIN_PROVIDER_PLACEHOLDER_METADATA,
+) {
   const result = createNativeFilecoinConnectedSender({
     address,
-    provider: NATIVE_FILECOIN_PROVIDER_PLACEHOLDER_METADATA,
+    provider,
   });
 
   if (!result.sender) {
@@ -155,7 +174,7 @@ describe('connected sender state', () => {
     expect(state.canUseLiveSendPath).toBe(false);
   });
 
-  it('models native f1/t1 senders as unsupported by the live send path until signing is wired', () => {
+  it('keeps placeholder native f1/t1 senders unsupported by the live send path', () => {
     const mainnetState = resolveConnectedSenderState({
       evmWallet: {
         address: undefined,
@@ -181,7 +200,7 @@ describe('connected sender state', () => {
     });
     expect(mainnetState.canUseLiveSendPath).toBe(false);
     expect(mainnetState.liveSendPathUnavailableReason).toBe(
-      'Native Filecoin wallet review and send are not wired into the live app yet.',
+      'The connected sender cannot sign a SendFIL batch.',
     );
     expect(mainnetState.balanceSource).toEqual({
       kind: 'native-filecoin-lotus',
@@ -198,6 +217,48 @@ describe('connected sender state', () => {
       nativePrefix: 't',
     });
     expect(calibrationState.canUseLiveSendPath).toBe(false);
+  });
+
+  it('enables the live send path only for signable native Calibration senders', () => {
+    const calibrationState = resolveConnectedSenderState({
+      evmWallet: {
+        address: undefined,
+        chainId: undefined,
+        isConnected: false,
+      },
+      nativeFilecoinSender: getNativeSender(
+        CALIBRATION_T1,
+        FILSNAP_CALIBRATION_METADATA,
+      ),
+    });
+    const mainnetState = resolveConnectedSenderState({
+      evmWallet: {
+        address: undefined,
+        chainId: undefined,
+        isConnected: false,
+      },
+      nativeFilecoinSender: getNativeSender(MAINNET_F1, FILSNAP_CALIBRATION_METADATA),
+    });
+
+    expect(calibrationState.connectedSender).toMatchObject({
+      kind: 'native-filecoin',
+      address: CALIBRATION_T1,
+      networkKey: 'calibration',
+      canSignBatch: true,
+    });
+    expect(calibrationState.canUseLiveSendPath).toBe(true);
+    expect(calibrationState.balanceSource).toEqual({
+      kind: 'native-filecoin-lotus',
+      enabled: true,
+      address: CALIBRATION_T1,
+      networkKey: 'calibration',
+      reason: undefined,
+    });
+
+    expect(mainnetState.canUseLiveSendPath).toBe(false);
+    expect(mainnetState.liveSendPathUnavailableReason).toBe(
+      'Native Filecoin mainnet sending is not enabled in this testnet path yet.',
+    );
   });
 
   it('formats sender display addresses without converting native f1/t1 senders to 0x', () => {

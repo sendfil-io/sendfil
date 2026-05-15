@@ -200,15 +200,49 @@ function getLiveSendPathUnavailableReason(
     return undefined;
   }
 
-  if (sender.kind === 'native-filecoin') {
-    return 'Native Filecoin wallet review and send are not wired into the live app yet.';
-  }
-
   if (!sender.canSignBatch) {
     return 'The connected sender cannot sign a SendFIL batch.';
   }
 
+  if (sender.kind === 'native-filecoin') {
+    if (sender.networkKey !== 'calibration') {
+      return 'Native Filecoin mainnet sending is not enabled in this testnet path yet.';
+    }
+
+    if (!sender.provider.capabilities.canSubmit) {
+      return 'The connected native Filecoin provider cannot submit signed batch messages.';
+    }
+
+    if (!sender.provider.capabilities.oneApprovalPerBatch) {
+      return 'The connected native Filecoin provider does not preserve one approval per batch.';
+    }
+  }
+
   return undefined;
+}
+
+function canSenderUseLiveSendPath(
+  sender: ConnectedSender | undefined,
+  unavailableReason: string | undefined,
+): boolean {
+  if (
+    !sender ||
+    sender.networkStatus !== 'supported' ||
+    !sender.canSignBatch ||
+    unavailableReason
+  ) {
+    return false;
+  }
+
+  if (sender.kind === 'evm') {
+    return true;
+  }
+
+  return (
+    sender.networkKey === 'calibration' &&
+    sender.provider.capabilities.canSubmit &&
+    sender.provider.capabilities.oneApprovalPerBatch
+  );
 }
 
 export function resolveConnectedSenderState({
@@ -239,11 +273,10 @@ export function resolveConnectedSenderState({
     hasSupportedConnectedNetwork: networkStatus === 'supported',
     isUnsupportedConnectedNetwork: networkStatus === 'unsupported',
     expectedNetworkPrefix: connectedSender?.nativePrefix,
-    canUseLiveSendPath:
-      connectedSender?.kind === 'evm' &&
-      connectedSender.canSignBatch &&
-      connectedSender.networkStatus === 'supported' &&
-      !liveSendPathUnavailableReason,
+    canUseLiveSendPath: canSenderUseLiveSendPath(
+      connectedSender,
+      liveSendPathUnavailableReason,
+    ),
     liveSendPathUnavailableReason,
     balanceSource: resolveSenderBalanceSource(
       connectedSender,

@@ -40,9 +40,10 @@ Payloads include:
 ## Known limitations
 
 - `ThinBatch` is still UI-visible but not live.
-- Filecoin-native signer flows are not wired into the live app path.
+- Filecoin-native signer flows are live only for the flag-gated FilSnap Calibration `t1` test path.
+- Native mainnet `f1`, generic native wallet, and Ledger sender flows are still planned.
 - Contract-recipient blocking (`eth_getCode`) is not implemented yet.
-- Balance is checked during review, but there is not yet a second submit-time balance recheck.
+- Balance is checked during review and again at submit for the EVM path and FilSnap Calibration path.
 
 ## Environment setup
 
@@ -59,6 +60,13 @@ Copy `.env.example` to `.env.local` and set:
 - `VITE_FEE_ENABLED_MAINNET`
 - `VITE_FEE_ADDR_A_MAINNET`
 - `VITE_FEE_ADDR_B_MAINNET`
+
+Optional native Filecoin sender testing on Calibration:
+
+- `VITE_NATIVE_FILECOIN_WALLET_ENABLED=true`
+- `VITE_NATIVE_FILECOIN_TESTNET_SEND_ENABLED=true`
+- `VITE_FILSNAP_SNAP_ID` defaults to `npm:filsnap`
+- `VITE_FILSNAP_VERSION` is optional
 
 Calibration defaults to fee injection disabled. If you want testnet fee rows, also set:
 

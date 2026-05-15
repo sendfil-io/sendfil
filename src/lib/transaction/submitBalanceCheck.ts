@@ -166,6 +166,12 @@ export async function recheckSubmitBalance(
     });
   }
 
+  if (sender.networkKey !== network.key) {
+    return createFailure(request, 'UNSUPPORTED_NETWORK', {
+      details: `Native sender is on ${sender.networkKey}, but the active SendFIL network is ${network.walletLabel}.`,
+    });
+  }
+
   try {
     const availableAttoFil = await request.readNativeBalance({
       address: sender.address,

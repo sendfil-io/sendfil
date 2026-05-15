@@ -5,6 +5,10 @@ import type {
   NativeFilecoinWalletProvider,
   SenderProviderMetadata,
 } from './types';
+import {
+  createFilsnapCalibrationProvider,
+  type FilsnapEthereumProvider,
+} from './filsnapProvider';
 
 type NativeFilecoinFeatureEnv = Record<string, string | undefined>;
 
@@ -55,13 +59,27 @@ function isNativeFilecoinSenderFeatureEnabled(
   return env.VITE_NATIVE_FILECOIN_WALLET_ENABLED === 'true';
 }
 
+function isNativeFilecoinTestnetSendEnabled(
+  env: NativeFilecoinFeatureEnv = import.meta.env as unknown as NativeFilecoinFeatureEnv,
+): boolean {
+  return env.VITE_NATIVE_FILECOIN_TESTNET_SEND_ENABLED === 'true';
+}
+
 export function getNativeFilecoinWalletProviders({
   featureEnabled = isNativeFilecoinSenderFeatureEnabled(),
+  calibrationTestnetSendEnabled = isNativeFilecoinTestnetSendEnabled(),
+  ethereumProvider,
 }: {
   featureEnabled?: boolean;
+  calibrationTestnetSendEnabled?: boolean;
+  ethereumProvider?: FilsnapEthereumProvider;
 } = {}): NativeFilecoinWalletProvider[] {
   if (!featureEnabled) {
     return [];
+  }
+
+  if (calibrationTestnetSendEnabled) {
+    return [createFilsnapCalibrationProvider({ ethereumProvider })];
   }
 
   return [createUnsupportedNativeFilecoinProvider()];

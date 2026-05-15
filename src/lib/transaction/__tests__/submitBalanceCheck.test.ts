@@ -97,4 +97,52 @@ describe('submit-time balance recheck helper', () => {
       reason: 'UNSUPPORTED_SENDER',
     });
   });
+
+  it('allows native Filecoin submission when the sender network balance covers the batch', async () => {
+    const readNativeBalance = vi.fn().mockResolvedValue(111n);
+
+    const result = await recheckSubmitBalance({
+      sender: {
+        kind: 'native',
+        address: 't1sender',
+        networkKey: 'calibration',
+      },
+      network: getNetworkConfig('calibration'),
+      transferTotalAttoFil: 101n,
+      estimatedNetworkFeeAttoFil: 10n,
+      readNativeBalance,
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      requiredAttoFil: 111n,
+      availableAttoFil: 111n,
+    });
+    expect(readNativeBalance).toHaveBeenCalledWith({
+      address: 't1sender',
+      networkKey: 'calibration',
+    });
+  });
+
+  it('blocks native Filecoin balance reads on mismatched networks', async () => {
+    const readNativeBalance = vi.fn().mockResolvedValue(111n);
+
+    const result = await recheckSubmitBalance({
+      sender: {
+        kind: 'native',
+        address: 'f1sender',
+        networkKey: 'mainnet',
+      },
+      network: getNetworkConfig('calibration'),
+      transferTotalAttoFil: 101n,
+      estimatedNetworkFeeAttoFil: 10n,
+      readNativeBalance,
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'UNSUPPORTED_NETWORK',
+    });
+    expect(readNativeBalance).not.toHaveBeenCalled();
+  });
 });
