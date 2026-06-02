@@ -35,6 +35,7 @@ import {
   getNetworkConfig,
   getSupportedNetworkByChainId,
   getSupportedNetworkListLabel,
+  type NetworkPrefix,
 } from './lib/networks';
 import { useConnectedSender } from './lib/senders';
 
@@ -81,6 +82,16 @@ function createEmptyManualInteractions(count = 3): ManualRecipientInteraction[] 
     addressTouched: false,
     amountTouched: false,
   }));
+}
+
+function getManualRecipientAddressPlaceholder(
+  rowIndex: number,
+  expectedNetworkPrefix?: NetworkPrefix,
+): string {
+  const nativePrefix = expectedNetworkPrefix === 't' ? 't' : 'f';
+  const placeholderPattern = [`${nativePrefix}1...`, `${nativePrefix}4...`, '0x...'];
+
+  return placeholderPattern[rowIndex % placeholderPattern.length];
 }
 
 function createEmptyRecipientValidationResult(): RecipientValidationResult {
@@ -1164,13 +1175,10 @@ f1cj...,3.3`;
                                 Receiver
                               </label>
                               <input
-                                placeholder={
-                                  expectedNetworkPrefix === 't'
-                                    ? 't1..., t4..., or 0x...'
-                                    : expectedNetworkPrefix === 'f'
-                                      ? 'f1..., f4..., or 0x...'
-                                      : 'f1..., t1..., f4..., t4..., or 0x...'
-                                }
+                                placeholder={getManualRecipientAddressPlaceholder(
+                                  index,
+                                  expectedNetworkPrefix,
+                                )}
                                 value={recipient.address}
                                 onChange={(event) =>
                                   updateRecipient(index, 'address', event.target.value)
