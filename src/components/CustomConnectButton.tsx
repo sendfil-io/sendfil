@@ -48,7 +48,7 @@ const nativeWalletLogos: Record<string, { alt: string; className: string; src: s
   },
   'ledger-filecoin': {
     alt: 'Ledger',
-    className: 'h-8 w-8 object-contain',
+    className: 'h-10 w-10 object-contain',
     src: ledgerLLogo,
   },
 };
@@ -163,7 +163,7 @@ function getVisibleEvmConnectors(connectors: readonly Connector[]): Connector[] 
   return [...connectors]
     .sort((left, right) => getEvmWalletSortIndex(left) - getEvmWalletSortIndex(right))
     .filter((connector) => {
-      const walletKey = getEvmWalletKey(connector);
+      const walletKey = normalizeWalletName(getEvmWalletLabel(connector));
 
       if (seenWallets.has(walletKey)) {
         return false;

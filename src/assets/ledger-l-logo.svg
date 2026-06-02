@@ -1,7 +1,9 @@
-<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-  <path d="M9 9H27V14H14V27H9V9Z" fill="black"/>
-  <path d="M37 9H55V27H50V14H37V9Z" fill="black"/>
-  <path d="M9 37H14V50H27V55H9V37Z" fill="black"/>
-  <path d="M50 37H55V55H37V50H50V37Z" fill="black"/>
-  <path d="M25 19H31V39H44V45H25V19Z" fill="black"/>
+<svg width="64" height="64" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <rect width="256" height="256" fill="black"/>
+  <path d="M52 64H116V54" stroke="white" stroke-width="10" stroke-linecap="square" stroke-linejoin="miter"/>
+  <path d="M164 64H228V104" stroke="white" stroke-width="10" stroke-linecap="square" stroke-linejoin="miter"/>
+  <path d="M116 104H126V168H164V178H116" stroke="white" stroke-width="10" stroke-linecap="square" stroke-linejoin="miter"/>
+  <path d="M42 178H52" stroke="white" stroke-width="10" stroke-linecap="square"/>
+  <path d="M52 216H116V226" stroke="white" stroke-width="10" stroke-linecap="square" stroke-linejoin="miter"/>
+  <path d="M164 216H228V178H240" stroke="white" stroke-width="10" stroke-linecap="square" stroke-linejoin="miter"/>
 </svg>
