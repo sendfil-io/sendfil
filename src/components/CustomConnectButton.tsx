@@ -70,6 +70,7 @@ type RainbowKitConnector = Connector & {
 };
 
 interface WalletOptionButtonProps {
+  description?: string;
   disabled: boolean;
   isConnecting: boolean;
   label: string;
@@ -78,6 +79,7 @@ interface WalletOptionButtonProps {
 }
 
 function WalletOptionButton({
+  description,
   disabled,
   isConnecting,
   label,
@@ -91,8 +93,15 @@ function WalletOptionButton({
       disabled={disabled}
       className="flex w-full items-center justify-between gap-4 rounded-xl border border-slate-200 bg-white px-4 py-3 text-left transition-colors hover:border-blue-200 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60"
     >
-      <span className="min-w-0 truncate font-semibold text-slate-950">
-        {isConnecting ? `${label}...` : label}
+      <span className="min-w-0">
+        <span className="block truncate font-semibold text-slate-950">
+          {isConnecting ? `${label}...` : label}
+        </span>
+        {description ? (
+          <span className="mt-1 block text-sm text-slate-500">
+            {description}
+          </span>
+        ) : null}
       </span>
       {logo.src ? (
         <img
@@ -108,6 +117,11 @@ function WalletOptionButton({
     </button>
   );
 }
+
+const nativeWalletDescriptions: Record<string, string> = {
+  'filsnap-filecoin': 'MetaMask Snap for native Filecoin accounts',
+  'ledger-filecoin': 'Filecoin app within Ledger wallet',
+};
 
 function normalizeWalletName(name: string): string {
   return name.replace(/\s+/g, ' ').trim().toLowerCase();
@@ -342,7 +356,7 @@ export const CustomConnectButton: React.FC<CustomConnectButtonProps> = ({
         const renderWalletChooser = () => {
           return (
             <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/55 px-4 py-6 sm:items-center">
-              <div className="relative max-h-[calc(100vh-3rem)] w-full max-w-sm overflow-y-auto rounded-[24px] bg-white p-6 shadow-2xl">
+              <div className="relative max-h-[calc(100vh-3rem)] w-full max-w-md overflow-y-auto rounded-[24px] bg-white p-6 shadow-2xl">
                 <button
                   type="button"
                   onClick={() => setShowWalletChooser(false)}
@@ -365,6 +379,7 @@ export const CustomConnectButton: React.FC<CustomConnectButtonProps> = ({
                       return (
                         <WalletOptionButton
                           key={provider.metadata.id}
+                          description={nativeWalletDescriptions[provider.metadata.id]}
                           label={provider.metadata.name}
                           logo={
                             logo ?? {
