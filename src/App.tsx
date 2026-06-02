@@ -31,13 +31,21 @@ import {
 import { BatchExecutionError } from './lib/transaction/errorHandling';
 import { createMockBatchExecutionAdapter } from './lib/transaction/mockAdapter';
 import { useExecuteBatch } from './lib/transaction/useExecuteBatch';
+import { useExecuteNativeBatch } from './lib/transaction/useExecuteNativeBatch';
 import {
   getNetworkConfig,
   getSupportedNetworkByChainId,
   getSupportedNetworkListLabel,
   type NetworkPrefix,
 } from './lib/networks';
-import { useConnectedSender } from './lib/senders';
+import {
+  createNativeFilecoinConnectedSender,
+  getNativeFilecoinSenderBalanceAttoFil,
+  getNativeFilecoinWalletProviders,
+  useConnectedSender,
+  type NativeFilecoinConnectedSender,
+  type NativeFilecoinWalletProvider,
+} from './lib/senders';
 
 interface Recipient {
   address: string;
@@ -195,6 +203,20 @@ function toReviewGasEstimate(estimate: BatchGasEstimate): GasEstimate {
     gasPremium: estimate.gasPremium.toString(),
     estimatedFeeInFil: attoFilBigIntToFil(estimate.estimatedFee),
   };
+}
+
+function formatWalletBalanceLabel(balanceFil: number): string {
+  if (balanceFil === 0) {
+    return '0 FIL';
+  }
+
+  if (balanceFil < 0.000001) {
+    return '< 0.000001 FIL';
+  }
+
+  return `${balanceFil.toLocaleString(undefined, {
+    maximumFractionDigits: balanceFil < 1 ? 6 : 3,
+  })} FIL`;
 }
 
 function SummaryPanel({
@@ -359,8 +381,20 @@ export default function App() {
     }),
     [],
   );
+  const nativeFilecoinProviders = React.useMemo(
+    () => getNativeFilecoinWalletProviders(),
+    [],
+  );
+  const [nativeFilecoinSender, setNativeFilecoinSender] =
+    React.useState<NativeFilecoinConnectedSender | undefined>();
+  const [nativeFilecoinProvider, setNativeFilecoinProvider] =
+    React.useState<NativeFilecoinWalletProvider | undefined>();
+  const [nativeWalletConnectionError, setNativeWalletConnectionError] =
+    React.useState<string | undefined>();
   const connectedSenderState = useConnectedSender({
     e2eMockWallet,
+    nativeFilecoinSender,
+    nativeFilecoinProviders,
   });
   const {
     connectedSender,
@@ -389,6 +423,53 @@ export default function App() {
       ),
     },
   });
+  const nativeBalanceSource =
+    balanceSource.kind === 'native-filecoin-lotus' ? balanceSource : undefined;
+  const [nativeBalanceAttoFil, setNativeBalanceAttoFil] = React.useState<bigint | undefined>();
+  const [nativeBalanceError, setNativeBalanceError] =
+    React.useState<string | undefined>();
+
+  React.useEffect(() => {
+    let isCancelled = false;
+
+    if (
+      !nativeBalanceSource?.enabled ||
+      !connectedSender ||
+      connectedSender.kind !== 'native-filecoin'
+    ) {
+      setNativeBalanceAttoFil(undefined);
+      setNativeBalanceError(undefined);
+      return () => {
+        isCancelled = true;
+      };
+    }
+
+    setNativeBalanceAttoFil(undefined);
+    setNativeBalanceError(undefined);
+
+    getNativeFilecoinSenderBalanceAttoFil(connectedSender)
+      .then((balance) => {
+        if (!isCancelled) {
+          setNativeBalanceAttoFil(balance);
+        }
+      })
+      .catch((error) => {
+        if (!isCancelled) {
+          setNativeBalanceError(
+            error instanceof Error ? error.message : 'Native balance unavailable.',
+          );
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [
+    connectedSender,
+    nativeBalanceSource?.address,
+    nativeBalanceSource?.enabled,
+    nativeBalanceSource?.networkKey,
+  ]);
 
   const [inputMode, setInputMode] = React.useState<InputMode>('manual');
   const [manualRecipients, setManualRecipients] = React.useState<Recipient[]>(() =>
@@ -421,6 +502,18 @@ export default function App() {
         : undefined,
     [],
   );
+  const evmBatchExecution = useExecuteBatch({
+    adapter: batchExecutionAdapter,
+  });
+  const activeNativeSender =
+    connectedSender?.kind === 'native-filecoin' ? connectedSender : undefined;
+  const nativeBatchExecution = useExecuteNativeBatch({
+    sender: activeNativeSender,
+    provider: nativeFilecoinProvider,
+  });
+  const activeBatchExecution = activeNativeSender
+    ? nativeBatchExecution
+    : evmBatchExecution;
   const {
     estimateBatch,
     executeBatch,
@@ -428,9 +521,7 @@ export default function App() {
     txHash: transactionHash,
     error: transactionError,
     reset: resetExecution,
-  } = useExecuteBatch({
-    adapter: batchExecutionAdapter,
-  });
+  } = activeBatchExecution;
 
   const handleCSVUpload = (result: CSVUploadResult) => {
     setCsvData(result.recipients);
@@ -444,6 +535,53 @@ export default function App() {
     setCsvErrors([]);
     setCsvWarnings([]);
   };
+
+  const handleNativeWalletConnect = React.useCallback(
+    async (
+      provider: NativeFilecoinWalletProvider,
+      networkKey: NativeFilecoinConnectedSender['networkKey'],
+    ) => {
+      try {
+        setNativeWalletConnectionError(undefined);
+        const account = await provider.connect({ networkKey });
+        const senderResult = createNativeFilecoinConnectedSender({
+          address: account.address,
+          provider: provider.metadata,
+          expectedNetworkKey: account.networkKey,
+        });
+
+        if (!senderResult.sender) {
+          await provider.disconnect();
+          throw new Error(senderResult.error ?? 'Native Filecoin sender is not supported.');
+        }
+
+        resetExecution();
+        setNativeFilecoinProvider(provider);
+        setNativeFilecoinSender(senderResult.sender);
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : 'Failed to connect native Filecoin wallet.';
+
+        setNativeWalletConnectionError(message);
+        throw error;
+      }
+    },
+    [resetExecution],
+  );
+
+  const handleNativeWalletDisconnect = React.useCallback(async () => {
+    setNativeWalletConnectionError(undefined);
+    resetExecution();
+
+    if (nativeFilecoinProvider) {
+      await nativeFilecoinProvider.disconnect();
+    }
+
+    setNativeFilecoinProvider(undefined);
+    setNativeFilecoinSender(undefined);
+  }, [nativeFilecoinProvider, resetExecution]);
 
   const openUnavailableCapabilityNotice = (title: string, description: string) => {
     setUnavailableCapabilityNotice({ title, description });
@@ -682,7 +820,17 @@ export default function App() {
     ? E2E_MOCK_BALANCE_FIL
     : balanceData
       ? Number(formatUnits(balanceData.value, balanceData.decimals))
+      : nativeBalanceAttoFil !== undefined
+        ? attoFilBigIntToFil(nativeBalanceAttoFil)
       : 0;
+  const nativeBalanceLabel =
+    nativeBalanceAttoFil !== undefined
+      ? formatWalletBalanceLabel(attoFilBigIntToFil(nativeBalanceAttoFil))
+      : nativeBalanceError
+        ? 'Balance unavailable'
+        : activeNativeSender
+          ? 'Balance loading'
+          : undefined;
   const estimatedNetworkFee = gasEstimate?.estimatedFeeInFil || 0;
   const insufficientBalance = walletBalance < recipientTotal + feeTotal + estimatedNetworkFee;
 
@@ -928,7 +1076,16 @@ f1cj...,3.3`;
             />
           </div>
 
-          <CustomConnectButton />
+          <CustomConnectButton
+            nativeFilecoin={{
+              providers: nativeFilecoinProviders,
+              connectedSender: activeNativeSender,
+              balanceLabel: nativeBalanceLabel,
+              connectionError: nativeWalletConnectionError,
+              onConnect: handleNativeWalletConnect,
+              onDisconnect: handleNativeWalletDisconnect,
+            }}
+          />
 
           <div className="mt-6 rounded-[28px] border border-slate-200 bg-white px-4 py-4 shadow-[0_16px_40px_-32px_rgba(15,23,42,0.45)]">
             <ConfigurationChoiceGroup

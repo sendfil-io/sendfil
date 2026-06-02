@@ -4,7 +4,7 @@ import {
 } from '@glif/filecoin-address';
 import { describe, expect, it, vi } from 'vitest';
 import { getNetworkConfig, type SendFilNetworkKey } from '../../networks';
-import { NATIVE_FILECOIN_PROVIDER_PLACEHOLDER_METADATA } from '../../senders';
+import { FILSNAP_FILECOIN_PROVIDER_METADATA } from '../../senders';
 import { createNativeFilecoinConnectedSender } from '../../senders/senderModel';
 import type { FilecoinMessage } from '../../DataProvider/types';
 import { toF4 } from '../../../utils/toF4';
@@ -27,7 +27,7 @@ const CALIBRATION_T1 = newSecp256k1Address(
 function getNativeSender(address: string) {
   const result = createNativeFilecoinConnectedSender({
     address,
-    provider: NATIVE_FILECOIN_PROVIDER_PLACEHOLDER_METADATA,
+    provider: FILSNAP_FILECOIN_PROVIDER_METADATA,
   });
 
   if (!result.sender) {

@@ -4,9 +4,9 @@ import {
 } from '@glif/filecoin-address';
 import { describe, expect, it, vi } from 'vitest';
 import {
+  FILSNAP_FILECOIN_PROVIDER_METADATA,
   getNativeFilecoinSenderBalanceAttoFil,
   getNativeFilecoinWalletProviders,
-  NATIVE_FILECOIN_PROVIDER_PLACEHOLDER_METADATA,
 } from '../nativeFilecoinProvider';
 import { createNativeFilecoinConnectedSender } from '../senderModel';
 
@@ -16,33 +16,49 @@ const CALIBRATION_T1 = newSecp256k1Address(
 ).toString();
 
 describe('native Filecoin provider boundary', () => {
-  it('keeps native Filecoin providers hidden while the feature flag is disabled', () => {
+  it('keeps native Filecoin providers hidden when explicitly disabled', () => {
     expect(getNativeFilecoinWalletProviders({ featureEnabled: false })).toEqual([]);
   });
 
-  it('exposes only an unsupported placeholder when the feature flag is enabled', async () => {
-    const [provider] = getNativeFilecoinWalletProviders({ featureEnabled: true });
+  it('exposes FilSnap and Ledger as native Filecoin wallet providers by default', () => {
+    const providers = getNativeFilecoinWalletProviders();
 
-    expect(provider.metadata).toMatchObject({
-      id: 'native-filecoin-placeholder',
-      kind: 'native-filecoin-wallet',
-      status: 'planned',
-      capabilities: {
-        canConnect: false,
-        canSignBatch: false,
-        canSubmit: false,
-        oneApprovalPerBatch: true,
-      },
-    });
-    await expect(provider.connect()).rejects.toThrow(
-      'Native Filecoin wallet signing is scaffolded',
+    expect(providers.map((provider) => provider.metadata.id)).toEqual([
+      'filsnap-filecoin',
+      'ledger-filecoin',
+    ]);
+    expect(providers.map((provider) => provider.metadata)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'filsnap-filecoin',
+          name: 'FilSnap (Filecoin)',
+          status: 'available',
+          capabilities: expect.objectContaining({
+            canConnect: true,
+            canSignBatch: true,
+            canSubmit: true,
+            oneApprovalPerBatch: true,
+          }),
+        }),
+        expect.objectContaining({
+          id: 'ledger-filecoin',
+          name: 'Ledger (Filecoin)',
+          status: 'available',
+          capabilities: expect.objectContaining({
+            canConnect: true,
+            canSignBatch: true,
+            canSubmit: true,
+            oneApprovalPerBatch: true,
+          }),
+        }),
+      ]),
     );
   });
 
   it('reads native sender balances on the sender network', async () => {
     const senderResult = createNativeFilecoinConnectedSender({
       address: CALIBRATION_T1,
-      provider: NATIVE_FILECOIN_PROVIDER_PLACEHOLDER_METADATA,
+      provider: FILSNAP_FILECOIN_PROVIDER_METADATA,
     });
     const readBalance = vi.fn(async () => '123');
 
