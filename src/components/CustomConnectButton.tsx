@@ -4,7 +4,6 @@ import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { useDisconnect } from 'wagmi';
 import {
   getDefaultNetworkKey,
-  getNetworkConfig,
   getSupportedNetworkByChainId,
   getSupportedNetworkListLabel,
   type SendFilNetworkKey,
@@ -16,6 +15,8 @@ import {
   type NativeFilecoinWalletProvider,
 } from '../lib/senders';
 import { truncateAddress } from '../utils/addressConverter';
+import ledgerLogo from '../assets/ledger-logo.svg';
+import metamaskLogo from '../assets/metamask-logo.png';
 
 const E2E_MOCK_WALLET_ENABLED = import.meta.env.VITE_E2E_MOCK_WALLET === 'true';
 
@@ -39,8 +40,21 @@ export interface CustomConnectButtonProps {
 }
 
 const nativeWalletDescriptions: Record<string, string> = {
-  'filsnap-filecoin': 'MetaMask Snap for f1/t1 Filecoin accounts',
+  'filsnap-filecoin': 'MetaMask Snap for native Filecoin accounts',
   'ledger-filecoin': 'Ledger Filecoin app over WebUSB',
+};
+
+const nativeWalletLogos: Record<string, { alt: string; className: string; src: string }> = {
+  'filsnap-filecoin': {
+    alt: 'MetaMask',
+    className: 'h-8 w-8 rounded-lg object-contain',
+    src: metamaskLogo,
+  },
+  'ledger-filecoin': {
+    alt: 'Ledger',
+    className: 'h-5 w-20 object-contain',
+    src: ledgerLogo,
+  },
 };
 
 function getNativeWalletDescription(provider: NativeFilecoinWalletProvider): string {
@@ -60,9 +74,6 @@ export const CustomConnectButton: React.FC<CustomConnectButtonProps> = ({
 }) => {
   const [showAccountModal, setShowAccountModal] = useState(false);
   const [showWalletChooser, setShowWalletChooser] = useState(false);
-  const [nativeNetworkKey, setNativeNetworkKey] = useState<SendFilNetworkKey>(
-    getDefaultNetworkKey(),
-  );
   const [connectingNativeProviderId, setConnectingNativeProviderId] = useState<string | null>(
     null,
   );
@@ -137,7 +148,7 @@ export const CustomConnectButton: React.FC<CustomConnectButtonProps> = ({
           setConnectingNativeProviderId(provider.metadata.id);
 
           try {
-            await nativeFilecoin.onConnect(provider, nativeNetworkKey);
+            await nativeFilecoin.onConnect(provider, getDefaultNetworkKey());
             setShowWalletChooser(false);
           } finally {
             setConnectingNativeProviderId(null);
@@ -145,8 +156,6 @@ export const CustomConnectButton: React.FC<CustomConnectButtonProps> = ({
         };
 
         const renderWalletChooser = () => {
-          const selectedNetwork = getNetworkConfig(nativeNetworkKey);
-
           return (
             <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/55 px-4 py-6 sm:items-center">
               <div className="relative max-h-[calc(100vh-3rem)] w-full max-w-md overflow-y-auto rounded-[24px] bg-white p-6 shadow-2xl">
@@ -163,73 +172,43 @@ export const CustomConnectButton: React.FC<CustomConnectButtonProps> = ({
                   <h3 className="text-lg font-semibold text-slate-950">Connect a Wallet</h3>
                 </div>
 
-                <div className="mt-5">
-                  <div className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                    Filecoin native
-                  </div>
-                  <div className="mb-3 grid grid-cols-2 gap-2">
-                    {(['mainnet', 'calibration'] as const).map((networkKey) => {
-                      const network = getNetworkConfig(networkKey);
-                      const isSelected = nativeNetworkKey === networkKey;
+                <div className="mt-5 space-y-2">
+                  {hasNativeWalletProviders &&
+                    nativeFilecoin?.providers.map((provider) => {
+                      const isConnecting = connectingNativeProviderId === provider.metadata.id;
+                      const logo = nativeWalletLogos[provider.metadata.id];
 
                       return (
                         <button
-                          key={networkKey}
+                          key={provider.metadata.id}
                           type="button"
-                          onClick={() => setNativeNetworkKey(networkKey)}
-                          className={`rounded-xl border px-3 py-2 text-sm font-semibold transition-colors ${
-                            isSelected
-                              ? 'border-blue-600 bg-blue-50 text-blue-700'
-                              : 'border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300 hover:bg-white'
-                          }`}
+                          onClick={() => handleNativeConnect(provider)}
+                          disabled={Boolean(connectingNativeProviderId)}
+                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-left transition-colors hover:border-blue-200 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60"
                         >
-                          {network.walletLabel}
+                          <div className="flex items-center justify-between gap-4">
+                            <div className="min-w-0">
+                              <div className="font-semibold text-slate-950">
+                                {provider.metadata.name}
+                              </div>
+                              <div className="mt-1 text-xs text-slate-500">
+                                {isConnecting
+                                  ? 'Connecting...'
+                                  : getNativeWalletDescription(provider)}
+                              </div>
+                            </div>
+                            {logo ? (
+                              <img
+                                src={logo.src}
+                                alt={logo.alt}
+                                className={`shrink-0 ${logo.className}`}
+                              />
+                            ) : null}
+                          </div>
                         </button>
                       );
                     })}
-                  </div>
 
-                  <div className="space-y-2">
-                    {hasNativeWalletProviders &&
-                      nativeFilecoin?.providers.map((provider) => {
-                        const isConnecting =
-                          connectingNativeProviderId === provider.metadata.id;
-
-                        return (
-                          <button
-                            key={provider.metadata.id}
-                            type="button"
-                            onClick={() => handleNativeConnect(provider)}
-                            disabled={Boolean(connectingNativeProviderId)}
-                            className="w-full rounded-xl border border-slate-200 bg-slate-950 px-4 py-3 text-left text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-                          >
-                            <div className="flex items-center justify-between gap-3">
-                              <span className="font-semibold">
-                                {provider.metadata.name}
-                              </span>
-                              <span className="rounded-full bg-white/12 px-2 py-0.5 text-xs font-semibold text-slate-200">
-                                {isConnecting ? 'Connecting' : selectedNetwork.nativePrefix + '1'}
-                              </span>
-                            </div>
-                            <div className="mt-1 text-xs text-slate-300">
-                              {getNativeWalletDescription(provider)}
-                            </div>
-                          </button>
-                        );
-                      })}
-                  </div>
-
-                  {nativeFilecoin?.connectionError && (
-                    <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                      {nativeFilecoin.connectionError}
-                    </div>
-                  )}
-                </div>
-
-                <div className="mt-5 border-t border-slate-200 pt-4">
-                  <div className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                    FEVM wallets
-                  </div>
                   <button
                     type="button"
                     onClick={() => {
@@ -238,11 +217,24 @@ export const CustomConnectButton: React.FC<CustomConnectButtonProps> = ({
                     }}
                     className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-left transition-colors hover:border-blue-200 hover:bg-blue-50"
                   >
-                    <div className="font-semibold text-slate-950">EVM wallets</div>
-                    <div className="mt-1 text-xs text-slate-500">
-                      MetaMask, Brave Wallet, WalletConnect, and other 0x senders
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="min-w-0">
+                        <div className="font-semibold text-slate-950">EVM wallets</div>
+                        <div className="mt-1 text-xs text-slate-500">
+                          MetaMask, Brave Wallet, WalletConnect, and other 0x senders
+                        </div>
+                      </div>
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 font-mono text-xs font-semibold text-slate-600">
+                        0x
+                      </div>
                     </div>
                   </button>
+
+                  {nativeFilecoin?.connectionError && (
+                    <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                      {nativeFilecoin.connectionError}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
