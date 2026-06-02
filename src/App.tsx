@@ -311,6 +311,34 @@ function ConfigurationChoiceGroup({
   );
 }
 
+function SocialLinks({ className = '' }: { className?: string }) {
+  return (
+    <div
+      className={`flex items-center justify-center gap-2 text-sm text-slate-500 ${className}`.trim()}
+    >
+      <a
+        href="https://x.com/send_fil"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="font-medium transition-colors hover:text-slate-900"
+      >
+        X
+      </a>
+      <span className="text-slate-300" aria-hidden="true">
+        |
+      </span>
+      <a
+        href="https://github.com/sendfil-io/sendfil"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="font-medium transition-colors hover:text-slate-900"
+      >
+        GitHub
+      </a>
+    </div>
+  );
+}
+
 export default function App() {
   const e2eMockWallet = React.useMemo(
     () => ({
@@ -676,7 +704,7 @@ export default function App() {
 
   const reviewHint = React.useMemo(() => {
     if (!isConnected) {
-      return 'Connect a wallet to confirm the target network before review and send.';
+      return 'Connect a wallet to review transaction';
     }
 
     if (isNetworkMismatch) {
@@ -878,7 +906,7 @@ f1cj...,3.3`;
 
   return (
     <div className="min-h-screen bg-[#f4f6fb] text-slate-900">
-      <div className="min-h-screen lg:flex">
+      <div className="flex min-h-screen flex-col lg:flex-row">
         <aside className="flex flex-col border-b border-slate-200/80 bg-white/90 px-5 pb-6 pt-0 backdrop-blur lg:w-72 lg:border-b-0 lg:border-r lg:px-6 lg:pb-8">
           <div className="-mx-5 mb-8 flex items-center justify-center bg-gradient-to-r from-[#1F69FF] via-[#22A6E2] to-[#3CD4A0] px-5 py-[26px] lg:-mx-6 lg:px-6">
             <img
@@ -912,28 +940,8 @@ f1cj...,3.3`;
             />
           </div>
 
-          <div className="mt-auto pt-8">
-            <div className="flex items-center justify-center gap-2 text-sm text-slate-500">
-              <a
-                href="https://x.com/send_fil"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="font-medium transition-colors hover:text-slate-900"
-              >
-                X
-              </a>
-              <span className="text-slate-300" aria-hidden="true">
-                |
-              </span>
-              <a
-                href="https://github.com/sendfil-io/sendfil"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="font-medium transition-colors hover:text-slate-900"
-              >
-                GitHub
-              </a>
-            </div>
+          <div className="mt-auto hidden pt-8 lg:block">
+            <SocialLinks />
           </div>
 
         </aside>
@@ -1368,6 +1376,10 @@ f1cj...,3.3`;
             </div>
           </div>
         </main>
+
+        <footer className="border-t border-slate-200/80 bg-white/90 px-5 py-6 backdrop-blur lg:hidden">
+          <SocialLinks />
+        </footer>
       </div>
 
       <ReviewTransactionModal
