@@ -227,6 +227,32 @@ describe('App confirm flow', () => {
     await flushAsyncWork();
   }
 
+  it('cycles manual address placeholders by row and restarts for added rows', async () => {
+    await act(async () => {
+      root.render(<App />);
+    });
+
+    expect(getElementByTestId(container, 'recipient-address-0')).toHaveProperty(
+      'placeholder',
+      'f1...',
+    );
+    expect(getElementByTestId(container, 'recipient-address-1')).toHaveProperty(
+      'placeholder',
+      'f4...',
+    );
+    expect(getElementByTestId(container, 'recipient-address-2')).toHaveProperty(
+      'placeholder',
+      '0x...',
+    );
+
+    click(getButton(container, '+ Add recipient'));
+
+    expect(getElementByTestId(container, 'recipient-address-3')).toHaveProperty(
+      'placeholder',
+      'f1...',
+    );
+  });
+
   it('calls executeBatch with fee rows in partial mode', async () => {
     executeBatchMock.mockImplementation(async () => {
       setMockExecutionSnapshot({
