@@ -1084,6 +1084,7 @@ f1cj...,3.3`;
               connectionError: nativeWalletConnectionError,
               onConnect: handleNativeWalletConnect,
               onDisconnect: handleNativeWalletDisconnect,
+              onClearConnectionError: () => setNativeWalletConnectionError(undefined),
             }}
           />
 

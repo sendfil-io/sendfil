@@ -1,5 +1,6 @@
 import { connectorsForWallets } from '@rainbow-me/rainbowkit';
 import {
+  braveWallet,
   metaMaskWallet,
   walletConnectWallet,
 } from '@rainbow-me/rainbowkit/wallets';
@@ -26,6 +27,7 @@ export const wagmiConfig = createConfig({
         groupName: 'Recommended',
         wallets: [
           metaMaskWallet,         // pass the function, not metaMaskWallet({ ... })
+          braveWallet,
           walletConnectWallet,
         ],
       },
