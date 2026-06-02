@@ -5,6 +5,7 @@ import {
   getNetworkConfig,
   type SendFilNetworkKey,
 } from '../networks';
+import { Buffer as BrowserBuffer } from 'buffer';
 import type {
   NativeFilecoinAccount,
   NativeFilecoinConnectedSender,
@@ -20,6 +21,10 @@ type NativeFilecoinFeatureEnv = Record<string, string | undefined>;
 type NativeWalletAdapterFactory = (
   network: IsoFilecoinNetwork,
 ) => WalletAdapter | Promise<WalletAdapter>;
+
+type BrowserGlobalWithBuffer = typeof globalThis & {
+  Buffer?: typeof BrowserBuffer;
+};
 
 interface IsoWalletProviderConfig {
   metadata: SenderProviderMetadata & { kind: 'native-filecoin-wallet' };
@@ -111,7 +116,18 @@ async function readNativeBalance(account: NativeFilecoinAccount): Promise<bigint
   return BigInt(balance);
 }
 
+export async function ensureBrowserBuffer(): Promise<void> {
+  const browserGlobal = globalThis as BrowserGlobalWithBuffer;
+
+  if (browserGlobal.Buffer) {
+    return;
+  }
+
+  browserGlobal.Buffer = BrowserBuffer;
+}
+
 async function createLedgerTransport() {
+  await ensureBrowserBuffer();
   const { default: TransportWebUSB } = await import('@ledgerhq/hw-transport-webusb');
   return TransportWebUSB.create();
 }
@@ -178,12 +194,20 @@ function createIsoWalletProvider({
   return {
     metadata,
     async checkSupport() {
-      const activeAdapter = await getAdapter(getDefaultNetworkKey());
-      await activeAdapter.checkSupport();
-      return mapWalletSupportStatus(activeAdapter.support);
+      try {
+        const activeAdapter = await getAdapter(getDefaultNetworkKey());
+        await activeAdapter.checkSupport();
+        return mapWalletSupportStatus(activeAdapter.support);
+      } catch (error) {
+        throw normalizeNativeWalletError(metadata, error);
+      }
     },
     async connect(options = {}) {
-      return connectAccount(options.networkKey ?? getDefaultNetworkKey());
+      try {
+        return await connectAccount(options.networkKey ?? getDefaultNetworkKey());
+      } catch (error) {
+        throw normalizeNativeWalletError(metadata, error);
+      }
     },
     async disconnect() {
       if (adapter) {
@@ -201,7 +225,13 @@ function createIsoWalletProvider({
         throw new Error(`${metadata.name} is not connected.`);
       }
 
-      const signature = await adapter.signMessage(toIsoMessage(message));
+      let signature: Awaited<ReturnType<WalletAdapter['signMessage']>>;
+      try {
+        signature = await adapter.signMessage(toIsoMessage(message));
+      } catch (error) {
+        throw normalizeNativeWalletError(metadata, error);
+      }
+
       const signedMessage: SignedMessage = {
         Message: message,
         Signature: signature.toLotus(),
@@ -213,6 +243,82 @@ function createIsoWalletProvider({
       };
     },
   };
+}
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return typeof error === 'string' ? error : 'Unknown error';
+}
+
+export function formatNativeFilecoinWalletErrorMessage(
+  metadata: SenderProviderMetadata,
+  error: unknown,
+): string {
+  const rawMessage = getErrorMessage(error);
+  const normalizedMessage = rawMessage.toLowerCase();
+
+  if (metadata.id === LEDGER_FILECOIN_PROVIDER_METADATA.id) {
+    if (normalizedMessage.includes('buffer is not defined')) {
+      return 'Ledger connection could not start. Refresh SendFIL and try again.';
+    }
+
+    if (
+      normalizedMessage.includes('webusb') ||
+      normalizedMessage.includes('usb') ||
+      normalizedMessage.includes('not supported')
+    ) {
+      return 'Ledger over WebUSB is not available in this browser. Use Chrome, Brave, or Edge on desktop, then try again.';
+    }
+
+    if (
+      normalizedMessage.includes('access denied') ||
+      normalizedMessage.includes('denied') ||
+      normalizedMessage.includes('cancel') ||
+      normalizedMessage.includes('no device selected')
+    ) {
+      return 'Ledger connection was cancelled or blocked. Unlock your Ledger, open the Filecoin app, choose it in the browser USB prompt, and approve the connection.';
+    }
+
+    if (normalizedMessage.includes('version is too old')) {
+      return 'Your Ledger Filecoin app is too old. Update the Filecoin app in Ledger Live, then try again.';
+    }
+
+    return 'Ledger could not connect. Unlock your Ledger, open the Filecoin app, choose it in the browser USB prompt, and approve the connection.';
+  }
+
+  if (metadata.id === FILSNAP_FILECOIN_PROVIDER_METADATA.id) {
+    if (
+      normalizedMessage.includes('not found') ||
+      normalizedMessage.includes('not installed') ||
+      normalizedMessage.includes('no provider') ||
+      normalizedMessage.includes('metamask')
+    ) {
+      return 'FilSnap needs MetaMask with the FilSnap Snap installed. Open MetaMask, install or enable FilSnap, then try again.';
+    }
+
+    if (normalizedMessage.includes('denied') || normalizedMessage.includes('reject')) {
+      return 'FilSnap connection was rejected in MetaMask. Approve the Snap connection to continue.';
+    }
+
+    return 'FilSnap could not connect. Open MetaMask, approve the FilSnap request, and try again.';
+  }
+
+  return rawMessage;
+}
+
+function normalizeNativeWalletError(
+  metadata: SenderProviderMetadata,
+  error: unknown,
+): Error {
+  const normalizedError = new Error(
+    formatNativeFilecoinWalletErrorMessage(metadata, error),
+  ) as Error & { cause?: unknown };
+
+  normalizedError.cause = error;
+  return normalizedError;
 }
 
 export function createFilsnapFilecoinWalletProvider(): NativeFilecoinWalletProvider {
@@ -234,6 +340,7 @@ export function createLedgerFilecoinWalletProvider(): NativeFilecoinWalletProvid
   return createIsoWalletProvider({
     metadata: LEDGER_FILECOIN_PROVIDER_METADATA,
     async createAdapter(network) {
+      await ensureBrowserBuffer();
       const { WalletAdapterLedger } = await import('iso-filecoin-wallets/ledger');
 
       return new WalletAdapterLedger({
