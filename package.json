@@ -23,7 +23,7 @@
   },
   "dependencies": {
     "@glif/filecoin-address": "^4.0.0",
-    "@ledgerhq/hw-transport-webusb": "^6.34.2",
+    "@ledgerhq/hw-transport-webhid": "^6.34.2",
     "@rainbow-me/rainbowkit": "^2.2.11",
     "@tanstack/react-query": "^5.100.14",
     "@types/papaparse": "^5.5.2",

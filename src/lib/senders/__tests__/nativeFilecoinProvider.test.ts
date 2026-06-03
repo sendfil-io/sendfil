@@ -59,6 +59,19 @@ describe('native Filecoin provider boundary', () => {
     );
   });
 
+  it('prepares Ledger transport modules before the browser device prompt path', () => {
+    const providers = getNativeFilecoinWalletProviders();
+    const filsnapProvider = providers.find(
+      (provider) => provider.metadata.id === 'filsnap-filecoin',
+    );
+    const ledgerProvider = providers.find(
+      (provider) => provider.metadata.id === 'ledger-filecoin',
+    );
+
+    expect(filsnapProvider?.prepareConnect).toBeUndefined();
+    expect(ledgerProvider?.prepareConnect).toEqual(expect.any(Function));
+  });
+
   it('reads native sender balances on the sender network', async () => {
     const senderResult = createNativeFilecoinConnectedSender({
       address: CALIBRATION_T1,
@@ -112,7 +125,7 @@ describe('native Filecoin provider boundary', () => {
         new Error('Access denied to use Ledger device'),
       ),
     ).toBe(
-      'Ledger connection was cancelled or blocked. Unlock your Ledger, open the Filecoin app, choose it in the browser USB prompt, and approve the connection.',
+      'Ledger connection was cancelled or blocked. Unlock your Ledger, open the Filecoin app, choose it in the browser device prompt, and approve the connection.',
     );
   });
 

@@ -85,6 +85,7 @@ export interface NativeFilecoinSendResult {
 
 export interface NativeFilecoinWalletProvider {
   metadata: SenderProviderMetadata & { kind: 'native-filecoin-wallet' };
+  prepareConnect?: (options?: NativeFilecoinConnectOptions) => Promise<void>;
   connect: (options?: NativeFilecoinConnectOptions) => Promise<NativeFilecoinAccount>;
   disconnect: () => Promise<void>;
   getAccount: () => Promise<NativeFilecoinAccount | null>;

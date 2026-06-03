@@ -209,6 +209,9 @@ export const CustomConnectButton: React.FC<CustomConnectButtonProps> = ({
   const [connectingNativeProviderId, setConnectingNativeProviderId] = useState<string | null>(
     null,
   );
+  const [preparedNativeProviderIds, setPreparedNativeProviderIds] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [connectingEvmConnectorUid, setConnectingEvmConnectorUid] = useState<string | null>(
     null,
   );
@@ -258,6 +261,44 @@ export const CustomConnectButton: React.FC<CustomConnectButtonProps> = ({
       cancelled = true;
     };
   }, [connectors, evmWalletIcons]);
+
+  React.useEffect(() => {
+    if (!showWalletChooser || !nativeFilecoin?.providers.length) {
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    nativeFilecoin.providers.forEach((provider) => {
+      if (!provider.prepareConnect || preparedNativeProviderIds.has(provider.metadata.id)) {
+        return;
+      }
+
+      void provider.prepareConnect({ networkKey: getDefaultNetworkKey() })
+        .catch(() => {
+          // Keep the row connectable; the connect action reports actionable Ledger guidance.
+        })
+        .finally(() => {
+          if (cancelled) {
+            return;
+          }
+
+          setPreparedNativeProviderIds((current) => {
+            if (current.has(provider.metadata.id)) {
+              return current;
+            }
+
+            const next = new Set(current);
+            next.add(provider.metadata.id);
+            return next;
+          });
+        });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [nativeFilecoin?.providers, preparedNativeProviderIds, showWalletChooser]);
 
   if (E2E_MOCK_WALLET_ENABLED) {
     return (
@@ -374,6 +415,10 @@ export const CustomConnectButton: React.FC<CustomConnectButtonProps> = ({
                   {hasNativeWalletProviders &&
                     nativeFilecoin?.providers.map((provider) => {
                       const isConnecting = connectingNativeProviderId === provider.metadata.id;
+                      const isPreparing = Boolean(
+                        provider.prepareConnect &&
+                        !preparedNativeProviderIds.has(provider.metadata.id),
+                      );
                       const logo = nativeWalletLogos[provider.metadata.id];
 
                       return (
@@ -387,7 +432,7 @@ export const CustomConnectButton: React.FC<CustomConnectButtonProps> = ({
                               className: 'h-8 w-8 rounded-lg object-contain',
                             }
                           }
-                          disabled={isConnectingWallet}
+                          disabled={isConnectingWallet || isPreparing}
                           isConnecting={isConnecting}
                           onClick={() => handleNativeConnect(provider)}
                         />

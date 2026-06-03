@@ -8,6 +8,7 @@ import {
 import { Buffer as BrowserBuffer } from 'buffer';
 import type {
   NativeFilecoinAccount,
+  NativeFilecoinConnectOptions,
   NativeFilecoinConnectedSender,
   NativeFilecoinProviderSupportStatus,
   NativeFilecoinWalletProvider,
@@ -29,6 +30,29 @@ type BrowserGlobalWithBuffer = typeof globalThis & {
 interface IsoWalletProviderConfig {
   metadata: SenderProviderMetadata & { kind: 'native-filecoin-wallet' };
   createAdapter: NativeWalletAdapterFactory;
+  prepareBeforeConnect?: boolean;
+}
+
+function isPromiseLike<T>(value: T | Promise<T>): value is Promise<T> {
+  return typeof (value as Promise<T>).then === 'function';
+}
+
+type LedgerTransportModule = typeof import('@ledgerhq/hw-transport-webhid');
+type LedgerTransportClass = LedgerTransportModule['default'];
+
+let ledgerTransportClass: LedgerTransportClass | undefined;
+let ledgerTransportLoadPromise: Promise<LedgerTransportClass> | undefined;
+
+async function loadLedgerTransport(): Promise<LedgerTransportClass> {
+  if (ledgerTransportClass) {
+    return ledgerTransportClass;
+  }
+
+  ledgerTransportLoadPromise ??= import('@ledgerhq/hw-transport-webhid').then(
+    (module) => module.default,
+  );
+  ledgerTransportClass = await ledgerTransportLoadPromise;
+  return ledgerTransportClass;
 }
 
 const nativeWalletCapabilities = {
@@ -116,7 +140,7 @@ async function readNativeBalance(account: NativeFilecoinAccount): Promise<bigint
   return BigInt(balance);
 }
 
-export async function ensureBrowserBuffer(): Promise<void> {
+export function ensureBrowserBuffer(): void {
   const browserGlobal = globalThis as BrowserGlobalWithBuffer;
 
   if (browserGlobal.Buffer) {
@@ -127,9 +151,9 @@ export async function ensureBrowserBuffer(): Promise<void> {
 }
 
 async function createLedgerTransport() {
-  await ensureBrowserBuffer();
-  const { default: TransportWebUSB } = await import('@ledgerhq/hw-transport-webusb');
-  return TransportWebUSB.create();
+  ensureBrowserBuffer();
+  const TransportWebHID = ledgerTransportClass ?? await loadLedgerTransport();
+  return TransportWebHID.create();
 }
 
 async function isLedgerTransportSupported(): Promise<boolean> {
@@ -138,8 +162,8 @@ async function isLedgerTransportSupported(): Promise<boolean> {
   }
 
   try {
-    const { default: TransportWebUSB } = await import('@ledgerhq/hw-transport-webusb');
-    return TransportWebUSB.isSupported();
+    const TransportWebHID = await loadLedgerTransport();
+    return TransportWebHID.isSupported();
   } catch {
     return false;
   }
@@ -148,16 +172,25 @@ async function isLedgerTransportSupported(): Promise<boolean> {
 function createIsoWalletProvider({
   metadata,
   createAdapter,
+  prepareBeforeConnect = false,
 }: IsoWalletProviderConfig): NativeFilecoinWalletProvider {
   let adapter: WalletAdapter | undefined;
   let connectedAccount: NativeFilecoinAccount | null = null;
 
   async function getAdapter(networkKey: SendFilNetworkKey): Promise<WalletAdapter> {
     if (!adapter) {
-      adapter = await createAdapter(toIsoFilecoinNetwork(networkKey));
+      const createdAdapter = createAdapter(toIsoFilecoinNetwork(networkKey));
+      adapter = isPromiseLike(createdAdapter) ? await createdAdapter : createdAdapter;
     }
 
     return adapter;
+  }
+
+  async function prepareConnect(
+    options: NativeFilecoinConnectOptions = {},
+  ): Promise<void> {
+    const activeAdapter = await getAdapter(options.networkKey ?? getDefaultNetworkKey());
+    await activeAdapter.checkSupport();
   }
 
   async function connectAccount(networkKey: SendFilNetworkKey): Promise<NativeFilecoinAccount> {
@@ -193,6 +226,7 @@ function createIsoWalletProvider({
 
   return {
     metadata,
+    ...(prepareBeforeConnect ? { prepareConnect } : {}),
     async checkSupport() {
       try {
         const activeAdapter = await getAdapter(getDefaultNetworkKey());
@@ -266,11 +300,13 @@ export function formatNativeFilecoinWalletErrorMessage(
     }
 
     if (
+      normalizedMessage.includes('webhid') ||
+      normalizedMessage.includes('hid') ||
       normalizedMessage.includes('webusb') ||
       normalizedMessage.includes('usb') ||
       normalizedMessage.includes('not supported')
     ) {
-      return 'Ledger over WebUSB is not available in this browser. Use Chrome, Brave, or Edge on desktop, then try again.';
+      return 'Ledger browser transport is not available here. Use Chrome, Brave, or Edge on desktop, then try again.';
     }
 
     if (
@@ -279,14 +315,14 @@ export function formatNativeFilecoinWalletErrorMessage(
       normalizedMessage.includes('cancel') ||
       normalizedMessage.includes('no device selected')
     ) {
-      return 'Ledger connection was cancelled or blocked. Unlock your Ledger, open the Filecoin app, choose it in the browser USB prompt, and approve the connection.';
+      return 'Ledger connection was cancelled or blocked. Unlock your Ledger, open the Filecoin app, choose it in the browser device prompt, and approve the connection.';
     }
 
     if (normalizedMessage.includes('version is too old')) {
       return 'Your Ledger Filecoin app is too old. Update the Filecoin app in Ledger Live, then try again.';
     }
 
-    return 'Ledger could not connect. Unlock your Ledger, open the Filecoin app, choose it in the browser USB prompt, and approve the connection.';
+    return 'Ledger could not connect. Unlock your Ledger, open the Filecoin app, choose it in the browser device prompt, and approve the connection.';
   }
 
   if (metadata.id === FILSNAP_FILECOIN_PROVIDER_METADATA.id) {
@@ -339,8 +375,9 @@ export function createFilsnapFilecoinWalletProvider(): NativeFilecoinWalletProvi
 export function createLedgerFilecoinWalletProvider(): NativeFilecoinWalletProvider {
   return createIsoWalletProvider({
     metadata: LEDGER_FILECOIN_PROVIDER_METADATA,
+    prepareBeforeConnect: true,
     async createAdapter(network) {
-      await ensureBrowserBuffer();
+      ensureBrowserBuffer();
       const { WalletAdapterLedger } = await import('iso-filecoin-wallets/ledger');
 
       return new WalletAdapterLedger({
