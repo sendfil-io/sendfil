@@ -1,9 +1,3 @@
-<svg width="64" height="64" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-  <rect width="256" height="256" fill="black"/>
-  <path d="M52 64H116V54" stroke="white" stroke-width="10" stroke-linecap="square" stroke-linejoin="miter"/>
-  <path d="M164 64H228V104" stroke="white" stroke-width="10" stroke-linecap="square" stroke-linejoin="miter"/>
-  <path d="M116 104H126V168H164V178H116" stroke="white" stroke-width="10" stroke-linecap="square" stroke-linejoin="miter"/>
-  <path d="M42 178H52" stroke="white" stroke-width="10" stroke-linecap="square"/>
-  <path d="M52 216H116V226" stroke="white" stroke-width="10" stroke-linecap="square" stroke-linejoin="miter"/>
-  <path d="M164 216H228V178H240" stroke="white" stroke-width="10" stroke-linecap="square" stroke-linejoin="miter"/>
+<svg width="64" height="64" viewBox="48 28 64 72" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <path d="M63.4464 36.3452H55.3879V91.6529H91.7332V84.3842H63.4464V36.3452Z" fill="black"/>
 </svg>
