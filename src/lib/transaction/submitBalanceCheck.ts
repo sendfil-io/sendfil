@@ -162,7 +162,7 @@ export async function recheckSubmitBalance(
   if (!request.readNativeBalance) {
     return createFailure(request, 'UNSUPPORTED_SENDER', {
       details:
-        'Submit-time balance checks for native Filecoin senders are not implemented yet.',
+        'No native Filecoin balance reader is available for the connected wallet.',
     });
   }
 
@@ -223,12 +223,12 @@ export function createSubmitBalanceCheckError(
         category: 'UNSUPPORTED_SENDER',
         title: 'Sender type not supported',
         message:
-          'Submit-time balance checks are not implemented for this sender type yet.',
+          'Submit-time balance checks are not available for this sender type.',
         errorMode,
         stage: 'execution',
         recoverable: true,
         hint:
-          'Use an EVM wallet for this batch until native Filecoin sender support is wired in.',
+          'Reconnect a supported wallet, then review the batch again.',
         details: result.details,
       });
     case 'BALANCE_UNAVAILABLE':

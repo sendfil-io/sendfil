@@ -4,7 +4,7 @@ import {
 } from '@glif/filecoin-address';
 import { describe, expect, it } from 'vitest';
 import { getNetworkConfig } from '../../networks';
-import { NATIVE_FILECOIN_PROVIDER_PLACEHOLDER_METADATA } from '../../senders';
+import { FILSNAP_FILECOIN_PROVIDER_METADATA } from '../../senders';
 import { createNativeFilecoinConnectedSender } from '../../senders/senderModel';
 import { toF4 } from '../../../utils/toF4';
 import { prepareBatchExecution } from '../batchExecution';
@@ -94,7 +94,7 @@ function bytesToHex(bytes: Uint8Array): `0x${string}` {
 function getNativeSender(address: string) {
   const result = createNativeFilecoinConnectedSender({
     address,
-    provider: NATIVE_FILECOIN_PROVIDER_PLACEHOLDER_METADATA,
+    provider: FILSNAP_FILECOIN_PROVIDER_METADATA,
   });
 
   if (!result.sender) {

@@ -5,13 +5,16 @@ import {
 import { getAddress } from 'viem';
 import { describe, expect, it } from 'vitest';
 import { toF4 } from '../../../utils/toF4';
-import { NATIVE_FILECOIN_PROVIDER_PLACEHOLDER_METADATA } from '../nativeFilecoinProvider';
+import { FILSNAP_FILECOIN_PROVIDER_METADATA } from '../nativeFilecoinProvider';
 import {
   getSenderDisplayAddress,
   resolveConnectedSenderState,
 } from '../connectedSender';
 import { createNativeFilecoinConnectedSender } from '../senderModel';
-import type { NativeFilecoinWalletProvider } from '../types';
+import type {
+  NativeFilecoinWalletProvider,
+  SenderProviderMetadata,
+} from '../types';
 
 const EVM_ADDRESS = '0x1234567890abcdef1234567890abcdef12345678';
 
@@ -28,7 +31,7 @@ const CALIBRATION_T1 = newSecp256k1Address(
 function getNativeSender(address: string) {
   const result = createNativeFilecoinConnectedSender({
     address,
-    provider: NATIVE_FILECOIN_PROVIDER_PLACEHOLDER_METADATA,
+    provider: FILSNAP_FILECOIN_PROVIDER_METADATA,
   });
 
   if (!result.sender) {
@@ -38,9 +41,29 @@ function getNativeSender(address: string) {
   return result.sender;
 }
 
+const PLANNED_NATIVE_PROVIDER_METADATA: SenderProviderMetadata & {
+  kind: 'native-filecoin-wallet';
+} = {
+  id: 'planned-native-wallet',
+  name: 'Planned native wallet',
+  kind: 'native-filecoin-wallet',
+  status: 'planned',
+  unavailableReason:
+    'Native Filecoin wallet signing is not available for this provider yet.',
+  capabilities: {
+    canConnect: false,
+    canDisconnect: false,
+    canDetectNetwork: false,
+    canReadBalance: true,
+    canSignBatch: false,
+    canSubmit: false,
+    oneApprovalPerBatch: true,
+  },
+};
+
 function getPlannedNativeProvider(): NativeFilecoinWalletProvider {
   return {
-    metadata: NATIVE_FILECOIN_PROVIDER_PLACEHOLDER_METADATA,
+    metadata: PLANNED_NATIVE_PROVIDER_METADATA,
     async connect() {
       throw new Error('Native provider is planned');
     },
@@ -57,7 +80,7 @@ function getPlannedNativeProvider(): NativeFilecoinWalletProvider {
 }
 
 describe('connected sender state', () => {
-  it('resolves the existing wagmi EVM sender as the only live send-capable path', () => {
+  it('resolves the existing wagmi EVM sender as a live send-capable path', () => {
     const state = resolveConnectedSenderState({
       evmWallet: {
         address: EVM_ADDRESS,
@@ -150,12 +173,12 @@ describe('connected sender state', () => {
       hasConnectableProvider: false,
       hasSignableProvider: false,
       unavailableReason:
-        'Native Filecoin wallet signing is scaffolded, but no browser provider has been verified for production use yet.',
+        'Native Filecoin wallet signing is not available for this provider yet.',
     });
     expect(state.canUseLiveSendPath).toBe(false);
   });
 
-  it('models native f1/t1 senders as unsupported by the live send path until signing is wired', () => {
+  it('models native f1/t1 senders as live send-capable when their provider can sign and submit', () => {
     const mainnetState = resolveConnectedSenderState({
       evmWallet: {
         address: undefined,
@@ -179,10 +202,8 @@ describe('connected sender state', () => {
       networkKey: 'mainnet',
       nativePrefix: 'f',
     });
-    expect(mainnetState.canUseLiveSendPath).toBe(false);
-    expect(mainnetState.liveSendPathUnavailableReason).toBe(
-      'Native Filecoin wallet review and send are not wired into the live app yet.',
-    );
+    expect(mainnetState.canUseLiveSendPath).toBe(true);
+    expect(mainnetState.liveSendPathUnavailableReason).toBeUndefined();
     expect(mainnetState.balanceSource).toEqual({
       kind: 'native-filecoin-lotus',
       enabled: true,
@@ -197,7 +218,7 @@ describe('connected sender state', () => {
       networkKey: 'calibration',
       nativePrefix: 't',
     });
-    expect(calibrationState.canUseLiveSendPath).toBe(false);
+    expect(calibrationState.canUseLiveSendPath).toBe(true);
   });
 
   it('formats sender display addresses without converting native f1/t1 senders to 0x', () => {

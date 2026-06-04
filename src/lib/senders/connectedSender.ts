@@ -200,12 +200,16 @@ function getLiveSendPathUnavailableReason(
     return undefined;
   }
 
-  if (sender.kind === 'native-filecoin') {
-    return 'Native Filecoin wallet review and send are not wired into the live app yet.';
-  }
-
   if (!sender.canSignBatch) {
     return 'The connected sender cannot sign a SendFIL batch.';
+  }
+
+  if (!sender.provider.capabilities.canSubmit) {
+    return 'The connected sender cannot submit a SendFIL batch.';
+  }
+
+  if (!sender.provider.capabilities.oneApprovalPerBatch) {
+    return 'The connected sender cannot sign this batch with one wallet approval.';
   }
 
   return undefined;
@@ -240,9 +244,9 @@ export function resolveConnectedSenderState({
     isUnsupportedConnectedNetwork: networkStatus === 'unsupported',
     expectedNetworkPrefix: connectedSender?.nativePrefix,
     canUseLiveSendPath:
-      connectedSender?.kind === 'evm' &&
-      connectedSender.canSignBatch &&
-      connectedSender.networkStatus === 'supported' &&
+      Boolean(connectedSender) &&
+      connectedSender!.canSignBatch &&
+      connectedSender!.networkStatus === 'supported' &&
       !liveSendPathUnavailableReason,
     liveSendPathUnavailableReason,
     balanceSource: resolveSenderBalanceSource(

@@ -64,6 +64,16 @@ export interface NativeFilecoinAccount {
   nativePrefix: NetworkPrefix;
 }
 
+export interface NativeFilecoinConnectOptions {
+  networkKey?: SendFilNetworkKey;
+}
+
+export type NativeFilecoinProviderSupportStatus =
+  | 'not-checked'
+  | 'detected'
+  | 'not-detected'
+  | 'not-supported';
+
 export interface NativeFilecoinBatchSigningRequest {
   sender: NativeFilecoinConnectedSender;
   preparedBatch: PreparedBatchExecution;
@@ -75,10 +85,12 @@ export interface NativeFilecoinSendResult {
 
 export interface NativeFilecoinWalletProvider {
   metadata: SenderProviderMetadata & { kind: 'native-filecoin-wallet' };
-  connect: () => Promise<NativeFilecoinAccount>;
+  prepareConnect?: (options?: NativeFilecoinConnectOptions) => Promise<void>;
+  connect: (options?: NativeFilecoinConnectOptions) => Promise<NativeFilecoinAccount>;
   disconnect: () => Promise<void>;
   getAccount: () => Promise<NativeFilecoinAccount | null>;
   getBalance: (account: NativeFilecoinAccount) => Promise<bigint>;
+  checkSupport?: () => Promise<NativeFilecoinProviderSupportStatus>;
   signAndSubmitMessage?: (message: FilecoinMessage) => Promise<NativeFilecoinSendResult>;
   signAndSubmitBatch?: (
     request: NativeFilecoinBatchSigningRequest,

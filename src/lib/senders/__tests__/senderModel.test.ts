@@ -7,7 +7,7 @@ import {
 import { getAddress } from 'viem';
 import { describe, expect, it } from 'vitest';
 import { toF4 } from '../../../utils/toF4';
-import { NATIVE_FILECOIN_PROVIDER_PLACEHOLDER_METADATA } from '../nativeFilecoinProvider';
+import { FILSNAP_FILECOIN_PROVIDER_METADATA } from '../nativeFilecoinProvider';
 import {
   createEvmConnectedSender,
   createNativeFilecoinConnectedSender,
@@ -76,11 +76,11 @@ describe('sender model', () => {
   it('creates mainnet f1 and Calibration t1 native sender models without converting addresses', () => {
     const mainnet = createNativeFilecoinConnectedSender({
       address: `  ${MAINNET_F1}  `,
-      provider: NATIVE_FILECOIN_PROVIDER_PLACEHOLDER_METADATA,
+      provider: FILSNAP_FILECOIN_PROVIDER_METADATA,
     });
     const calibration = createNativeFilecoinConnectedSender({
       address: CALIBRATION_T1,
-      provider: NATIVE_FILECOIN_PROVIDER_PLACEHOLDER_METADATA,
+      provider: FILSNAP_FILECOIN_PROVIDER_METADATA,
     });
 
     expect(mainnet.error).toBeUndefined();
@@ -91,7 +91,7 @@ describe('sender model', () => {
       networkKey: 'mainnet',
       nativePrefix: 'f',
       networkStatus: 'supported',
-      canSignBatch: false,
+      canSignBatch: true,
     });
     expect(mainnet.sender?.address.startsWith('0x')).toBe(false);
 
@@ -103,7 +103,7 @@ describe('sender model', () => {
       networkKey: 'calibration',
       nativePrefix: 't',
       networkStatus: 'supported',
-      canSignBatch: false,
+      canSignBatch: true,
     });
   });
 
@@ -119,7 +119,7 @@ describe('sender model', () => {
     for (const address of unsupportedSenders) {
       const result = createNativeFilecoinConnectedSender({
         address,
-        provider: NATIVE_FILECOIN_PROVIDER_PLACEHOLDER_METADATA,
+        provider: FILSNAP_FILECOIN_PROVIDER_METADATA,
       });
 
       expect(result.sender).toBeUndefined();
@@ -132,7 +132,7 @@ describe('sender model', () => {
   it('blocks native sender network prefix mismatches', () => {
     const result = createNativeFilecoinConnectedSender({
       address: MAINNET_F1,
-      provider: NATIVE_FILECOIN_PROVIDER_PLACEHOLDER_METADATA,
+      provider: FILSNAP_FILECOIN_PROVIDER_METADATA,
       expectedNetworkKey: 'calibration',
     });
 

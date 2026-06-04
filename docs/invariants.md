@@ -248,17 +248,17 @@ network/wallet gating, review UI gating
 - `src/lib/senders/__tests__/connectedSender.test.ts`
   - `describe('connected sender state', ...)`
   - `it('keeps unsupported EVM networks connected but disables network-scoped reads')`
-  - `it('models native f1/t1 senders as unsupported by the live send path until signing is wired')`
+  - `it('models native f1/t1 senders as live send-capable when their provider can sign and submit')`
 
 ### Status
 `implemented`
 
-Current repo note: the live block happens at the App review boundary, not by a wallet-driven switch action inside the review modal. `src/lib/senders/useConnectedSender.ts` now centralizes the live connected-sender state for the App. It exposes the current EVM/wagmi sender as the only live send-capable path and keeps native Filecoin sender models/provider placeholders from enabling review or send until native wallet signing is actually wired.
+Current repo note: the live block happens at the App review boundary, not by a wallet-driven switch action inside the review modal. `src/lib/senders/useConnectedSender.ts` now centralizes the live connected-sender state for the App. It exposes the EVM/wagmi sender path and the native Filecoin sender path when the connected native provider can sign, submit, read balance, and preserve one-approval batch behavior.
 
 ## INV-BAL-001 — Submit-Time Balance Recheck
 
 ### Rule
-The existing EVM/wagmi submit path must re-read the connected sender balance immediately before wallet submission. The batch must not be submitted unless current balance covers the prepared batch transfer value plus the latest estimated network fee.
+The existing EVM/wagmi and native Filecoin submit paths must re-read the connected sender balance immediately before wallet submission. The batch must not be submitted unless current balance covers the prepared batch transfer value plus the latest estimated network fee.
 
 ### Why this matters
 The review-time balance can become stale if the sender spends or receives FIL while the review modal is open. Sending without a fresh check can push an avoidable insufficient-funds request into the wallet.
@@ -267,11 +267,11 @@ The review-time balance can become stale if the sender spends or receives FIL wh
 submit guard, wallet RPC
 
 ### Acceptance criteria
-- The recheck runs after submit-time gas estimation and before `sendTransactionAsync`.
+- The recheck runs after submit-time gas estimation and before wallet submission.
 - Required balance includes prepared transfer value, which contains recipient rows and appended fee rows, plus estimated network fee.
 - If current balance is insufficient, wallet submission is not called.
 - Unsupported network state cannot bypass the submit guard.
-- Native Filecoin senders have an explicit unsupported/not-implemented helper path until native sender execution exists.
+- Native Filecoin senders use the Lotus balance reader before native message signing and `MpoolPush`.
 
 ### Tests
 - `src/lib/transaction/__tests__/submitBalanceCheck.test.ts`
@@ -282,7 +282,7 @@ submit guard, wallet RPC
 ### Status
 `implemented`
 
-Current repo note: this is implemented for the live EVM/wagmi sender path only. The helper is sender-aware, but native Filecoin sender submission is still not wired into the live app.
+Current repo note: this is implemented for the live EVM/wagmi sender path and the native Filecoin sender path wired through `useExecuteNativeBatch`.
 
 ## INV-RPC-001 — Contract recipients detected via `eth_getCode` are blocked
 
@@ -348,4 +348,4 @@ estimate/execute flow, transaction builder
 ### Status
 `implemented`
 
-Current repo note: the live App path still estimates and submits through the EVM/wagmi `useExecuteBatch` flow. `src/lib/transaction/nativeBatchMessage.ts` can prepare the single native Filecoin `InvokeEVM` message for a native `f1`/`t1` sender from the same prepared Multicall3 batch payload, and `src/lib/transaction/nativeBatchPreflight.ts` can fetch the native nonce and Lotus gas estimate for that message. Native wallet signing/submission and review UI routing are not wired into the live app yet.
+Current repo note: the live App path estimates and submits through the EVM/wagmi `useExecuteBatch` flow for EVM senders and through `useExecuteNativeBatch` for native Filecoin senders. The native path prepares one Filecoin `InvokeEVM` message from the same Multicall3 batch payload, fetches nonce and Lotus gas, signs through the connected native wallet provider, submits with `Filecoin.MpoolPush`, and polls status by CID.
