@@ -140,6 +140,16 @@ function getElementByTestId(container: HTMLElement, testId: string): HTMLElement
   return element;
 }
 
+function openTransactionConfiguration(container: HTMLElement) {
+  const button = container.querySelector('button[aria-expanded]');
+
+  if (!(button instanceof HTMLButtonElement)) {
+    throw new Error('Could not find transaction configuration toggle');
+  }
+
+  click(button);
+}
+
 function getButton(container: HTMLElement, label: string): HTMLButtonElement {
   const button = Array.from(container.querySelectorAll('button')).find(
     (candidate) => candidate.textContent?.trim() === label,
@@ -275,6 +285,49 @@ describe('App confirm flow', () => {
         { address: FEE_B, amount: 0.005 },
       ],
       'PARTIAL',
+    );
+  });
+
+  it('calls estimateBatch and executeBatch with fee rows in atomic mode when selected', async () => {
+    executeBatchMock.mockImplementation(async () => {
+      setMockExecutionSnapshot({
+        state: 'pending',
+        txHash: HASH_A,
+      });
+      return HASH_A;
+    });
+
+    await act(async () => {
+      root.render(<App />);
+    });
+
+    openTransactionConfiguration(container);
+    click(getElementByTestId(container, 'error-handling-atomic'));
+    click(getElementByTestId(container, 'review-batch-button'));
+    await flushAsyncWork();
+
+    expect(container.textContent).toContain('Atomic');
+    expect(container.textContent).toContain('Any failing transfer reverts the whole batch.');
+    expect(estimateBatchMock).toHaveBeenCalledWith(
+      [
+        { address: getAddress(BASE_ADDRESS), amount: 1 },
+        { address: FEE_A, amount: 0.005 },
+        { address: FEE_B, amount: 0.005 },
+      ],
+      'ATOMIC',
+    );
+
+    click(getElementByTestId(container, 'send-batch-button'));
+    await flushAsyncWork();
+
+    expect(executeBatchMock).toHaveBeenCalledTimes(1);
+    expect(executeBatchMock).toHaveBeenCalledWith(
+      [
+        { address: getAddress(BASE_ADDRESS), amount: 1 },
+        { address: FEE_A, amount: 0.005 },
+        { address: FEE_B, amount: 0.005 },
+      ],
+      'ATOMIC',
     );
   });
 

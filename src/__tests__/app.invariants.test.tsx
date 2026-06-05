@@ -99,6 +99,16 @@ function getElementByTestId(container: HTMLElement, testId: string): HTMLElement
   return element;
 }
 
+function openTransactionConfiguration(container: HTMLElement) {
+  const button = container.querySelector('button[aria-expanded]');
+
+  if (!(button instanceof HTMLButtonElement)) {
+    throw new Error('Could not find transaction configuration toggle');
+  }
+
+  click(button);
+}
+
 describe('INV-NET-001 wrong network gating', () => {
   let dom: JSDOM;
   let container: HTMLDivElement;
@@ -221,6 +231,34 @@ describe('INV-NET-001 wrong network gating', () => {
     expect(executeBatchMock).toHaveBeenCalledWith(
       [{ address: getAddress(RECIPIENT), amount: 1 }],
       'PARTIAL',
+    );
+  });
+
+  it('allows selected ATOMIC execution on Calibration without default fee rows', async () => {
+    mockChainId = 314159;
+
+    await act(async () => {
+      root.render(<App />);
+    });
+
+    openTransactionConfiguration(container);
+    click(getElementByTestId(container, 'error-handling-atomic'));
+    click(getElementByTestId(container, 'review-batch-button'));
+    await flushAsyncWork();
+
+    expect(container.textContent).toContain('Calibration Testnet');
+    expect(container.textContent).toContain('Atomic');
+    expect(estimateBatchMock).toHaveBeenCalledWith(
+      [{ address: getAddress(RECIPIENT), amount: 1 }],
+      'ATOMIC',
+    );
+
+    click(getElementByTestId(container, 'send-batch-button'));
+    await flushAsyncWork();
+
+    expect(executeBatchMock).toHaveBeenCalledWith(
+      [{ address: getAddress(RECIPIENT), amount: 1 }],
+      'ATOMIC',
     );
   });
 

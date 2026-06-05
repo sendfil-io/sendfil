@@ -26,12 +26,15 @@ async function selectAtomicMode(page: Page) {
   await page.getByTestId('error-handling-atomic').click();
 }
 
-async function expectReviewShowsPartialHandling(page: Page) {
+async function expectReviewShowsAtomicHandling(page: Page) {
   const reviewDialog = page.getByRole('dialog', { name: 'Review Batch' });
 
   await expect(reviewDialog).toBeVisible();
   await expect(reviewDialog.getByText('Error handling')).toBeVisible();
-  await expect(reviewDialog.getByText('Partial')).toBeVisible();
+  await expect(reviewDialog.getByText('Atomic', { exact: true })).toBeVisible();
+  await expect(
+    reviewDialog.getByText('Any failing transfer reverts the whole batch.'),
+  ).toBeVisible();
 }
 
 test('manual review can proceed without duplicate acknowledgment for unique recipients', async ({
@@ -91,40 +94,36 @@ ${DUPLICATE_ADDRESS},2
   await expect(page.getByTestId('send-batch-button')).toBeEnabled();
 });
 
-test('atomic mode stays blocked and review continues with partial semantics', async ({
+test('atomic mode can be selected and sent through the live review flow', async ({
   page,
 }) => {
   await openManualInput(page);
   await selectAtomicMode(page);
-  await expect(page.getByTestId('unavailable-capability-modal')).toBeVisible();
-  await expect(page.getByText('Atomic error handling is not wired yet')).toBeVisible();
-  await page.getByRole('button', { name: 'Keep default' }).click();
 
   await fillRecipient(page, 0, DUPLICATE_ADDRESS, '1');
   await fillRecipient(page, 1, UNIQUE_ADDRESS, '2');
 
   await page.getByTestId('review-batch-button').click();
 
-  await expectReviewShowsPartialHandling(page);
+  await expectReviewShowsAtomicHandling(page);
   await expect(page.getByTestId('send-batch-button')).toBeEnabled();
 
   await page.getByTestId('send-batch-button').click();
   await expect(page.getByText('Transaction Confirmed')).toBeVisible();
 });
 
-test('atomic selection remains blocked even for an atomic-only preflight case', async ({
+test('atomic preflight failure blocks send before wallet submission', async ({
   page,
 }) => {
   await openManualInput(page);
   await selectAtomicMode(page);
-  await expect(page.getByTestId('unavailable-capability-modal')).toBeVisible();
-  await page.getByRole('button', { name: 'Keep default' }).click();
 
   await fillRecipient(page, 0, E2E_ATOMIC_REVERT_ADDRESS, '1');
 
   await page.getByTestId('review-batch-button').click();
 
-  await expectReviewShowsPartialHandling(page);
-  await expect(page.getByTestId('atomic-preflight-error')).toHaveCount(0);
-  await expect(page.getByTestId('send-batch-button')).toBeEnabled();
+  await expectReviewShowsAtomicHandling(page);
+  await expect(page.getByTestId('atomic-preflight-error')).toBeVisible();
+  await expect(page.getByText('Atomic batch would revert')).toBeVisible();
+  await expect(page.getByTestId('send-batch-button')).toBeDisabled();
 });

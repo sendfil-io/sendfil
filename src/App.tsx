@@ -612,14 +612,6 @@ export default function App() {
   };
 
   const handleErrorHandlingSelect = (value: ErrorHandlingPreference) => {
-    if (value === 'ATOMIC') {
-      openUnavailableCapabilityNotice(
-        'Atomic error handling is not wired yet',
-        'The control is now visible, but the live execution path still defaults to Partial while atomic batch handling is implemented end to end. Partial remains selected for this batch.',
-      );
-      return;
-    }
-
     setBatchConfiguration((current) => ({ ...current, errorHandling: value }));
   };
 
@@ -744,7 +736,7 @@ export default function App() {
       })),
     [csvValidation.validRecipients, inputMode, manualValidation.validRecipients],
   );
-  const selectedErrorMode: ErrorHandlingPreference = 'PARTIAL';
+  const selectedErrorMode = batchConfiguration.errorHandling;
   const feeComputation = React.useMemo(() => {
     if (validRecipients.length === 0) {
       return {

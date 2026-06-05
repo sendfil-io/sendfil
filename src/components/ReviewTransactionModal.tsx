@@ -313,6 +313,9 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
               <p className="mt-1 text-sm font-semibold text-slate-900">
                 {getErrorHandlingLabel(batchConfiguration.errorHandling)}
               </p>
+              <p className="mt-1 text-xs leading-5 text-slate-500" data-testid="error-mode-summary">
+                {errorModeCopy.reviewSummary}
+              </p>
             </div>
           </div>
         </div>

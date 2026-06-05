@@ -149,6 +149,7 @@ describe('ReviewTransactionModal', () => {
     expect(container.textContent).toContain('Standard');
     expect(container.textContent).toContain('Error handling');
     expect(container.textContent).toContain('Partial');
+    expect(container.textContent).toContain('Some transfers may succeed even if others fail.');
   });
 
   it('uses the Calibration Filfox URL when rendering testnet transactions', () => {
@@ -198,7 +199,7 @@ describe('ReviewTransactionModal', () => {
     expect(getButton(container, 'Send').disabled).toBe(true);
   });
 
-  it('does not render execution semantics in review mode', () => {
+  it('renders selected execution semantics in review mode', () => {
     const props = getBaseProps();
     props.batchConfiguration = {
       ...DEFAULT_BATCH_CONFIGURATION,
@@ -209,8 +210,9 @@ describe('ReviewTransactionModal', () => {
       root.render(<ReviewTransactionModal {...props} />);
     });
 
-    expect(container.textContent).not.toContain('Execution semantics');
-    expect(container.textContent).not.toContain('Any failing transfer reverts the whole batch.');
+    expect(container.textContent).toContain('Atomic');
+    expect(container.textContent).toContain('Any failing transfer reverts the whole batch.');
+    expect(container.textContent).not.toContain('Some transfers may succeed even if others fail.');
   });
 
   it('blocks send when atomic preflight fails', () => {
