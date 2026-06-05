@@ -1,25 +1,27 @@
 # SendFIL
 
-SendFIL is a client-only Vite SPA for batch sending FIL. Senders can disperse FIL from a single-signer or multi-sig to one or many f1, f2, f4, or 0x addresses.
+SendFIL is a client-only Vite SPA for batch sending FIL. The live app currently supports single-signer EVM/FEVM senders and native Filecoin `f1`/`t1` senders through the Standard batch path. Multi-sig sender support remains planned work.
 
 ## Current live execution surface
 
 - Single-signer FEVM batch execution through `Multicall3.aggregate3Value(...)` plus `FilForwarder`.
-- Filecoin Mainnet and Calibration wallet flow through wagmi/RainbowKit with `metaMaskWallet` and `walletConnectWallet`.
-- Review-step gas estimation and send execution now use the same FEVM batch builder and the same selected error mode.
+- Filecoin Mainnet and Calibration EVM wallet flow through wagmi/RainbowKit with MetaMask, Brave Wallet, and WalletConnect.
+- Native Filecoin wallet rows for FilSnap and Ledger. Native `f1`/`t1` senders use one native `InvokeEVM` message that carries the same Standard batch payload.
+- Review-step gas estimation and send execution use the same Standard batch builder.
 - Duplicate recipients are warnings that require explicit acknowledgment before send.
+- Submit-time balance recheck is wired for the EVM/wagmi sender path and the native Filecoin sender path.
 
 ## Error handling modes
 
-- `PARTIAL` is the default. Successful internal calls can still finalize even if another call fails.
-- `ATOMIC` is all-or-nothing. Any failing internal call reverts the entire batch and no transfer is finalized.
+- `PARTIAL` is the live UI default and the only selectable mode in the current `App.tsx` flow. Successful internal calls can still finalize even if another call fails.
+- `ATOMIC` is implemented in the lower transaction layer by setting `allowFailure=false` for every Multicall3 call, and review/failure copy exists in `ReviewTransactionModal`. It is not currently selectable in the live app UI; choosing Atomic opens an unavailable-capability notice and leaves the batch on Partial.
 
 Recommended usage:
 
 - Use `PARTIAL` when best-effort delivery is acceptable and you want the batch to keep going.
-- Use `ATOMIC` when every recipient must succeed together or the batch should fail as one unit.
+- Use `ATOMIC` once the UI selector is wired when every recipient must succeed together or the batch should fail as one unit.
 
-When an atomic preflight fails, SendFIL blocks submission and explains that the whole batch would revert. When an atomic transaction fails after submission, the failure copy explicitly states that no transfer was finalized.
+Current implementation note: the transaction hooks and mock adapter can execute/preflight ATOMIC batches when called directly, but the live UI hardcodes `PARTIAL` until the selector is intentionally enabled.
 
 ## Telemetry
 
@@ -33,6 +35,8 @@ Payloads include:
 - `errorMode`
 - `recipientCount`
 - `totalValueAttoFil`
+- `networkKey`
+- `chainId`
 - preflight/simulation result
 - final transaction status
 - normalized error category
@@ -40,9 +44,13 @@ Payloads include:
 ## Known limitations
 
 - `ThinBatch` is still UI-visible but not live.
-- Filecoin-native signer flows are not wired into the live app path.
+- `ATOMIC` is transaction-layer-ready but blocked by the live UI selector.
 - Contract-recipient blocking (`eth_getCode`) is not implemented yet.
-- Balance is checked during review, but there is not yet a second submit-time balance recheck.
+- There is no centralized-exchange `0x` warning flow yet.
+- There is no past-transactions sidebar or stuck-transaction guidance in the main user flow yet.
+- Native Filecoin provider support has not been exhaustively verified across target browser, hardware, and network-switching environments.
+- Native account derivation currently uses adapter defaults; account/index selection UX is not implemented.
+- High-precision amount validation accepts up to 18 decimal places, but the live `App.tsx` value path still converts validated amounts to JavaScript `Number` before fee calculation and execution. A fully string/bigint-safe amount pipeline remains a money-safety hardening task.
 
 ## Environment setup
 
@@ -85,7 +93,7 @@ yarn dev
 yarn lint
 yarn test
 yarn typecheck
-yarn test:e2e tests/e2e/review-flow.spec.ts
+yarn test:e2e:smoke
 ```
 
 ## Calibration smoke test
@@ -98,4 +106,4 @@ yarn test:e2e tests/e2e/review-flow.spec.ts
 
 ## Design note
 
-See [docs/atomic-error-handling.md](docs/atomic-error-handling.md) for the ATOMIC-mode execution contract, error taxonomy, telemetry schema, and rollout notes.
+See [docs/atomic-error-handling.md](docs/atomic-error-handling.md) for the ATOMIC-mode transaction-layer contract, current UI gate, error taxonomy, telemetry schema, and rollout notes.
