@@ -9,6 +9,7 @@ import {
 import {
   type ErrorMode,
 } from './multicall';
+import type { ExecutionMethod } from '../batchConfiguration';
 import {
   applyGasBuffer,
   buildBatchGasEstimate,
@@ -51,10 +52,12 @@ export interface UseExecuteBatchReturn {
   executeBatch: (
     recipients: BatchExecutionRecipient[],
     errorMode: ErrorMode,
+    executionMethod?: ExecutionMethod,
   ) => Promise<`0x${string}`>;
   estimateBatch: (
     recipients: BatchExecutionRecipient[],
     errorMode: ErrorMode,
+    executionMethod?: ExecutionMethod,
   ) => Promise<BatchGasEstimate>;
   state: BatchExecutionState;
   txHash?: `0x${string}`;
@@ -109,6 +112,7 @@ export function useExecuteBatch(
       setState('confirmed');
       emitBatchExecutionTelemetry({
         event: 'batch_confirmed',
+        executionMethod: pendingPreparedBatch.executionMethod,
         errorMode: pendingPreparedBatch.errorMode,
         recipientCount: pendingPreparedBatch.recipientCount,
         totalValueAttoFil: pendingPreparedBatch.totalValueAttoFil.toString(),
@@ -132,6 +136,7 @@ export function useExecuteBatch(
       setError(mappedError);
       emitBatchExecutionTelemetry({
         event: 'batch_failed',
+        executionMethod: pendingPreparedBatch.executionMethod,
         errorMode: pendingPreparedBatch.errorMode,
         recipientCount: pendingPreparedBatch.recipientCount,
         totalValueAttoFil: pendingPreparedBatch.totalValueAttoFil.toString(),
@@ -184,6 +189,7 @@ export function useExecuteBatch(
     async (
       recipients: BatchExecutionRecipient[],
       errorMode: ErrorMode,
+      executionMethod: ExecutionMethod = 'STANDARD',
     ): Promise<BatchGasEstimate> => {
       let prepared: PreparedBatchExecution | undefined;
 
@@ -194,11 +200,17 @@ export function useExecuteBatch(
           );
         }
 
-        prepared = prepareBatchExecution(recipients, errorMode, activeNetwork);
+        prepared = prepareBatchExecution(
+          recipients,
+          errorMode,
+          activeNetwork,
+          executionMethod,
+        );
         const estimate = await estimatePreparedBatch(prepared);
 
         emitBatchExecutionTelemetry({
           event: 'batch_preflight_succeeded',
+          executionMethod,
           errorMode,
           recipientCount: prepared.recipientCount,
           totalValueAttoFil: prepared.totalValueAttoFil.toString(),
@@ -218,6 +230,7 @@ export function useExecuteBatch(
 
         emitBatchExecutionTelemetry({
           event: 'batch_preflight_failed',
+          executionMethod,
           errorMode,
           recipientCount: prepared?.recipientCount ?? recipients.length,
           totalValueAttoFil: prepared?.totalValueAttoFil.toString() ?? '0',
@@ -242,6 +255,7 @@ export function useExecuteBatch(
     async (
       recipients: BatchExecutionRecipient[],
       errorMode: ErrorMode,
+      executionMethod: ExecutionMethod = 'STANDARD',
     ): Promise<`0x${string}`> => {
       const executionId = executionSequence.current + 1;
       executionSequence.current = executionId;
@@ -260,10 +274,16 @@ export function useExecuteBatch(
           );
         }
 
-        prepared = prepareBatchExecution(recipients, errorMode, activeNetwork);
+        prepared = prepareBatchExecution(
+          recipients,
+          errorMode,
+          activeNetwork,
+          executionMethod,
+        );
 
         emitBatchExecutionTelemetry({
           event: 'batch_submission_requested',
+          executionMethod,
           errorMode,
           recipientCount: prepared.recipientCount,
           totalValueAttoFil: prepared.totalValueAttoFil.toString(),
@@ -325,6 +345,7 @@ export function useExecuteBatch(
         setState('pending');
         emitBatchExecutionTelemetry({
           event: 'batch_submitted',
+          executionMethod,
           errorMode,
           recipientCount: prepared.recipientCount,
           totalValueAttoFil: prepared.totalValueAttoFil.toString(),
@@ -343,6 +364,7 @@ export function useExecuteBatch(
           setState('confirmed');
           emitBatchExecutionTelemetry({
             event: 'batch_confirmed',
+            executionMethod,
             errorMode,
             recipientCount: prepared.recipientCount,
             totalValueAttoFil: prepared.totalValueAttoFil.toString(),
@@ -367,6 +389,7 @@ export function useExecuteBatch(
         setError(mappedError);
         emitBatchExecutionTelemetry({
           event: 'batch_failed',
+          executionMethod,
           errorMode,
           recipientCount: prepared?.recipientCount ?? recipients.length,
           totalValueAttoFil: prepared?.totalValueAttoFil.toString() ?? '0',

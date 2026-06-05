@@ -7,6 +7,7 @@ import type {
   SendFilNetworkConfig,
   SendFilNetworkKey,
 } from '../networks';
+import type { ExecutionMethod } from '../batchConfiguration';
 import type { NativeFilecoinConnectedSender } from '../senders';
 import {
   prepareBatchExecution,
@@ -22,7 +23,12 @@ import {
 
 export type NativeBatchPreflightNetwork = Pick<
   SendFilNetworkConfig,
-  'key' | 'chainId' | 'multicall3Address' | 'filForwarderAddress'
+  | 'key'
+  | 'chainId'
+  | 'chainName'
+  | 'multicall3Address'
+  | 'filForwarderAddress'
+  | 'thinBatchAddress'
 >;
 
 export interface NativeBatchPreflightRpc {
@@ -40,6 +46,7 @@ export interface NativeBatchPreflightRequest {
   sender: NativeFilecoinConnectedSender;
   recipients: BatchExecutionRecipient[];
   errorMode: ErrorMode;
+  executionMethod?: ExecutionMethod;
   network: NativeBatchPreflightNetwork;
   rpc?: NativeBatchPreflightRpc;
 }
@@ -81,6 +88,7 @@ export async function preflightNativeBatch({
   sender,
   recipients,
   errorMode,
+  executionMethod = 'STANDARD',
   network,
   rpc,
 }: NativeBatchPreflightRequest): Promise<PreparedNativeBatchPreflight> {
@@ -92,7 +100,12 @@ export async function preflightNativeBatch({
     ((message: FilecoinMessage, networkKey: SendFilNetworkKey) =>
       estimateLotusGas(message, undefined, networkKey));
 
-  const preparedBatch = prepareBatchExecution(recipients, errorMode, network);
+  const preparedBatch = prepareBatchExecution(
+    recipients,
+    errorMode,
+    network,
+    executionMethod,
+  );
   const nonce = await readNonce(sender.address, sender.networkKey);
   const draftNativeMessage = prepareNativeBatchMessage({
     sender,

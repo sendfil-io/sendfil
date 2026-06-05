@@ -4,6 +4,7 @@ import type {
   NativeFilecoinConnectedSender,
   NativeFilecoinWalletProvider,
 } from '../senders';
+import type { ExecutionMethod } from '../batchConfiguration';
 import {
   type BatchExecutionRecipient,
   type BatchGasEstimate,
@@ -38,10 +39,12 @@ export interface UseExecuteNativeBatchReturn {
   executeBatch: (
     recipients: BatchExecutionRecipient[],
     errorMode: ErrorMode,
+    executionMethod?: ExecutionMethod,
   ) => Promise<string>;
   estimateBatch: (
     recipients: BatchExecutionRecipient[],
     errorMode: ErrorMode,
+    executionMethod?: ExecutionMethod,
   ) => Promise<BatchGasEstimate>;
   state: BatchExecutionState;
   txHash?: string;
@@ -92,6 +95,7 @@ export function useExecuteNativeBatch({
     (
       recipients: BatchExecutionRecipient[],
       errorMode: ErrorMode,
+      executionMethod: ExecutionMethod = 'STANDARD',
     ): Promise<PreparedNativeBatchPreflight> => {
       assertNativeSenderReady(sender);
       getNativeExecutionProvider(provider);
@@ -100,6 +104,7 @@ export function useExecuteNativeBatch({
         sender,
         recipients,
         errorMode,
+        executionMethod,
         network: sender.network,
         rpc,
       });
@@ -129,6 +134,7 @@ export function useExecuteNativeBatch({
           setState('confirmed');
           emitBatchExecutionTelemetry({
             event: 'batch_confirmed',
+            executionMethod: preflight.preparedBatch.executionMethod,
             errorMode: preflight.preparedBatch.errorMode,
             recipientCount: preflight.preparedBatch.recipientCount,
             totalValueAttoFil: preflight.preparedBatch.totalValueAttoFil.toString(),
@@ -151,6 +157,7 @@ export function useExecuteNativeBatch({
         setError(mappedError);
         emitBatchExecutionTelemetry({
           event: 'batch_failed',
+          executionMethod: preflight.preparedBatch.executionMethod,
           errorMode: preflight.preparedBatch.errorMode,
           recipientCount: preflight.preparedBatch.recipientCount,
           totalValueAttoFil: preflight.preparedBatch.totalValueAttoFil.toString(),
@@ -174,6 +181,7 @@ export function useExecuteNativeBatch({
         setError(mappedError);
         emitBatchExecutionTelemetry({
           event: 'batch_failed',
+          executionMethod: preflight.preparedBatch.executionMethod,
           errorMode: preflight.preparedBatch.errorMode,
           recipientCount: preflight.preparedBatch.recipientCount,
           totalValueAttoFil: preflight.preparedBatch.totalValueAttoFil.toString(),
@@ -192,14 +200,16 @@ export function useExecuteNativeBatch({
     async (
       recipients: BatchExecutionRecipient[],
       errorMode: ErrorMode,
+      executionMethod: ExecutionMethod = 'STANDARD',
     ): Promise<BatchGasEstimate> => {
       let preflight: PreparedNativeBatchPreflight | undefined;
 
       try {
-        preflight = await runPreflight(recipients, errorMode);
+        preflight = await runPreflight(recipients, errorMode, executionMethod);
 
         emitBatchExecutionTelemetry({
           event: 'batch_preflight_succeeded',
+          executionMethod,
           errorMode,
           recipientCount: preflight.preparedBatch.recipientCount,
           totalValueAttoFil: preflight.preparedBatch.totalValueAttoFil.toString(),
@@ -219,6 +229,7 @@ export function useExecuteNativeBatch({
 
         emitBatchExecutionTelemetry({
           event: 'batch_preflight_failed',
+          executionMethod,
           errorMode,
           recipientCount: preflight?.preparedBatch.recipientCount ?? recipients.length,
           totalValueAttoFil: preflight?.preparedBatch.totalValueAttoFil.toString() ?? '0',
@@ -239,6 +250,7 @@ export function useExecuteNativeBatch({
     async (
       recipients: BatchExecutionRecipient[],
       errorMode: ErrorMode,
+      executionMethod: ExecutionMethod = 'STANDARD',
     ): Promise<string> => {
       const executionId = executionSequence.current + 1;
       executionSequence.current = executionId;
@@ -252,11 +264,12 @@ export function useExecuteNativeBatch({
       try {
         assertNativeSenderReady(sender);
         const nativeProvider = getNativeExecutionProvider(provider);
-        preflight = await runPreflight(recipients, errorMode);
+        preflight = await runPreflight(recipients, errorMode, executionMethod);
         const prepared = preflight.preparedBatch;
 
         emitBatchExecutionTelemetry({
           event: 'batch_submission_requested',
+          executionMethod,
           errorMode,
           recipientCount: prepared.recipientCount,
           totalValueAttoFil: prepared.totalValueAttoFil.toString(),
@@ -296,6 +309,7 @@ export function useExecuteNativeBatch({
         setState('pending');
         emitBatchExecutionTelemetry({
           event: 'batch_submitted',
+          executionMethod,
           errorMode,
           recipientCount: prepared.recipientCount,
           totalValueAttoFil: prepared.totalValueAttoFil.toString(),
@@ -321,6 +335,7 @@ export function useExecuteNativeBatch({
         setError(mappedError);
         emitBatchExecutionTelemetry({
           event: 'batch_failed',
+          executionMethod,
           errorMode,
           recipientCount: preflight?.preparedBatch.recipientCount ?? recipients.length,
           totalValueAttoFil: preflight?.preparedBatch.totalValueAttoFil.toString() ?? '0',

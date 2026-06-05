@@ -69,7 +69,7 @@ Goal:
 Exit criteria:
 
 - Standard and ThinBatch execution methods are represented correctly in product flow.
-- `PARTIAL` and `ATOMIC` are real behavioral modes, not type-only or UI-only labels.
+- `ATOMIC` is the live Standard mode; `PARTIAL` is live only through configured ThinBatch so failed payment value can be refunded.
 - Supported `f1` senders can complete the same review and send flow with one approval.
 - ThinBatch is production-ready once deployment/configuration prerequisites exist.
 - Remaining v1 UX items from the DevSpec are present.
@@ -103,7 +103,7 @@ Out of scope until then:
 - Phase 3: `Partial`
 - Phase 4: `Partial`
 - Phase 5: `Partial`
-- Phase 6: `Blocked by external dependency`
+- Phase 6: `Partial; deployment and smoke verification blocked externally`
 
 ## Phase 0: Planning Baseline
 
@@ -125,13 +125,14 @@ same: future work must not treat roadmap/spec-only behavior as if it were wired 
 - Document the current repo state and the intended v1 direction.
 - Define roadmap status labels and milestone layers.
 - Record the main implementation gaps that must shape sequencing:
-  - Standard FEVM send is live, but ThinBatch remains unavailable
+  - Standard FEVM send is live, and ThinBatch is available only when the active network has a configured deployment address
   - CSV and manual validation are shared, but EVM contract-recipient blocking is missing
   - Calibration is represented across the active code paths, but still needs public-testnet and wallet/provider smoke verification
-  - lower transaction layers support `ATOMIC`, but the live App selector blocks it and submits `PARTIAL`
+  - `ATOMIC` is wired through the live Standard estimate/submit flow and is the Standard default
+  - `PARTIAL` is restricted to configured ThinBatch because Multicall3 does not refund failed allowed value calls
   - native Filecoin senders are wired through FilSnap/Ledger rows, but hardware/browser verification and account/index UX remain gaps
   - validated 18-decimal amount strings still pass through `Number` before fee and execution
-  - ThinBatch is not deployed or enabled
+  - ThinBatch deployment addresses and public smoke verification remain operational prerequisites
 
 ### Dependencies
 
@@ -331,12 +332,12 @@ the implementation and product risk posture allow it.
 ### Current gap
 
 - The main flow presents execution-method and error-handling controls.
-- `Standard` and `PARTIAL` remain the only live selectable path.
-- Selecting `ThinBatch` or `ATOMIC` opens an unavailable-capability notice and preserves the current
-  safe selection.
-- Lower transaction layers support Standard-lane `ATOMIC` semantics when called directly, but
-  `src/App.tsx` currently hardcodes `PARTIAL` for live estimate/submit.
-- ThinBatch is not deployed/configured and has no live execution path.
+- `Standard` remains the default execution method, and `ATOMIC` is the safe default error mode.
+- `PARTIAL` is available only with configured ThinBatch, which can refund failed payment value.
+- `ATOMIC` is live-selectable and the selected error mode is passed through review estimation and submission.
+- ThinBatch has a contract source, calldata builder, and live app path, but selection is gated on
+  the active network having a configured ThinBatch address.
+- ThinBatch still needs deployment-address configuration and public Calibration/Mainnet smoke verification.
 
 ### Deliverables
 
@@ -345,8 +346,8 @@ the implementation and product risk posture allow it.
   - `errorMode: PARTIAL | ATOMIC`
 - Keep default selections as:
   - `Standard`
-  - `PARTIAL`
-- Decide whether and when to remove the live UI gate for Standard-lane Atomic.
+  - `ATOMIC`
+- Keep live `ATOMIC` behavior aligned across review, estimation, submission, and failure copy.
 - Ensure review, estimation, and submission all consume the same execution configuration.
 - Keep ThinBatch hidden or disabled unless deployment configuration is present.
 
@@ -358,13 +359,15 @@ the implementation and product risk posture allow it.
 
 ### Acceptance criteria
 
-- `PARTIAL` and `ATOMIC` are real behavioral modes when live-selectable, not labels only.
+- `ATOMIC` is real live behavior for Standard, not a label only.
+- `PARTIAL` is real live behavior only for configured ThinBatch, not for Multicall3 Standard.
 - Standard remains the default execution method.
 - ThinBatch does not appear as available unless deployment/configuration prerequisites are present.
+- ThinBatch routes through a distinct contract target and calldata path when configured.
 
 ### Blocked by
 
-- ThinBatch deployment/configuration for the ThinBatch selection path
+- ThinBatch deployment/configuration and public smoke verification for the ThinBatch selection path
 
 ## Phase 5: Add Filecoin-Native Sender Support For V1
 
@@ -418,7 +421,7 @@ Implementation default for wallet integration:
 
 ## Phase 6: ThinBatch Enablement And Remaining V1 UX
 
-**Status:** `Blocked by external dependency`
+**Status:** `Partial; deployment and smoke verification blocked externally`
 
 ### Goal
 
@@ -427,7 +430,8 @@ from the DevSpec.
 
 ### Current gap
 
-- ThinBatch is not deployed or configured.
+- ThinBatch contract source and app wiring exist, but deployment addresses are not committed and
+  public Calibration/Mainnet smoke verification has not been run.
 - The remaining v1 UX requirements are not fully present:
   - generic EVM / centralized-exchange recipient caution
   - past transactions sidebar
@@ -436,7 +440,7 @@ from the DevSpec.
 
 ### Deliverables
 
-- Enable ThinBatch once deployment/configuration is available.
+- Deploy/configure ThinBatch per network before exposing it as an available production option.
 - Preserve the Standard-vs-ThinBatch distinction in review, send, and audit behavior.
 - Add remaining v1 UX called for by the DevSpec:
   - generic caution for EVM recipients until a trustworthy exchange-address source exists

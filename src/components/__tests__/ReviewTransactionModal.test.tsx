@@ -148,8 +148,8 @@ describe('ReviewTransactionModal', () => {
     expect(container.textContent).toContain('Method');
     expect(container.textContent).toContain('Standard');
     expect(container.textContent).toContain('Error handling');
-    expect(container.textContent).toContain('Partial');
-    expect(container.textContent).toContain('Some transfers may succeed even if others fail.');
+    expect(container.textContent).toContain('Atomic');
+    expect(container.textContent).toContain('Any failing transfer reverts the whole batch.');
   });
 
   it('uses the Calibration Filfox URL when rendering testnet transactions', () => {
@@ -212,7 +212,9 @@ describe('ReviewTransactionModal', () => {
 
     expect(container.textContent).toContain('Atomic');
     expect(container.textContent).toContain('Any failing transfer reverts the whole batch.');
-    expect(container.textContent).not.toContain('Some transfers may succeed even if others fail.');
+    expect(container.textContent).not.toContain(
+      'ThinBatch refunds failed payments while successful transfers continue.',
+    );
   });
 
   it('blocks send when atomic preflight fails', () => {
@@ -230,7 +232,7 @@ describe('ReviewTransactionModal', () => {
       stage: 'preflight',
       recoverable: true,
       hint:
-        'Correct the failing recipient rows and try again, or switch to Partial for best-effort delivery.',
+        'Correct the failing recipient rows and try again, or use configured ThinBatch Partial for best-effort delivery.',
     });
 
     act(() => {
@@ -257,7 +259,7 @@ describe('ReviewTransactionModal', () => {
       stage: 'confirmation',
       recoverable: true,
       hint:
-        'Correct the failing recipient rows and try again, or switch to Partial for best-effort delivery.',
+        'Correct the failing recipient rows and try again, or use configured ThinBatch Partial for best-effort delivery.',
     });
 
     act(() => {
@@ -266,7 +268,7 @@ describe('ReviewTransactionModal', () => {
 
     expect(container.textContent).toContain('No transfers are finalized if any internal call fails.');
     expect(container.textContent).not.toContain(
-      'Some transfers may already be finalized even when another call in the batch fails.',
+      'Some transfers may already be finalized; failed payment value is refunded by ThinBatch unless the refund itself reverts.',
     );
   });
 });

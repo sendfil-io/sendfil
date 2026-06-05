@@ -11,7 +11,7 @@ export interface BatchConfiguration {
 export const DEFAULT_BATCH_CONFIGURATION: BatchConfiguration = {
   senderWalletType: 'SINGLE_SIG',
   executionMethod: 'STANDARD',
-  errorHandling: 'PARTIAL',
+  errorHandling: 'ATOMIC',
 };
 
 export function getSenderWalletTypeLabel(value: SenderWalletType): string {

@@ -39,11 +39,11 @@ export interface ErrorModeCopy {
 
 export const ERROR_MODE_COPY: Record<ErrorMode, ErrorModeCopy> = {
   PARTIAL: {
-    reviewSummary: 'Some transfers may succeed even if others fail.',
+    reviewSummary: 'ThinBatch refunds failed payments while successful transfers continue.',
     reviewDetail:
-      'Partial mode keeps successful internal calls and skips the ones that revert.',
+      'Partial mode is only enabled for ThinBatch so failed payment value can be refunded instead of left in Multicall3.',
     failureSummary:
-      'Some transfers may already be finalized even when another call in the batch fails.',
+      'Some transfers may already be finalized; failed payment value is refunded by ThinBatch unless the refund itself reverts.',
     retryHint: 'Switch to Atomic if you need all-or-nothing delivery.',
   },
   ATOMIC: {
@@ -52,7 +52,7 @@ export const ERROR_MODE_COPY: Record<ErrorMode, ErrorModeCopy> = {
       'Atomic mode requires every recipient call to succeed in the same aggregate transaction.',
     failureSummary: 'No transfers are finalized if any internal call fails.',
     retryHint:
-      'Correct the failing recipient rows and try again, or switch to Partial for best-effort delivery.',
+      'Correct the failing recipient rows and try again, or use configured ThinBatch Partial for best-effort delivery.',
   },
 };
 

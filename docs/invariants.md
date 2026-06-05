@@ -28,7 +28,7 @@ Use this catalog before changing validation, network gating, review/send flow, R
 | `INV-NET-001` | Wrong network disables Send | `implemented` | network/wallet gating, review UI gating | `src/lib/senders/__tests__/connectedSender.test.ts`, `src/__tests__/app.invariants.test.tsx` |
 | `INV-BAL-001` | Submit-time balance recheck blocks EVM sends when current balance is insufficient | `implemented` | submit guard, wallet RPC | `src/lib/transaction/__tests__/submitBalanceCheck.test.ts`, `src/lib/transaction/__tests__/useExecuteBatch.submitBalance.test.tsx` |
 | `INV-RPC-001` | Contract recipients detected via `eth_getCode` are blocked | `not implemented` | RPC contract-recipient check, review UI gating | `src/__tests__/contractRecipientGuard.future.test.tsx` |
-| `INV-EXEC-001` | Review estimate and submission use the same execution config | `implemented` | estimate/execute flow, transaction builder | `src/lib/transaction/__tests__/batchExecution.test.ts`, `src/lib/transaction/__tests__/nativeBatchPreflight.test.ts`, `src/__tests__/app.invariants.test.tsx` |
+| `INV-EXEC-001` | Review estimate and submission use the same execution config | `implemented` | estimate/execute flow, transaction builder | `src/lib/transaction/__tests__/batchExecution.test.ts`, `src/lib/transaction/__tests__/thinBatch.test.ts`, `src/lib/transaction/__tests__/nativeBatchPreflight.test.ts`, `src/__tests__/app.invariants.test.tsx` |
 
 ## INV-ADDR-001 — Accept valid `f1/f2/f3/f4/0x` recipients
 
@@ -329,7 +329,7 @@ with `yarn test:future` when working on contract-recipient blocking.
 ## INV-EXEC-001 — Review estimate and submission use the same execution config
 
 ### Rule
-Review-time estimation and send-time submission must prepare the same execution configuration for the same recipients and error mode.
+Review-time estimation and send-time submission must prepare the same execution configuration for the same recipients, execution method, and error mode.
 
 ### Why this matters
 If estimate and execute diverge, the review screen stops being a trustworthy preview of what the wallet will actually submit.
@@ -338,23 +338,35 @@ If estimate and execute diverge, the review screen stops being a trustworthy pre
 estimate/execute flow, transaction builder
 
 ### Acceptance criteria
-- The same recipients and error mode produce the same prepared batch config.
-- `to`, `data`, `value`, `recipientCount`, `totalValueAttoFil`, and `errorMode` stay aligned.
+- The same recipients, execution method, and error mode produce the same prepared batch config.
+- `executionMethod`, `to`, `data`, `value`, `recipientCount`, `totalValueAttoFil`, and `errorMode` stay aligned.
 - The live app passes the same prepared recipient set to both estimate and execute.
 - Fee rows included in the sendable batch are consistent between review and submission.
+- ThinBatch cannot be selected unless the active network has a configured ThinBatch contract address.
+- Standard cannot be prepared with `PARTIAL`; value-bearing Multicall3 partial calls are not refund-safe.
 
 ### Tests
 - `src/lib/transaction/__tests__/batchExecution.test.ts`
   - `describe('INV-EXEC-001 prepared batch determinism', ...)`
   - `it('produces the same prepared execution config for estimate and submit inputs')`
+  - `it('blocks Standard PARTIAL preparation because Multicall3 cannot refund failed value calls')`
+  - `it('prepares ThinBatch calldata when the active network has a deployed ThinBatch address')`
+  - `it('blocks ThinBatch preparation when the active network has no ThinBatch address')`
+- `src/lib/transaction/__tests__/thinBatch.test.ts`
+  - `describe('buildThinBatch', ...)`
+  - `it('canonicalizes 0x and f4 twins to identical EVM payment targets')`
+  - `it('encodes f1/f2/f3-style recipients as Filecoin raw address bytes')`
+  - `it('caps batches at the ThinBatch contract payment limit')`
 - `src/lib/transaction/__tests__/nativeBatchPreflight.test.ts`
   - `describe('native Filecoin batch preflight', ...)`
   - `it('preserves the existing Multicall3 payload and ATOMIC call semantics')`
+  - `it('preflights ThinBatch as one native InvokeEVM message to the configured ThinBatch contract')`
 - `src/__tests__/app.invariants.test.tsx`
   - `describe('INV-EXEC-001 review and submit alignment', ...)`
   - `it('passes the same execution config to estimate and execute in the live app flow')`
+  - `it('passes configured ThinBatch execution through estimate and execute on Calibration')`
 
 ### Status
 `implemented`
 
-Current repo note: the live App path estimates and submits through the EVM/wagmi `useExecuteBatch` flow for EVM senders and through `useExecuteNativeBatch` for native Filecoin senders. The native path prepares one Filecoin `InvokeEVM` message from the same Multicall3 batch payload, fetches nonce and Lotus gas, signs through the connected native wallet provider, submits with `Filecoin.MpoolPush`, and polls status by CID.
+Current repo note: the live App path estimates and submits through the EVM/wagmi `useExecuteBatch` flow for EVM senders and through `useExecuteNativeBatch` for native Filecoin senders. Standard remains the default execution method, but Standard is Atomic-only because Multicall3 `aggregate3Value(...)` does not refund value for failed allowed subcalls. ThinBatch is selectable only when the active network exposes `thinBatchAddress`, and `PARTIAL` is available only on ThinBatch where failed payment value is refunded. Both EVM and native sender paths pass the selected execution method and error mode into the same preparation layer. The native path prepares one Filecoin `InvokeEVM` message from the selected FEVM batch payload, fetches nonce and Lotus gas, signs through the connected native wallet provider, submits with `Filecoin.MpoolPush`, and polls status by CID.

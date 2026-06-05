@@ -16,7 +16,7 @@ describe('buildMulticallBatch', () => {
         { address: EVM_RECIPIENT, amount: 1n },
         { address: EVM_TWIN, amount: 2n },
       ],
-      'PARTIAL',
+      'ATOMIC',
     );
 
     expect(batch.to).toBe(DEFAULT_NETWORK.multicall3Address);
@@ -25,32 +25,29 @@ describe('buildMulticallBatch', () => {
     expect(batch.calls).toEqual([
       {
         target: getAddress(EVM_RECIPIENT),
-        allowFailure: true,
+        allowFailure: false,
         value: 1n,
         callData: '0x',
       },
       {
         target: getAddress(EVM_RECIPIENT),
-        allowFailure: true,
+        allowFailure: false,
         value: 2n,
         callData: '0x',
       },
     ]);
   });
 
-  it('uses allowFailure=true for every call in PARTIAL mode', () => {
-    const batch = buildMulticallBatch(
-      [
-        { address: EVM_RECIPIENT, amount: 1_000_000_000_000_000_000n },
-        { address: NATIVE_RECIPIENT, amount: 2_000_000_000_000_000_000n },
-      ],
-      'PARTIAL',
-    );
-
-    expect(batch.calls).toHaveLength(2);
-    expect(batch.calls.every((call) => call.allowFailure)).toBe(true);
-    expect(batch.calls[1]?.target).toBe(DEFAULT_NETWORK.filForwarderAddress);
-    expect(batch.calls[1]?.callData).not.toBe('0x');
+  it('blocks PARTIAL mode because failed Multicall3 value calls are not refunded', () => {
+    expect(() =>
+      buildMulticallBatch(
+        [
+          { address: EVM_RECIPIENT, amount: 1_000_000_000_000_000_000n },
+          { address: NATIVE_RECIPIENT, amount: 2_000_000_000_000_000_000n },
+        ],
+        'PARTIAL',
+      ),
+    ).toThrow('Standard Partial execution is disabled');
   });
 
   it('uses allowFailure=false for every call in ATOMIC mode', () => {
@@ -64,6 +61,8 @@ describe('buildMulticallBatch', () => {
 
     expect(batch.calls).toHaveLength(2);
     expect(batch.calls.every((call) => !call.allowFailure)).toBe(true);
+    expect(batch.calls[1]?.target).toBe(DEFAULT_NETWORK.filForwarderAddress);
+    expect(batch.calls[1]?.callData).not.toBe('0x');
   });
 
   it('INV-ADDR-002 rejects malformed recipient inputs before encoding', () => {

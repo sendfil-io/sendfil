@@ -263,7 +263,7 @@ describe('App confirm flow', () => {
     );
   });
 
-  it('calls executeBatch with fee rows in partial mode', async () => {
+  it('calls executeBatch with fee rows in default Standard Atomic mode', async () => {
     executeBatchMock.mockImplementation(async () => {
       setMockExecutionSnapshot({
         state: 'pending',
@@ -284,7 +284,8 @@ describe('App confirm flow', () => {
         { address: FEE_A, amount: 0.005 },
         { address: FEE_B, amount: 0.005 },
       ],
-      'PARTIAL',
+      'ATOMIC',
+      'STANDARD',
     );
   });
 
@@ -315,6 +316,7 @@ describe('App confirm flow', () => {
         { address: FEE_B, amount: 0.005 },
       ],
       'ATOMIC',
+      'STANDARD',
     );
 
     click(getElementByTestId(container, 'send-batch-button'));
@@ -328,6 +330,7 @@ describe('App confirm flow', () => {
         { address: FEE_B, amount: 0.005 },
       ],
       'ATOMIC',
+      'STANDARD',
     );
   });
 
@@ -370,7 +373,7 @@ describe('App confirm flow', () => {
       title: 'Transaction rejected',
       message:
         'The batch was not submitted because the wallet signature request was rejected.',
-      errorMode: 'PARTIAL',
+      errorMode: 'ATOMIC',
       stage: 'execution',
       recoverable: true,
       hint: 'Review the batch and retry when you are ready to sign.',

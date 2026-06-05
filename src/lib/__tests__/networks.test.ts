@@ -88,4 +88,22 @@ describe('networks', () => {
       timeout: 4321,
     });
   });
+
+  it('resolves network-specific ThinBatch addresses when configured', () => {
+    vi.stubEnv(
+      'VITE_THINBATCH_ADDRESS_MAINNET',
+      '0x5555555555555555555555555555555555555555',
+    );
+    vi.stubEnv(
+      'VITE_THINBATCH_ADDRESS_CALIBRATION',
+      '0x6666666666666666666666666666666666666666',
+    );
+
+    expect(getNetworkConfig('mainnet').thinBatchAddress).toBe(
+      '0x5555555555555555555555555555555555555555',
+    );
+    expect(getNetworkConfig('calibration').thinBatchAddress).toBe(
+      '0x6666666666666666666666666666666666666666',
+    );
+  });
 });

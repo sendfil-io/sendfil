@@ -222,7 +222,8 @@ describe('INV-NET-001 wrong network gating', () => {
     expect(container.textContent).toContain('Calibration Testnet');
     expect(estimateBatchMock).toHaveBeenCalledWith(
       [{ address: getAddress(RECIPIENT), amount: 1 }],
-      'PARTIAL',
+      'ATOMIC',
+      'STANDARD',
     );
 
     click(getElementByTestId(container, 'send-batch-button'));
@@ -230,7 +231,8 @@ describe('INV-NET-001 wrong network gating', () => {
 
     expect(executeBatchMock).toHaveBeenCalledWith(
       [{ address: getAddress(RECIPIENT), amount: 1 }],
-      'PARTIAL',
+      'ATOMIC',
+      'STANDARD',
     );
   });
 
@@ -251,6 +253,7 @@ describe('INV-NET-001 wrong network gating', () => {
     expect(estimateBatchMock).toHaveBeenCalledWith(
       [{ address: getAddress(RECIPIENT), amount: 1 }],
       'ATOMIC',
+      'STANDARD',
     );
 
     click(getElementByTestId(container, 'send-batch-button'));
@@ -259,6 +262,42 @@ describe('INV-NET-001 wrong network gating', () => {
     expect(executeBatchMock).toHaveBeenCalledWith(
       [{ address: getAddress(RECIPIENT), amount: 1 }],
       'ATOMIC',
+      'STANDARD',
+    );
+  });
+
+  it('passes selected ThinBatch Partial execution on Calibration when a ThinBatch address is configured', async () => {
+    vi.stubEnv(
+      'VITE_THINBATCH_ADDRESS_CALIBRATION',
+      '0x5555555555555555555555555555555555555555',
+    );
+    mockChainId = 314159;
+
+    await act(async () => {
+      root.render(<App />);
+    });
+
+    openTransactionConfiguration(container);
+    click(getElementByTestId(container, 'execution-method-thinbatch'));
+    click(getElementByTestId(container, 'error-handling-partial'));
+    click(getElementByTestId(container, 'review-batch-button'));
+    await flushAsyncWork();
+
+    expect(container.textContent).toContain('Calibration Testnet');
+    expect(container.textContent).toContain('ThinBatch');
+    expect(estimateBatchMock).toHaveBeenCalledWith(
+      [{ address: getAddress(RECIPIENT), amount: 1 }],
+      'PARTIAL',
+      'THINBATCH',
+    );
+
+    click(getElementByTestId(container, 'send-batch-button'));
+    await flushAsyncWork();
+
+    expect(executeBatchMock).toHaveBeenCalledWith(
+      [{ address: getAddress(RECIPIENT), amount: 1 }],
+      'PARTIAL',
+      'THINBATCH',
     );
   });
 
@@ -385,7 +424,8 @@ describe('INV-EXEC-001 review and submit alignment', () => {
         { address: FEE_A, amount: 0.005 },
         { address: FEE_B, amount: 0.005 },
       ],
-      'PARTIAL',
+      'ATOMIC',
+      'STANDARD',
     ]);
   });
 });
