@@ -98,11 +98,11 @@ Out of scope until then:
 ## Phase Status Overview
 
 - Phase 0: `Implemented in planning docs`
-- Phase 1: `Partial`
+- Phase 1: `Implemented`
 - Phase 2: `Partial`
 - Phase 3: `Partial`
-- Phase 4: `Planned`
-- Phase 5: `Planned`
+- Phase 4: `Partial`
+- Phase 5: `Partial`
 - Phase 6: `Blocked by external dependency`
 
 ## Phase 0: Planning Baseline
@@ -116,23 +116,22 @@ DevSpec requirements.
 
 ### Current gap
 
-The repo contains partial implementations and parallel transaction paths. Without an explicit
-baseline, future work risks building against the wrong architecture or treating spec-only behavior
-as already shipped.
+The original baseline captured a repo that still simulated the primary send path and had several
+mainnet-only assumptions. Many of those gaps have since been closed. The durable risk remains the
+same: future work must not treat roadmap/spec-only behavior as if it were wired into the live app.
 
 ### Deliverables
 
 - Document the current repo state and the intended v1 direction.
 - Define roadmap status labels and milestone layers.
 - Record the main implementation gaps that must shape sequencing:
-  - the primary send flow is simulated
-  - the Standard FEVM path exists but is not wired into the main UX
-  - review-time estimation currently uses a different path than intended submission
-  - validation differs between CSV and manual entry
-  - calibration support is only partial
-  - true `ATOMIC` vs `PARTIAL` behavior is not complete
+  - Standard FEVM send is live, but ThinBatch remains unavailable
+  - CSV and manual validation are shared, but EVM contract-recipient blocking is missing
+  - Calibration is represented across the active code paths, but still needs public-testnet and wallet/provider smoke verification
+  - lower transaction layers support `ATOMIC`, but the live App selector blocks it and submits `PARTIAL`
+  - native Filecoin senders are wired through FilSnap/Ledger rows, but hardware/browser verification and account/index UX remain gaps
+  - validated 18-decimal amount strings still pass through `Number` before fee and execution
   - ThinBatch is not deployed or enabled
-  - filecoin-native sender flows are not live
 
 ### Dependencies
 
@@ -152,7 +151,7 @@ as already shipped.
 
 ## Phase 1: Ship The Real Standard FEVM Path
 
-**Status:** `Partial`
+**Status:** `Implemented`
 
 ### Goal
 
@@ -161,10 +160,12 @@ estimation with the same execution model.
 
 ### Current gap
 
-- The main review flow still simulates signing, pending, and confirmation.
-- The repo already contains a Standard FEVM path based on Multicall3 + FilForwarder, but the live
-  app path does not use it.
-- Review-time estimation and submission do not currently use the same execution model.
+- No open Phase 1 gap remains for the EVM/FEVM Standard path.
+- The main EVM/FEVM review flow uses the real Standard path through `useExecuteBatch`.
+- Review-time estimation and submission are aligned through the same prepared Standard batch
+  configuration.
+- The live native Filecoin path also reuses the same Standard payload through one signed native
+  `InvokeEVM` message.
 
 ### Deliverables
 
@@ -213,11 +214,12 @@ that pipeline up to DevSpec parity for v1 safety requirements.
 
 ### Current gap
 
-- CSV and manual entry do not share the same validation model.
-- CSV currently rejects `0x` despite the DevSpec requiring support.
-- CSV does not enforce the DevSpec `500`-row maximum.
-- Manual entry validation is materially weaker than CSV validation.
-- Submit-time balance recheck and EVM contract recipient blocking are not implemented.
+- CSV and manual entry now share `validateRecipientRows(...)`.
+- `0x` recipients, network-prefix checks, duplicate warnings, duplicate acknowledgment, and the
+  `500`-recipient cap are active in the shared path.
+- Submit-time balance recheck is wired for both EVM/wagmi and native Filecoin sender paths.
+- Remaining gaps: EVM contract-recipient blocking, generic centralized-exchange caution copy, and
+  exact end-to-end amount preservation for 18-decimal FIL values.
 
 ### Deliverables
 
@@ -279,9 +281,11 @@ Make network behavior match the DevSpec end-to-end for both Filecoin Mainnet and
 
 ### Current gap
 
-- Mainnet support is primary; calibration behavior is only partially represented.
-- Wrong-network handling is warning-oriented rather than fully blocking.
-- Address-prefix, explorer-base, and network config behavior are not unified across the full flow.
+- Mainnet and Calibration are modeled through the shared network registry, wagmi config, validation,
+  explorer helpers, fee policy, and Lotus/FEVM env configuration.
+- Unsupported network state blocks review/send at the App boundary.
+- Remaining gap: public-testnet FEVM smoke coverage and real target-wallet verification are still
+  needed before calling Calibration production-verified end to end.
 
 ### Deliverables
 
@@ -317,28 +321,32 @@ Make network behavior match the DevSpec end-to-end for both Filecoin Mainnet and
 
 ## Phase 4: Add Spec-Required Execution Controls
 
-**Status:** `Planned`
+**Status:** `Partial`
 
 ### Goal
 
-Add the execution controls required by the DevSpec and implement true Standard-lane
-`PARTIAL` / `ATOMIC` semantics.
+Add the execution controls required by the DevSpec and finish making them live-selectable where
+the implementation and product risk posture allow it.
 
 ### Current gap
 
-- The repo does not yet present execution controls in the main flow.
-- `PARTIAL` and `ATOMIC` exist conceptually but are not both fully implemented behaviors.
-- ThinBatch is not available in the live flow.
+- The main flow presents execution-method and error-handling controls.
+- `Standard` and `PARTIAL` remain the only live selectable path.
+- Selecting `ThinBatch` or `ATOMIC` opens an unavailable-capability notice and preserves the current
+  safe selection.
+- Lower transaction layers support Standard-lane `ATOMIC` semantics when called directly, but
+  `src/App.tsx` currently hardcodes `PARTIAL` for live estimate/submit.
+- ThinBatch is not deployed/configured and has no live execution path.
 
 ### Deliverables
 
-- Add execution configuration to the product flow:
+- Keep execution configuration in the product flow:
   - `executionMethod: Standard | ThinBatch`
   - `errorMode: PARTIAL | ATOMIC`
 - Keep default selections as:
   - `Standard`
   - `PARTIAL`
-- Implement true Standard-lane atomic behavior rather than only modeling the option in types or UI.
+- Decide whether and when to remove the live UI gate for Standard-lane Atomic.
 - Ensure review, estimation, and submission all consume the same execution configuration.
 - Keep ThinBatch hidden or disabled unless deployment configuration is present.
 
@@ -350,7 +358,7 @@ Add the execution controls required by the DevSpec and implement true Standard-l
 
 ### Acceptance criteria
 
-- `PARTIAL` and `ATOMIC` are real behavioral modes, not labels only.
+- `PARTIAL` and `ATOMIC` are real behavioral modes when live-selectable, not labels only.
 - Standard remains the default execution method.
 - ThinBatch does not appear as available unless deployment/configuration prerequisites are present.
 
@@ -360,7 +368,7 @@ Add the execution controls required by the DevSpec and implement true Standard-l
 
 ## Phase 5: Add Filecoin-Native Sender Support For V1
 
-**Status:** `Planned`
+**Status:** `Partial`
 
 ### Goal
 
@@ -369,16 +377,19 @@ approval/message invariant.
 
 ### Current gap
 
-- The live wallet layer is EVM-centric.
-- Filecoin-native sender support is described in the DevSpec but is not present in the primary app.
-- Review, submission, and explorer behavior have not been unified across EVM and native senders.
+- The live wallet layer now includes EVM/RainbowKit plus native FilSnap and Ledger Filecoin rows.
+- Native senders reuse the shared validation, review, status, and Standard payload model through
+  `useExecuteNativeBatch`.
+- Remaining gaps: real FilSnap browser approval verification, physical Ledger network switching
+  verification, broader native wallet parity, and account/index selection UX.
 
 ### Deliverables
 
-- Add a filecoin-native sender connection and signing path for supported `f1` senders.
-- Build one native message that invokes the FEVM engine while preserving the one-approval invariant.
+- Maintain the filecoin-native sender connection and signing path for supported `f1`/`t1` senders.
+- Continue building one native message that invokes the FEVM engine while preserving the one-approval invariant.
 - Reuse the same validation, review, and transaction-status model as the EVM sender path.
 - Keep explorer behavior and status handling consistent across EVM and native senders.
+- Add account/index selection UX and complete hardware/browser verification.
 
 Implementation default for wallet integration:
 
@@ -397,13 +408,13 @@ Implementation default for wallet integration:
 
 ### Acceptance criteria
 
-- A supported `f1` sender can complete the same review and send flow through the main app.
+- A supported `f1`/`t1` sender can complete the same review and send flow through the main app.
 - One approval/message is preserved for single-signer native senders.
 - The same validation, guardrails, and status model apply across EVM and native sender flows.
 
 ### Blocked by
 
-- Native wallet-provider support and integration feasibility
+- Native wallet-provider browser/hardware verification and account/index UX
 
 ## Phase 6: ThinBatch Enablement And Remaining V1 UX
 
@@ -418,6 +429,7 @@ from the DevSpec.
 
 - ThinBatch is not deployed or configured.
 - The remaining v1 UX requirements are not fully present:
+  - generic EVM / centralized-exchange recipient caution
   - past transactions sidebar
   - stuck-transaction guidance
   - richer review details for debugging and routing visibility
@@ -427,6 +439,7 @@ from the DevSpec.
 - Enable ThinBatch once deployment/configuration is available.
 - Preserve the Standard-vs-ThinBatch distinction in review, send, and audit behavior.
 - Add remaining v1 UX called for by the DevSpec:
+  - generic caution for EVM recipients until a trustworthy exchange-address source exists
   - past transactions sidebar
   - stuck-transaction guidance that points users back to wallet-native controls
   - review details showing routing/type/debug information without losing the compact default view
@@ -475,6 +488,19 @@ Suggested logical contracts:
 - `ValidatedRecipient`
 - `ValidationIssue`
 - `ReviewModel`
+
+### Money/value model
+
+The live UI currently validates amount strings up to 18 decimals but then converts them into
+JavaScript `Number` values for the recipient model, fee calculation, and execution inputs. That is
+not a safe long-term interface for FIL amounts.
+
+Future work should lock an exact value model before changing fee or execution behavior:
+
+- preserve the user-entered normalized FIL string through review
+- derive attoFIL as `bigint` for execution
+- avoid `Number` for any value that can affect submitted FIL amounts
+- keep display formatting separate from execution math
 
 ### Transaction configuration model
 

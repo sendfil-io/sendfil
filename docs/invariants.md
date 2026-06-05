@@ -22,7 +22,7 @@ Use this catalog before changing validation, network gating, review/send flow, R
 | `INV-ADDR-002` | Reject `f0` recipients | `implemented` | validation | `src/utils/__tests__/recipientValidation.test.ts`, `src/lib/transaction/__tests__/multicall.test.ts` |
 | `INV-ADDR-003` | Treat `0x` and `f4` twins as the same recipient identity internally | `partial` | validation, duplicate detection, transaction builder | `src/utils/__tests__/recipientValidation.test.ts`, `src/lib/transaction/__tests__/multicall.test.ts` |
 | `INV-AMT-001` | Reject blank, zero, and negative amounts | `implemented` | validation, amount parsing | `src/utils/__tests__/recipientValidation.test.ts` |
-| `INV-AMT-002` | Reject values with more than 18 decimal places | `implemented` | validation, amount parsing | `src/utils/__tests__/recipientValidation.test.ts` |
+| `INV-AMT-002` | Reject over-precise values and preserve exact accepted values | `partial` | validation, amount parsing, execution value preservation | `src/utils/__tests__/recipientValidation.test.ts` |
 | `INV-BATCH-001` | Enforce the 500-recipient cap | `implemented` | validation | `src/utils/__tests__/recipientValidation.test.ts` |
 | `INV-DUP-001` | Duplicate recipients require explicit confirmation before Send | `implemented` | duplicate detection, review UI gating | `src/utils/__tests__/recipientValidation.test.ts`, `src/components/__tests__/ReviewTransactionModal.test.tsx`, `tests/e2e/review-flow.spec.ts` |
 | `INV-NET-001` | Wrong network disables Send | `implemented` | network/wallet gating, review UI gating | `src/lib/senders/__tests__/connectedSender.test.ts`, `src/__tests__/app.invariants.test.tsx` |
@@ -54,9 +54,7 @@ validation
   - `it('trims surrounding whitespace before validating supported recipients')`
 
 ### Status
-`partial`
-
-Current repo note: duplicate detection already treats `0x` and `f4` twins as the same identity, but the FEVM batch builder does not yet normalize raw `0x` inputs and `f4` twins to the same exact target string form.
+`implemented`
 
 ## INV-ADDR-002 — Reject `f0` recipients
 
@@ -111,7 +109,12 @@ validation, duplicate detection, transaction builder
   - `it('INV-ADDR-003 canonicalizes 0x and f4 twins to the same EVM transfer target')`
 
 ### Status
-`implemented`
+`partial`
+
+Current repo note: duplicate detection already treats `0x` and `f4`/`t4` twins as the same identity.
+The transaction builder routes both raw `0x` and delegated EVM forms to direct EVM value transfers.
+Treat the broader DevSpec canonicalization requirement as partial until display, review, duplicate
+identity, and execution target normalization are deliberately documented as one end-to-end contract.
 
 ## INV-AMT-001 — Reject blank, zero, and negative amounts
 
@@ -139,7 +142,7 @@ validation, amount parsing
 ### Status
 `implemented`
 
-## INV-AMT-002 — Reject values with more than 18 decimal places
+## INV-AMT-002 — Reject over-precise values and preserve exact accepted values
 
 ### Rule
 FIL-denominated inputs may use at most 18 decimal places. Over-precise values must be rejected rather than rounded or truncated.
@@ -148,7 +151,7 @@ FIL-denominated inputs may use at most 18 decimal places. Over-precise values mu
 If precision silently changes, users can send the wrong value and review totals stop matching execution inputs.
 
 ### Execution boundary
-validation, amount parsing
+validation, amount parsing, execution value preservation
 
 ### Acceptance criteria
 - Whole values pass.
@@ -156,6 +159,7 @@ validation, amount parsing
 - 19 decimal places fail.
 - Over-precise rows are excluded from `validRecipients`.
 - Error copy communicates the 18-decimal rule.
+- Accepted 18-decimal values keep exact value semantics through fee calculation and execution.
 
 ### Tests
 - `src/utils/__tests__/recipientValidation.test.ts`
@@ -164,7 +168,12 @@ validation, amount parsing
   - `it('rejects values with more than 18 decimal places')`
 
 ### Status
-`implemented`
+`partial`
+
+Current repo note: the shared validator correctly accepts up to 18 decimal places and rejects more
+than 18. The live App still converts normalized amount strings to JavaScript `Number` values before
+fee calculation and execution, so exact end-to-end preservation for all valid 18-decimal FIL inputs
+remains a gap.
 
 ## INV-BATCH-001 — Enforce the 500-recipient cap
 
