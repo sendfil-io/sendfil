@@ -1431,8 +1431,7 @@ f1cj...,3.3`;
                 <div className="border-b border-slate-100 px-6 py-5 sm:px-8">
                   <h2 className="text-lg font-semibold text-slate-950">CSV Upload</h2>
                   <p className="mt-1 text-sm text-slate-500">
-                    Import a prepared batch using the template format, then review the parsed
-                    recipients before sending.
+                    Import a batch of recipients and amounts using the template format.
                   </p>
                 </div>
 
