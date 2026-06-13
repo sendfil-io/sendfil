@@ -6,43 +6,51 @@ This note documents the current ATOMIC batch execution boundary in `sendfil`.
 
 Current transaction-layer scope:
 
-- `Standard` FEVM batch execution only
+- `Standard` FEVM batch execution
+- `ThinBatch` FEVM batch execution when the active network has a configured deployed address
 - single-signer wallet path
 - Filecoin Mainnet and Calibration network config
-- `PARTIAL` and `ATOMIC` behavior in the batch builder, execution hooks, error mapper, telemetry, and review modal copy
+- `PARTIAL` and `ATOMIC` behavior in the batch builders, execution hooks, error mapper, telemetry, and review modal copy
 
 Current live UI scope:
 
-- `PARTIAL` is the only selectable mode in `App.tsx`.
-- Selecting `ATOMIC` opens the unavailable-capability modal and leaves the batch on `PARTIAL`.
-- `App.tsx` currently passes `PARTIAL` into review estimation and send submission.
+- `ATOMIC` is the default mode for the Standard execution method in `App.tsx`.
+- `PARTIAL` is selectable only with configured ThinBatch.
+- `App.tsx` passes the selected error mode into review estimation and send submission.
 
 Out of scope:
 
-- `ThinBatch`
-- making `ATOMIC` user-selectable in the live app UI
+- real wallet/public-testnet smoke verification
+- ThinBatch deployment automation
 
-## Semantic contract
+## Semantic Contract
 
-- `PARTIAL`: internal calls set `allowFailure=true`. Successful transfers may finalize even if another call fails.
-- `ATOMIC`: internal calls set `allowFailure=false`. Any failing internal call reverts the full `aggregate3Value(...)` transaction.
+- `PARTIAL`: successful transfers may finalize even if another row fails.
+- `ATOMIC`: any failing row reverts the full batch transaction.
 
-Both modes still encode through `aggregate3Value(...)`. There is no separate `aggregate3(...)` encoding path in this repo today. The all-or-revert guarantee comes from `allowFailure=false` on every call. That behavior is available to callers that pass `ATOMIC` into the transaction hooks, but the live `App.tsx` UI does not currently pass `ATOMIC`.
+For Standard, SendFIL encodes through `aggregate3Value(...)` only in `ATOMIC` mode. Standard `PARTIAL` is deliberately disabled because Multicall3 value calls with `allowFailure=true` do not refund failed call value; a failed allowed subcall would leave FIL at the Multicall3 contract. The all-or-revert guarantee comes from `allowFailure=false` on every call plus the live UI wiring that propagates `errorMode` from configuration through preflight and send.
 
-## Execution pipeline
+For ThinBatch, the app encodes `ThinBatchPayer.payBatch(payments, errorMode)`. The contract validates the batch before any transfer. In `PARTIAL`, failed payment value is refunded to the caller; if the refund fails, the transaction reverts rather than leaving FIL in the contract. In `ATOMIC`, any failed payment reverts the whole transaction.
 
-The transaction-layer path is:
+ThinBatch pre-deployment safety notes:
+
+- `errorMode` is explicit in the only public `payBatch` entry point; there is no implicit mode default.
+- the constructor rejects a zero or non-contract FilForwarder address.
+- EVM contract-recipient blocking remains an app-level review/submit guard so the same policy applies to Standard and ThinBatch without making the ThinBatch contract more opinionated.
+- direct deposits are rejected, but forced FIL can still arrive through EVM mechanisms; batch accounting uses `msg.value`, not the contract balance.
+
+## Execution Pipeline
+
+The active path is:
 
 1. `App.tsx` collects validated recipients plus fee rows.
-2. `useExecuteBatch` prepares a `PreparedBatchExecution` from the selected `errorMode`.
+2. `useExecuteBatch` or `useExecuteNativeBatch` prepares a `PreparedBatchExecution` from the selected `executionMethod` and `errorMode`.
 3. Review-step preflight calls the same FEVM batch builder used at send time.
-4. ATOMIC execution reruns FEVM preflight before submission to block obvious full-batch reverts.
-5. The wallet submits the multicall transaction through wagmi.
+4. ATOMIC execution reruns preflight before submission to block obvious full-batch reverts.
+5. The wallet submits the prepared FEVM transaction, or a native `InvokeEVM` message carrying the prepared calldata.
 6. Receipt tracking updates pending, confirmed, or failed state with a normalized execution error.
 
-Current live-app caveat: in the present UI, step 2 always receives `PARTIAL` from `App.tsx`. The ATOMIC path above is covered by lower-level tests and component copy, but it is not reachable from the main user flow until the selector gate is removed and E2E coverage is updated.
-
-## Error taxonomy
+## Error Taxonomy
 
 The domain error model is `BatchExecutionError` with these categories:
 
@@ -56,14 +64,12 @@ The domain error model is `BatchExecutionError` with these categories:
 
 The mapper lives in `src/lib/transaction/errorHandling.ts`.
 
-## UX copy rules
+## UX Copy Rules
 
 - Review mode always shows an execution-semantics summary for the selected mode.
 - ATOMIC preflight failures block send and explain that the whole batch would revert.
 - ATOMIC failed-state copy explicitly says that no transfers were finalized.
-- PARTIAL failed-state copy preserves the possibility that some transfers may already be finalized.
-
-Current live-app caveat: these ATOMIC copy rules are implemented in `ReviewTransactionModal`, but they only render when the modal receives an ATOMIC configuration from tests or lower-level callers.
+- PARTIAL failed-state copy is ThinBatch-specific and describes best-effort finalized transfers plus failed-payment refund behavior.
 
 ## Telemetry
 
@@ -76,17 +82,19 @@ The client emits structured telemetry from `src/lib/transaction/telemetry.ts`:
 - `batch_confirmed`
 - `batch_failed`
 
-Each event includes `errorMode`, `recipientCount`, `totalValueAttoFil`, network identity, and any available gas estimate, transaction hash, or normalized error category.
+Each event includes `executionMethod`, `errorMode`, `recipientCount`, `totalValueAttoFil`, network identity, and any available gas estimate, transaction hash, or normalized error category.
 
-## Test coverage
+## Test Coverage
 
 Implemented coverage:
 
 - unit tests for `allowFailure` invariants in `buildMulticallBatch`
+- unit tests that block Standard `PARTIAL` preparation
+- unit tests for ThinBatch `errorMode` calldata
 - unit tests for execution-error classification
 - component tests for ATOMIC review and failure messaging
-- Playwright review-flow coverage that asserts ATOMIC selection remains blocked in the live UI and that the batch continues with PARTIAL semantics
+- Playwright review-flow coverage for ATOMIC selection, ATOMIC preflight blocking, and PARTIAL regression paths
 
 ## Rollback
 
-The code currently ships with the ATOMIC selector guard in place. Enabling ATOMIC in the live app should be a small but explicit product change: pass `batchConfiguration.errorHandling` into estimate/send, update E2E expectations, and keep `PARTIAL` as the default. Operational rollback would restore the selector guard while leaving the lower-level batch builder support intact.
+The code does not currently ship a production feature flag for ATOMIC mode. Do not roll Standard back to Partial: Multicall3 value-call partial execution is not refund-safe. Operational rollback would need to disable Standard sends or route best-effort batches through configured ThinBatch while leaving the lower-level Atomic builder support intact.

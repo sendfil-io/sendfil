@@ -113,7 +113,7 @@ describe('native Filecoin batch message preparation', () => {
       { address: toF4(EVM_RECIPIENT, 't'), amount: 2 },
       { address: CALIBRATION_T1, amount: 3 },
     ];
-    const preparedBatch = prepareBatchExecution(recipients, 'PARTIAL', network);
+    const preparedBatch = prepareBatchExecution(recipients, 'ATOMIC', network);
 
     const nativePrepared = prepareNativeBatchMessage({
       sender,
@@ -181,7 +181,7 @@ describe('native Filecoin batch message preparation', () => {
     const sender = getNativeSender(MAINNET_F1);
     const preparedBatch = prepareBatchExecution(
       [{ address: CALIBRATION_T1, amount: 1 }],
-      'PARTIAL',
+      'ATOMIC',
       getNetworkConfig('calibration'),
     );
 

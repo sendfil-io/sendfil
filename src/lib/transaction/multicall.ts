@@ -37,6 +37,7 @@ export interface BatchRecipient {
 }
 
 export interface MulticallBatchResult {
+  executionMethod: 'STANDARD';
   to: `0x${string}`; // Multicall3 address
   data: `0x${string}`; // Encoded aggregate3Value call
   value: bigint; // Total value (sum of all amounts)
@@ -45,6 +46,9 @@ export interface MulticallBatchResult {
 }
 
 export type ErrorMode = 'ATOMIC' | 'PARTIAL';
+
+export const STANDARD_PARTIAL_UNSAFE_MESSAGE =
+  'Standard Partial execution is disabled because Multicall3 aggregate3Value does not refund value for failed allowed subcalls. Use Atomic with Standard, or use ThinBatch for Partial execution.';
 
 /**
  * Build a single Call3Value for a recipient.
@@ -99,12 +103,12 @@ function buildCall(
  * Build a Multicall3 batch transaction for multiple recipients.
  *
  * @param recipients - Array of recipients with addresses and amounts (in attoFIL)
- * @param errorMode - 'ATOMIC' = all-or-nothing, 'PARTIAL' = best-effort delivery
+ * @param errorMode - 'ATOMIC' only. ThinBatch owns PARTIAL refund-safe execution.
  * @returns Transaction data ready to be sent via wagmi
  */
 export function buildMulticallBatch(
   recipients: BatchRecipient[],
-  errorMode: ErrorMode = 'PARTIAL',
+  errorMode: ErrorMode = 'ATOMIC',
   contracts: MulticallContractConfig = {
     multicall3Address: getDefaultNetworkConfig().multicall3Address,
     filForwarderAddress: getDefaultNetworkConfig().filForwarderAddress,
@@ -114,12 +118,16 @@ export function buildMulticallBatch(
     throw new Error('No recipients provided');
   }
 
+  if (errorMode === 'PARTIAL') {
+    throw new Error(STANDARD_PARTIAL_UNSAFE_MESSAGE);
+  }
+
   // Validate all addresses first
   for (const recipient of recipients) {
     validateAddressForSending(recipient.address);
   }
 
-  const allowFailure = errorMode === 'PARTIAL';
+  const allowFailure = false;
 
   // Build Call3Value array
   const calls: Call3Value[] = recipients.map((recipient) =>
@@ -177,6 +185,7 @@ export function buildMulticallBatch(
   });
 
   return {
+    executionMethod: 'STANDARD',
     to: contracts.multicall3Address,
     data,
     value: totalValue,

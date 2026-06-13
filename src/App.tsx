@@ -8,8 +8,9 @@ import ReviewTransactionModal, {
   GasEstimate,
 } from './components/ReviewTransactionModal';
 import UnavailableCapabilityModal from './components/UnavailableCapabilityModal';
-import { useBalance } from 'wagmi';
+import { useBalance, usePublicClient } from 'wagmi';
 import { formatUnits } from 'viem';
+import { validateNoEvmContractRecipients } from './utils/contractRecipientGuard';
 import { calculateFeeRows, getFeeLabel } from './utils/fee';
 import {
   validateRecipientRows,
@@ -410,6 +411,9 @@ export default function App() {
     liveSendPathUnavailableReason,
   } = connectedSenderState;
   const feeLabel = getFeeLabel(connectedNetwork?.chainId);
+  const contractRecipientClient = usePublicClient({
+    chainId: connectedNetwork?.chainId,
+  });
   const evmBalanceSource =
     balanceSource.kind === 'evm-wagmi' ? balanceSource : undefined;
   const { data: balanceData } = useBalance({
@@ -487,6 +491,7 @@ export default function App() {
   const [isEstimatingGas, setIsEstimatingGas] = React.useState(false);
   const [gasEstimationError, setGasEstimationError] =
     React.useState<BatchExecutionError | undefined>(undefined);
+  const [contractRecipientErrors, setContractRecipientErrors] = React.useState<string[]>([]);
   const [batchConfiguration, setBatchConfiguration] = React.useState<BatchConfiguration>(
     DEFAULT_BATCH_CONFIGURATION,
   );
@@ -600,10 +605,22 @@ export default function App() {
   };
 
   const handleExecutionMethodSelect = (value: ExecutionMethod) => {
-    if (value === 'THINBATCH') {
+    if (value === 'STANDARD' && batchConfiguration.errorHandling === 'PARTIAL') {
       openUnavailableCapabilityNotice(
-        'ThinBatch is not available yet',
-        'ThinBatch is part of the planned execution surface, but the deployed builder and send path are not wired into the live app yet. Standard remains selected for now.',
+        'Standard Partial is disabled',
+        'Multicall3 does not refund value for failed allowed subcalls. Select Atomic before switching to Standard, or keep ThinBatch for Partial execution.',
+      );
+      return;
+    }
+
+    if (value === 'THINBATCH' && !connectedNetwork?.thinBatchAddress) {
+      const envName =
+        connectedNetwork?.key === 'calibration'
+          ? 'VITE_THINBATCH_ADDRESS_CALIBRATION'
+          : 'VITE_THINBATCH_ADDRESS_MAINNET';
+      openUnavailableCapabilityNotice(
+        'ThinBatch is not configured for this network',
+        `Set ${envName} to the deployed ThinBatch contract address before using this execution method. Standard remains selected for this batch.`,
       );
       return;
     }
@@ -612,10 +629,10 @@ export default function App() {
   };
 
   const handleErrorHandlingSelect = (value: ErrorHandlingPreference) => {
-    if (value === 'ATOMIC') {
+    if (value === 'PARTIAL' && batchConfiguration.executionMethod === 'STANDARD') {
       openUnavailableCapabilityNotice(
-        'Atomic error handling is not wired yet',
-        'The control is now visible, but the live execution path still defaults to Partial while atomic batch handling is implemented end to end. Partial remains selected for this batch.',
+        'Partial requires ThinBatch',
+        'Standard uses Multicall3 value calls, which cannot safely refund failed partial payments. Use Atomic with Standard, or configure ThinBatch for Partial execution.',
       );
       return;
     }
@@ -703,6 +720,8 @@ export default function App() {
       ? manualValidation.nonEmptyRowCount > 0
       : csvData.length > 0 || csvErrors.length > 0 || csvWarnings.length > 0;
 
+  const selectedErrorMode = batchConfiguration.errorHandling;
+  const selectedExecutionMethod = batchConfiguration.executionMethod;
   const isNetworkMismatch = isUnsupportedConnectedNetwork;
   const networkValidationErrors =
     isNetworkMismatch && hasEnteredData
@@ -710,6 +729,18 @@ export default function App() {
           `Switch to ${getSupportedNetworkListLabel()} to review and send this batch.`,
         ]
       : [];
+  const executionConfigurationErrors =
+    selectedExecutionMethod === 'STANDARD' && selectedErrorMode === 'PARTIAL'
+      ? [
+          'Standard Partial is disabled because failed value calls cannot be refunded by Multicall3. Select Atomic or use configured ThinBatch for Partial execution.',
+        ]
+      : selectedExecutionMethod === 'THINBATCH' &&
+          connectedNetwork &&
+          !connectedNetwork.thinBatchAddress
+        ? [
+            `ThinBatch is not configured for ${connectedNetwork.chainName}. Switch back to Standard or configure the network ThinBatch address.`,
+          ]
+        : [];
 
   const manualDisplayErrors = React.useMemo(
     () =>
@@ -744,7 +775,26 @@ export default function App() {
       })),
     [csvValidation.validRecipients, inputMode, manualValidation.validRecipients],
   );
-  const selectedErrorMode: ErrorHandlingPreference = 'PARTIAL';
+
+  React.useEffect(() => {
+    setContractRecipientErrors([]);
+  }, [connectedNetwork?.chainId, validRecipients]);
+
+  const checkEvmContractRecipients = React.useCallback(async (): Promise<string[]> => {
+    if (E2E_MOCK_WALLET_ENABLED) {
+      setContractRecipientErrors([]);
+      return [];
+    }
+
+    const errors = await validateNoEvmContractRecipients(
+      validRecipients,
+      contractRecipientClient,
+    );
+
+    setContractRecipientErrors(errors);
+    return errors;
+  }, [contractRecipientClient, validRecipients]);
+
   const feeComputation = React.useMemo(() => {
     if (validRecipients.length === 0) {
       return {
@@ -789,12 +839,16 @@ export default function App() {
           ...manualDisplayErrors,
           ...(feeComputation.error ? [feeComputation.error] : []),
           ...networkValidationErrors,
+          ...executionConfigurationErrors,
+          ...contractRecipientErrors,
         ]
       : [
           ...csvErrors,
           ...csvValidation.errors,
           ...(feeComputation.error ? [feeComputation.error] : []),
           ...networkValidationErrors,
+          ...executionConfigurationErrors,
+          ...contractRecipientErrors,
         ];
   const activeBlockingValidationErrors =
     inputMode === 'manual'
@@ -802,6 +856,8 @@ export default function App() {
           ...manualValidation.errors,
           ...(feeComputation.error ? [feeComputation.error] : []),
           ...networkValidationErrors,
+          ...executionConfigurationErrors,
+          ...contractRecipientErrors,
         ]
       : activeValidationErrors;
   const activeValidationWarnings =
@@ -943,18 +999,29 @@ export default function App() {
     setGasEstimationError(undefined);
     setIsReviewModalOpen(true);
 
+    if (activeBlockingValidationErrors.length > 0) {
+      return;
+    }
+
+    const contractErrors = await checkEvmContractRecipients();
+
+    if (contractErrors.length > 0) {
+      return;
+    }
+
     if (E2E_SKIP_GAS_ESTIMATION && !batchExecutionAdapter) {
       setGasEstimate(createFallbackReviewGasEstimate(feeComputation.recipients.length));
       return;
     }
 
-    if (validRecipients.length > 0 && activeBlockingValidationErrors.length === 0) {
+    if (validRecipients.length > 0) {
       setIsEstimatingGas(true);
 
       try {
         const estimate = await estimateBatch(
           feeComputation.recipients,
           selectedErrorMode,
+          selectedExecutionMethod,
         );
         setGasEstimate(toReviewGasEstimate(estimate));
       } catch (error) {
@@ -1003,7 +1070,17 @@ export default function App() {
     }
 
     try {
-      await executeBatch(feeComputation.recipients, selectedErrorMode);
+      const contractErrors = await checkEvmContractRecipients();
+
+      if (contractErrors.length > 0) {
+        return;
+      }
+
+      await executeBatch(
+        feeComputation.recipients,
+        selectedErrorMode,
+        selectedExecutionMethod,
+      );
     } catch {
       // useExecuteBatch stores the failure state used by the modal
     }
@@ -1242,7 +1319,7 @@ f1cj...,3.3`;
                         value: 'THINBATCH',
                         label: 'ThinBatch',
                         helper:
-                          'Uses a cusom contract to batch in one call for easy per-recipient auditing.',
+                          'Uses the ThinBatch contract for one-call execution with per-recipient audit events.',
                         testId: 'execution-method-thinbatch',
                       },
                     ]}
@@ -1259,8 +1336,7 @@ f1cj...,3.3`;
                           value: 'PARTIAL',
                           label: 'Partial',
                           helper:
-                            'Sends what it can: failed payments are skipped and the rest is completed.',
-                          badge: 'Default',
+                            'Best-effort execution with failed payment refunds. Requires ThinBatch.',
                           testId: 'error-handling-partial',
                         },
                         {

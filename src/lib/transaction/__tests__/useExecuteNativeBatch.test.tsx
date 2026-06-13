@@ -11,6 +11,7 @@ import { createNativeFilecoinConnectedSender } from '../../senders/senderModel';
 import type { NativeFilecoinWalletProvider } from '../../senders/types';
 import type { FilecoinMessage, TransactionStatus } from '../../DataProvider/types';
 import type { SendFilNetworkKey } from '../../networks';
+import { toF4 } from '../../../utils/toF4';
 import { BatchExecutionError } from '../errorHandling';
 import type { BatchExecutionRecipient } from '../batchExecution';
 import type { NativeBatchPreflightRpc } from '../nativeBatchPreflight';
@@ -133,6 +134,7 @@ describe('useExecuteNativeBatch', () => {
       root.unmount();
     });
     vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
     vi.clearAllMocks();
     dom.window.close();
   });
@@ -169,7 +171,7 @@ describe('useExecuteNativeBatch', () => {
     });
 
     await act(async () => {
-      await expect(latestHook?.executeBatch(recipients, 'PARTIAL')).resolves.toBe(CID);
+      await expect(latestHook?.executeBatch(recipients, 'ATOMIC')).resolves.toBe(CID);
     });
 
     expect(provider.getBalance).toHaveBeenCalledWith({
@@ -192,6 +194,41 @@ describe('useExecuteNativeBatch', () => {
     expect(latestHook?.state).toBe('confirmed');
   });
 
+  it('signs a native InvokeEVM message targeting ThinBatch when ThinBatch is selected', async () => {
+    const thinBatchAddress = '0x5555555555555555555555555555555555555555' as const;
+    vi.stubEnv('VITE_THINBATCH_ADDRESS_CALIBRATION', thinBatchAddress);
+
+    const sender = getNativeSender();
+    const provider = getProvider(10n ** 30n);
+
+    await renderHook({
+      sender,
+      provider,
+      rpc: getRpc(),
+      pollMessageStatus: vi.fn(
+        async (): Promise<TransactionStatus> => ({
+          cid: CID,
+          status: 'confirmed',
+        }),
+      ),
+    });
+
+    await act(async () => {
+      await expect(
+        latestHook?.executeBatch(recipients, 'PARTIAL', 'THINBATCH'),
+      ).resolves.toBe(CID);
+    });
+
+    expect(provider.signAndSubmitMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        To: toF4(thinBatchAddress, 't'),
+        From: CALIBRATION_T1,
+        Value: '1000000000000000000',
+        Method: 3_844_450_837,
+      }),
+    );
+  });
+
   it('blocks native signing when submit-time balance is insufficient', async () => {
     const sender = getNativeSender();
     const provider = getProvider(1n);
@@ -207,7 +244,7 @@ describe('useExecuteNativeBatch', () => {
 
     await act(async () => {
       try {
-        await latestHook?.executeBatch(recipients, 'PARTIAL');
+        await latestHook?.executeBatch(recipients, 'ATOMIC');
       } catch (error) {
         capturedError = error;
       }

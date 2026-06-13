@@ -43,6 +43,7 @@ let mockValidationResult: RecipientValidationResult = {
 };
 const executeBatchMock = vi.fn();
 const estimateBatchMock = vi.fn();
+const getCodeMock = vi.fn();
 
 function setMockExecutionSnapshot(next: MockExecutionSnapshot) {
   mockExecutionSnapshot = next;
@@ -59,6 +60,9 @@ vi.mock('wagmi', () => ({
       value: 1000n * 10n ** 18n,
       decimals: 18,
     },
+  }),
+  usePublicClient: () => ({
+    getCode: getCodeMock,
   }),
   useChainId: () => 314,
 }));
@@ -140,6 +144,16 @@ function getElementByTestId(container: HTMLElement, testId: string): HTMLElement
   return element;
 }
 
+function openTransactionConfiguration(container: HTMLElement) {
+  const button = container.querySelector('button[aria-expanded]');
+
+  if (!(button instanceof HTMLButtonElement)) {
+    throw new Error('Could not find transaction configuration toggle');
+  }
+
+  click(button);
+}
+
 function getButton(container: HTMLElement, label: string): HTMLButtonElement {
   const button = Array.from(container.querySelectorAll('button')).find(
     (candidate) => candidate.textContent?.trim() === label,
@@ -179,6 +193,8 @@ describe('App confirm flow', () => {
     listeners.clear();
     executeBatchMock.mockReset();
     estimateBatchMock.mockReset();
+    getCodeMock.mockReset();
+    getCodeMock.mockResolvedValue('0x');
     estimateBatchMock.mockResolvedValue({
       gasLimit: 1000n,
       gasFeeCap: 1n,
@@ -253,7 +269,7 @@ describe('App confirm flow', () => {
     );
   });
 
-  it('calls executeBatch with fee rows in partial mode', async () => {
+  it('calls executeBatch with fee rows in default Standard Atomic mode', async () => {
     executeBatchMock.mockImplementation(async () => {
       setMockExecutionSnapshot({
         state: 'pending',
@@ -274,7 +290,53 @@ describe('App confirm flow', () => {
         { address: FEE_A, amount: 0.005 },
         { address: FEE_B, amount: 0.005 },
       ],
-      'PARTIAL',
+      'ATOMIC',
+      'STANDARD',
+    );
+  });
+
+  it('calls estimateBatch and executeBatch with fee rows in atomic mode when selected', async () => {
+    executeBatchMock.mockImplementation(async () => {
+      setMockExecutionSnapshot({
+        state: 'pending',
+        txHash: HASH_A,
+      });
+      return HASH_A;
+    });
+
+    await act(async () => {
+      root.render(<App />);
+    });
+
+    openTransactionConfiguration(container);
+    click(getElementByTestId(container, 'error-handling-atomic'));
+    click(getElementByTestId(container, 'review-batch-button'));
+    await flushAsyncWork();
+
+    expect(container.textContent).toContain('Atomic');
+    expect(container.textContent).toContain('Any failing transfer reverts the whole batch.');
+    expect(estimateBatchMock).toHaveBeenCalledWith(
+      [
+        { address: getAddress(BASE_ADDRESS), amount: 1 },
+        { address: FEE_A, amount: 0.005 },
+        { address: FEE_B, amount: 0.005 },
+      ],
+      'ATOMIC',
+      'STANDARD',
+    );
+
+    click(getElementByTestId(container, 'send-batch-button'));
+    await flushAsyncWork();
+
+    expect(executeBatchMock).toHaveBeenCalledTimes(1);
+    expect(executeBatchMock).toHaveBeenCalledWith(
+      [
+        { address: getAddress(BASE_ADDRESS), amount: 1 },
+        { address: FEE_A, amount: 0.005 },
+        { address: FEE_B, amount: 0.005 },
+      ],
+      'ATOMIC',
+      'STANDARD',
     );
   });
 
@@ -317,7 +379,7 @@ describe('App confirm flow', () => {
       title: 'Transaction rejected',
       message:
         'The batch was not submitted because the wallet signature request was rejected.',
-      errorMode: 'PARTIAL',
+      errorMode: 'ATOMIC',
       stage: 'execution',
       recoverable: true,
       hint: 'Review the batch and retry when you are ready to sign.',
