@@ -47,7 +47,7 @@ Payloads include:
 
 - `ThinBatch` requires a deployed `ThinBatchPayer` address per network. The contract source and app path are wired, but public Calibration/Mainnet smoke verification still needs to be run after deployment.
 - `Standard` no longer exposes Partial execution. Multicall3 `aggregate3Value(...)` does not refund value from failed allowed subcalls, so SendFIL only uses Standard for all-or-nothing Atomic batches.
-- Contract-recipient blocking (`eth_getCode`) is not implemented yet.
+- App-level contract-recipient blocking (`eth_getCode`) is not implemented yet. `ThinBatchPayer` still rejects EVM recipients with deployed bytecode on-chain.
 - There is no centralized-exchange `0x` warning flow yet.
 - There is no past-transactions sidebar or stuck-transaction guidance in the main user flow yet.
 - Native Filecoin provider support has not been exhaustively verified across target browser, hardware, and network-switching environments.

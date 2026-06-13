@@ -8,8 +8,10 @@ interface IFilForwarder {
 /**
  * @title ThinBatchPayer
  * @notice Permissionless FIL batch payment contract for SendFIL's ThinBatch lane.
- * @dev EVM contract-recipient blocking belongs in the review layer. This
- *      contract validates only the wire shape it must execute.
+ * @dev The contract intentionally has no owner and no sweep function. Direct
+ *      deposits are rejected, but forced FIL can still arrive through EVM
+ *      mechanisms such as selfdestruct. Batch accounting depends only on
+ *      msg.value for the active call, never on this contract's full balance.
  */
 contract ThinBatchPayer {
     enum RecipientKind {
@@ -76,6 +78,7 @@ contract ThinBatchPayer {
         address evmRecipient,
         uint256 filecoinRecipientLength
     );
+    error EvmContractRecipientUnsupported(uint256 index, address evmRecipient);
     error InvalidFilecoinPayment(
         uint256 index,
         address evmRecipient,
@@ -102,7 +105,10 @@ contract ThinBatchPayer {
     }
 
     constructor(address filForwarderAddress) {
-        if (filForwarderAddress == address(0)) {
+        if (
+            filForwarderAddress == address(0) ||
+            filForwarderAddress.code.length == 0
+        ) {
             revert InvalidFilForwarder(filForwarderAddress);
         }
 
@@ -112,17 +118,6 @@ contract ThinBatchPayer {
 
     receive() external payable {
         revert DirectDeposit();
-    }
-
-    function payBatch(
-        Payment[] calldata payments
-    )
-        external
-        payable
-        nonReentrant
-        returns (uint256 totalPaid, uint256 totalFailed, uint256 refundAmount)
-    {
-        return _payBatch(payments, ErrorMode.PARTIAL);
     }
 
     function payBatch(
@@ -209,7 +204,7 @@ contract ThinBatchPayer {
 
     function _validateAndSum(
         Payment[] calldata payments
-    ) private pure returns (uint256 totalAttempted) {
+    ) private view returns (uint256 totalAttempted) {
         uint256 paymentCount = payments.length;
 
         if (paymentCount == 0) {
@@ -236,6 +231,13 @@ contract ThinBatchPayer {
                         index,
                         payment.evmRecipient,
                         payment.filecoinRecipient.length
+                    );
+                }
+
+                if (payment.evmRecipient.code.length != 0) {
+                    revert EvmContractRecipientUnsupported(
+                        index,
+                        payment.evmRecipient
                     );
                 }
             } else {

@@ -320,7 +320,7 @@ RPC contract-recipient check, review UI gating
 ### Status
 `not implemented`
 
-Current repo note: the FEVM review/send flow does not currently perform a `getCode` check before enabling Send.
+Current repo note: the FEVM review/send flow does not currently perform a `getCode` check before enabling Send. `ThinBatchPayer` rejects EVM recipients with deployed bytecode on-chain, but that does not satisfy this app-level invariant for Standard review/send gating.
 
 Test lane note: this is a future/target test file. It is intentionally excluded
 from default `yarn test` and default CI until the implementation PR lands. Run it

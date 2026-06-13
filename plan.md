@@ -338,6 +338,8 @@ the implementation and product risk posture allow it.
 - ThinBatch has a contract source, calldata builder, and live app path, but selection is gated on
   the active network having a configured ThinBatch address.
 - ThinBatch still needs deployment-address configuration and public Calibration/Mainnet smoke verification.
+- Pre-deploy contract hardening rejects implicit error-mode defaults, non-contract FilForwarder constructor input,
+  and EVM recipients with deployed bytecode.
 
 ### Deliverables
 
