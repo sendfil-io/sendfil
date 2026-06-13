@@ -27,7 +27,7 @@ Use this catalog before changing validation, network gating, review/send flow, R
 | `INV-DUP-001` | Duplicate recipients require explicit confirmation before Send | `implemented` | duplicate detection, review UI gating | `src/utils/__tests__/recipientValidation.test.ts`, `src/components/__tests__/ReviewTransactionModal.test.tsx`, `tests/e2e/review-flow.spec.ts` |
 | `INV-NET-001` | Wrong network disables Send | `implemented` | network/wallet gating, review UI gating | `src/lib/senders/__tests__/connectedSender.test.ts`, `src/__tests__/app.invariants.test.tsx` |
 | `INV-BAL-001` | Submit-time balance recheck blocks EVM sends when current balance is insufficient | `implemented` | submit guard, wallet RPC | `src/lib/transaction/__tests__/submitBalanceCheck.test.ts`, `src/lib/transaction/__tests__/useExecuteBatch.submitBalance.test.tsx` |
-| `INV-RPC-001` | Contract recipients detected via `eth_getCode` are blocked | `not implemented` | RPC contract-recipient check, review UI gating | `src/__tests__/contractRecipientGuard.future.test.tsx` |
+| `INV-RPC-001` | Contract recipients detected via `eth_getCode` are blocked | `implemented` | RPC contract-recipient check, review UI gating | `src/__tests__/contractRecipientGuard.test.tsx`, `src/utils/__tests__/contractRecipientGuard.test.ts` |
 | `INV-EXEC-001` | Review estimate and submission use the same execution config | `implemented` | estimate/execute flow, transaction builder | `src/lib/transaction/__tests__/batchExecution.test.ts`, `src/lib/transaction/__tests__/thinBatch.test.ts`, `src/lib/transaction/__tests__/nativeBatchPreflight.test.ts`, `src/__tests__/app.invariants.test.tsx` |
 
 ## INV-ADDR-001 — Accept valid `f1/f2/f3/f4/0x` recipients
@@ -318,13 +318,9 @@ RPC contract-recipient check, review UI gating
   - `it('blocks send when an EVM recipient resolves to deployed bytecode')`
 
 ### Status
-`not implemented`
+`implemented`
 
-Current repo note: the FEVM review/send flow does not currently perform a `getCode` check before enabling Send. `ThinBatchPayer` rejects EVM recipients with deployed bytecode on-chain, but that does not satisfy this app-level invariant for Standard review/send gating.
-
-Test lane note: this is a future/target test file. It is intentionally excluded
-from default `yarn test` and default CI until the implementation PR lands. Run it
-with `yarn test:future` when working on contract-recipient blocking.
+Current repo note: the FEVM review/send flow checks user-entered `0x` and `f4` recipients with `getCode` before review estimation and repeats the check before submit. Native `f1/f2/f3` recipients do not invoke this check. ThinBatch does not duplicate this product policy on-chain; the local guard applies consistently to Standard and ThinBatch.
 
 ## INV-EXEC-001 — Review estimate and submission use the same execution config
 

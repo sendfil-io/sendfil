@@ -43,6 +43,7 @@ let mockValidationResult: RecipientValidationResult = {
 };
 const executeBatchMock = vi.fn();
 const estimateBatchMock = vi.fn();
+const getCodeMock = vi.fn();
 
 function setMockExecutionSnapshot(next: MockExecutionSnapshot) {
   mockExecutionSnapshot = next;
@@ -59,6 +60,9 @@ vi.mock('wagmi', () => ({
       value: 1000n * 10n ** 18n,
       decimals: 18,
     },
+  }),
+  usePublicClient: () => ({
+    getCode: getCodeMock,
   }),
   useChainId: () => 314,
 }));
@@ -189,6 +193,8 @@ describe('App confirm flow', () => {
     listeners.clear();
     executeBatchMock.mockReset();
     estimateBatchMock.mockReset();
+    getCodeMock.mockReset();
+    getCodeMock.mockResolvedValue('0x');
     estimateBatchMock.mockResolvedValue({
       gasLimit: 1000n,
       gasFeeCap: 1n,

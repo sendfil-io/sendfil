@@ -8,8 +8,9 @@ import ReviewTransactionModal, {
   GasEstimate,
 } from './components/ReviewTransactionModal';
 import UnavailableCapabilityModal from './components/UnavailableCapabilityModal';
-import { useBalance } from 'wagmi';
+import { useBalance, usePublicClient } from 'wagmi';
 import { formatUnits } from 'viem';
+import { validateNoEvmContractRecipients } from './utils/contractRecipientGuard';
 import { calculateFeeRows, getFeeLabel } from './utils/fee';
 import {
   validateRecipientRows,
@@ -410,6 +411,9 @@ export default function App() {
     liveSendPathUnavailableReason,
   } = connectedSenderState;
   const feeLabel = getFeeLabel(connectedNetwork?.chainId);
+  const contractRecipientClient = usePublicClient({
+    chainId: connectedNetwork?.chainId,
+  });
   const evmBalanceSource =
     balanceSource.kind === 'evm-wagmi' ? balanceSource : undefined;
   const { data: balanceData } = useBalance({
@@ -487,6 +491,7 @@ export default function App() {
   const [isEstimatingGas, setIsEstimatingGas] = React.useState(false);
   const [gasEstimationError, setGasEstimationError] =
     React.useState<BatchExecutionError | undefined>(undefined);
+  const [contractRecipientErrors, setContractRecipientErrors] = React.useState<string[]>([]);
   const [batchConfiguration, setBatchConfiguration] = React.useState<BatchConfiguration>(
     DEFAULT_BATCH_CONFIGURATION,
   );
@@ -770,6 +775,26 @@ export default function App() {
       })),
     [csvValidation.validRecipients, inputMode, manualValidation.validRecipients],
   );
+
+  React.useEffect(() => {
+    setContractRecipientErrors([]);
+  }, [connectedNetwork?.chainId, validRecipients]);
+
+  const checkEvmContractRecipients = React.useCallback(async (): Promise<string[]> => {
+    if (E2E_MOCK_WALLET_ENABLED) {
+      setContractRecipientErrors([]);
+      return [];
+    }
+
+    const errors = await validateNoEvmContractRecipients(
+      validRecipients,
+      contractRecipientClient,
+    );
+
+    setContractRecipientErrors(errors);
+    return errors;
+  }, [contractRecipientClient, validRecipients]);
+
   const feeComputation = React.useMemo(() => {
     if (validRecipients.length === 0) {
       return {
@@ -815,6 +840,7 @@ export default function App() {
           ...(feeComputation.error ? [feeComputation.error] : []),
           ...networkValidationErrors,
           ...executionConfigurationErrors,
+          ...contractRecipientErrors,
         ]
       : [
           ...csvErrors,
@@ -822,6 +848,7 @@ export default function App() {
           ...(feeComputation.error ? [feeComputation.error] : []),
           ...networkValidationErrors,
           ...executionConfigurationErrors,
+          ...contractRecipientErrors,
         ];
   const activeBlockingValidationErrors =
     inputMode === 'manual'
@@ -830,6 +857,7 @@ export default function App() {
           ...(feeComputation.error ? [feeComputation.error] : []),
           ...networkValidationErrors,
           ...executionConfigurationErrors,
+          ...contractRecipientErrors,
         ]
       : activeValidationErrors;
   const activeValidationWarnings =
@@ -971,12 +999,22 @@ export default function App() {
     setGasEstimationError(undefined);
     setIsReviewModalOpen(true);
 
+    if (activeBlockingValidationErrors.length > 0) {
+      return;
+    }
+
+    const contractErrors = await checkEvmContractRecipients();
+
+    if (contractErrors.length > 0) {
+      return;
+    }
+
     if (E2E_SKIP_GAS_ESTIMATION && !batchExecutionAdapter) {
       setGasEstimate(createFallbackReviewGasEstimate(feeComputation.recipients.length));
       return;
     }
 
-    if (validRecipients.length > 0 && activeBlockingValidationErrors.length === 0) {
+    if (validRecipients.length > 0) {
       setIsEstimatingGas(true);
 
       try {
@@ -1032,6 +1070,12 @@ export default function App() {
     }
 
     try {
+      const contractErrors = await checkEvmContractRecipients();
+
+      if (contractErrors.length > 0) {
+        return;
+      }
+
       await executeBatch(
         feeComputation.recipients,
         selectedErrorMode,

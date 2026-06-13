@@ -28,6 +28,7 @@ let mockValidationResult: RecipientValidationResult = {
 };
 const estimateBatchMock = vi.fn();
 const executeBatchMock = vi.fn();
+const getCodeMock = vi.fn();
 
 vi.mock('wagmi', () => ({
   useAccount: () => ({
@@ -39,6 +40,9 @@ vi.mock('wagmi', () => ({
       value: 1_000n * 10n ** 18n,
       decimals: 18,
     },
+  }),
+  usePublicClient: () => ({
+    getCode: getCodeMock,
   }),
   useChainId: () => mockChainId,
 }));
@@ -135,6 +139,8 @@ describe('INV-NET-001 wrong network gating', () => {
     };
     estimateBatchMock.mockReset();
     executeBatchMock.mockReset();
+    getCodeMock.mockReset();
+    getCodeMock.mockResolvedValue('0x');
     estimateBatchMock.mockResolvedValue({
       gasLimit: 1000n,
       gasFeeCap: 1n,
@@ -355,6 +361,8 @@ describe('INV-EXEC-001 review and submit alignment', () => {
     };
     estimateBatchMock.mockReset();
     executeBatchMock.mockReset();
+    getCodeMock.mockReset();
+    getCodeMock.mockResolvedValue('0x');
     estimateBatchMock.mockResolvedValue({
       gasLimit: 1000n,
       gasFeeCap: 1n,

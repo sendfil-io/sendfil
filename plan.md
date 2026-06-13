@@ -126,7 +126,7 @@ same: future work must not treat roadmap/spec-only behavior as if it were wired 
 - Define roadmap status labels and milestone layers.
 - Record the main implementation gaps that must shape sequencing:
   - Standard FEVM send is live, and ThinBatch is available only when the active network has a configured deployment address
-  - CSV and manual validation are shared, but EVM contract-recipient blocking is missing
+- CSV and manual validation are shared, and EVM contract-recipient blocking is enforced locally before review estimation and submit
   - Calibration is represented across the active code paths, but still needs public-testnet and wallet/provider smoke verification
   - `ATOMIC` is wired through the live Standard estimate/submit flow and is the Standard default
   - `PARTIAL` is restricted to configured ThinBatch because Multicall3 does not refund failed allowed value calls
@@ -219,8 +219,8 @@ that pipeline up to DevSpec parity for v1 safety requirements.
 - `0x` recipients, network-prefix checks, duplicate warnings, duplicate acknowledgment, and the
   `500`-recipient cap are active in the shared path.
 - Submit-time balance recheck is wired for both EVM/wagmi and native Filecoin sender paths.
-- Remaining gaps: EVM contract-recipient blocking, generic centralized-exchange caution copy, and
-  exact end-to-end amount preservation for 18-decimal FIL values.
+- Remaining gaps: generic centralized-exchange caution copy and exact end-to-end amount
+  preservation for 18-decimal FIL values.
 
 ### Deliverables
 
@@ -256,7 +256,7 @@ Implementation default for the CEX warning:
 
 - Phase 1 real FEVM path
 - shared review model and validation issue model
-- wallet/public client access for `eth_getCode`
+- wallet/public client access for `eth_getCode` is now wired in the live review/send path
 
 ### Acceptance criteria
 
@@ -338,8 +338,9 @@ the implementation and product risk posture allow it.
 - ThinBatch has a contract source, calldata builder, and live app path, but selection is gated on
   the active network having a configured ThinBatch address.
 - ThinBatch still needs deployment-address configuration and public Calibration/Mainnet smoke verification.
-- Pre-deploy contract hardening rejects implicit error-mode defaults, non-contract FilForwarder constructor input,
-  and EVM recipients with deployed bytecode.
+- Pre-deploy contract hardening rejects implicit error-mode defaults and non-contract FilForwarder constructor input.
+- EVM contract-recipient blocking is kept out of ThinBatch and enforced in the local review/send guard
+  so the policy applies consistently to Standard and ThinBatch.
 
 ### Deliverables
 

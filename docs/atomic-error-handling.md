@@ -36,7 +36,7 @@ ThinBatch pre-deployment safety notes:
 
 - `errorMode` is explicit in the only public `payBatch` entry point; there is no implicit mode default.
 - the constructor rejects a zero or non-contract FilForwarder address.
-- EVM recipients with deployed bytecode are rejected on-chain, even though app-level `eth_getCode` blocking is still a separate unfinished guardrail.
+- EVM contract-recipient blocking remains an app-level review/submit guard so the same policy applies to Standard and ThinBatch without making the ThinBatch contract more opinionated.
 - direct deposits are rejected, but forced FIL can still arrive through EVM mechanisms; batch accounting uses `msg.value`, not the contract balance.
 
 ## Execution Pipeline

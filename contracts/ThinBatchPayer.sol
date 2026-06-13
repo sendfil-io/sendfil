@@ -78,7 +78,6 @@ contract ThinBatchPayer {
         address evmRecipient,
         uint256 filecoinRecipientLength
     );
-    error EvmContractRecipientUnsupported(uint256 index, address evmRecipient);
     error InvalidFilecoinPayment(
         uint256 index,
         address evmRecipient,
@@ -204,7 +203,7 @@ contract ThinBatchPayer {
 
     function _validateAndSum(
         Payment[] calldata payments
-    ) private view returns (uint256 totalAttempted) {
+    ) private pure returns (uint256 totalAttempted) {
         uint256 paymentCount = payments.length;
 
         if (paymentCount == 0) {
@@ -231,13 +230,6 @@ contract ThinBatchPayer {
                         index,
                         payment.evmRecipient,
                         payment.filecoinRecipient.length
-                    );
-                }
-
-                if (payment.evmRecipient.code.length != 0) {
-                    revert EvmContractRecipientUnsupported(
-                        index,
-                        payment.evmRecipient
                     );
                 }
             } else {
