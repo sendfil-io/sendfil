@@ -4,6 +4,8 @@ node_modules/
 # Build output
 dist/
 build/
+out/
+cache/
 
 # Local env files
 .env.local
