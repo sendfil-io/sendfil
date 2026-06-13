@@ -312,7 +312,7 @@ RPC contract-recipient check, review UI gating
 - Send is disabled and execution is not triggered when any EVM contract recipient is present.
 
 ### Tests
-- `src/__tests__/contractRecipientGuard.future.test.tsx`
+- `src/__tests__/contractRecipientGuard.test.tsx`
   - `describe('INV-RPC-001 contract recipient guard', ...)`
   - `it('does not require getCode for native f1 recipients')`
   - `it('blocks send when an EVM recipient resolves to deployed bytecode')`
