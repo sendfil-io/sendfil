@@ -114,3 +114,7 @@ yarn test:e2e:smoke
 ## Design Note
 
 See [docs/atomic-error-handling.md](docs/atomic-error-handling.md) for the ATOMIC-mode execution contract, error taxonomy, telemetry schema, and rollout notes.
+
+## License
+
+SendFIL is dual-licensed under either the MIT License or the Apache License, Version 2.0, at your option. See [LICENSE-MIT](LICENSE-MIT) and [LICENSE-APACHE](LICENSE-APACHE).
