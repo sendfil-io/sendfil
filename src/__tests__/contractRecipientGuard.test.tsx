@@ -16,6 +16,7 @@ const NATIVE_F1 = newSecp256k1Address(
 ).toString();
 
 const getCodeMock = vi.fn();
+const getBalanceMock = vi.fn();
 const estimateGasMock = vi.fn();
 const getGasPriceMock = vi.fn();
 const sendTransactionAsyncMock = vi.fn();
@@ -46,6 +47,7 @@ vi.mock('wagmi', () => ({
   useChainId: () => 314,
   usePublicClient: () => ({
     getCode: getCodeMock,
+    getBalance: getBalanceMock,
     estimateGas: estimateGasMock,
     getGasPrice: getGasPriceMock,
   }),
@@ -117,6 +119,7 @@ describe('INV-RPC-001 contract recipient guard', () => {
     vi.stubEnv('VITE_FEE_SPLIT', '0.5');
 
     getCodeMock.mockReset();
+    getBalanceMock.mockReset();
     estimateGasMock.mockReset();
     getGasPriceMock.mockReset();
     sendTransactionAsyncMock.mockReset();
@@ -134,6 +137,7 @@ describe('INV-RPC-001 contract recipient guard', () => {
     };
 
     getCodeMock.mockResolvedValue('0x');
+    getBalanceMock.mockResolvedValue(1_000n * 10n ** 18n);
     estimateGasMock.mockResolvedValue(21_000n);
     getGasPriceMock.mockResolvedValue(1n);
     sendTransactionAsyncMock.mockResolvedValue(

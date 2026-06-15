@@ -72,7 +72,7 @@ describe('native Filecoin batch preflight', () => {
     const result = await preflightNativeBatch({
       sender,
       recipients,
-      errorMode: 'PARTIAL',
+      errorMode: 'ATOMIC',
       network,
       rpc,
     });
@@ -109,6 +109,54 @@ describe('native Filecoin batch preflight', () => {
     });
   });
 
+  it('preflights ThinBatch as one native InvokeEVM message to the configured ThinBatch contract', async () => {
+    const network = {
+      ...getNetworkConfig('calibration'),
+      thinBatchAddress: '0x5555555555555555555555555555555555555555' as const,
+    };
+    const sender = getNativeSender(CALIBRATION_T1);
+    const rpc = getRpc();
+    const recipients = [
+      { address: EVM_RECIPIENT, amount: 1 },
+      { address: CALIBRATION_T1, amount: 2 },
+    ];
+    const expectedPreparedBatch = prepareBatchExecution(
+      recipients,
+      'PARTIAL',
+      network,
+      'THINBATCH',
+    );
+
+    const result = await preflightNativeBatch({
+      sender,
+      recipients,
+      errorMode: 'PARTIAL',
+      executionMethod: 'THINBATCH',
+      network,
+      rpc,
+    });
+
+    expect(result.preparedBatch.executionMethod).toBe('THINBATCH');
+    expect(result.preparedBatch.batch.data).toBe(expectedPreparedBatch.batch.data);
+    expect(result.draftNativeMessage).toMatchObject({
+      targetEvmAddress: network.thinBatchAddress,
+      targetFilecoinAddress: toF4(network.thinBatchAddress, 't'),
+    });
+    expect(result.draftNativeMessage.message).toMatchObject({
+      To: toF4(network.thinBatchAddress, 't'),
+      From: CALIBRATION_T1,
+      Value: '3000000000000000000',
+      Method: INVOKE_EVM_METHOD_NUMBER,
+      Params: encodeInvokeEvmParams(expectedPreparedBatch.batch.data),
+    });
+    expect(result.estimatedNativeMessage.message).toMatchObject({
+      To: toF4(network.thinBatchAddress, 't'),
+      GasLimit: 12_345,
+      GasFeeCap: '456',
+      GasPremium: '7',
+    });
+  });
+
   it('uses mainnet sender and RPC network keys for f1 native senders', async () => {
     const network = getNetworkConfig('mainnet');
     const sender = getNativeSender(MAINNET_F1);
@@ -121,7 +169,7 @@ describe('native Filecoin batch preflight', () => {
     const result = await preflightNativeBatch({
       sender,
       recipients: [{ address: MAINNET_F1, amount: 0.5 }],
-      errorMode: 'PARTIAL',
+      errorMode: 'ATOMIC',
       network,
       rpc,
     });
@@ -151,7 +199,7 @@ describe('native Filecoin batch preflight', () => {
       preflightNativeBatch({
         sender,
         recipients: [{ address: CALIBRATION_T1, amount: 1 }],
-        errorMode: 'PARTIAL',
+        errorMode: 'ATOMIC',
         network: getNetworkConfig('calibration'),
         rpc,
       }),
@@ -181,7 +229,12 @@ describe('native Filecoin batch preflight', () => {
       rpc,
     });
 
+    expect(result.preparedBatch.executionMethod).toBe('STANDARD');
     expect(result.preparedBatch.batch.data).toBe(expectedPreparedBatch.batch.data);
+    if (result.preparedBatch.batch.executionMethod !== 'STANDARD') {
+      throw new Error('Expected Standard native preflight');
+    }
+
     expect(result.preparedBatch.batch.calls.every((call) => call.allowFailure === false)).toBe(
       true,
     );
@@ -212,7 +265,7 @@ describe('native Filecoin batch preflight', () => {
       preflightNativeBatch({
         sender,
         recipients: [{ address: CALIBRATION_T1, amount: 1 }],
-        errorMode: 'PARTIAL',
+        errorMode: 'ATOMIC',
         network,
         rpc,
       }),

@@ -116,7 +116,7 @@ describe('useExecuteBatch submit-time balance recheck', () => {
   function getPreparedBatch() {
     return prepareBatchExecution(
       recipientsWithFees,
-      'PARTIAL',
+      'ATOMIC',
       getNetworkConfig('mainnet'),
     );
   }
@@ -126,7 +126,7 @@ describe('useExecuteBatch submit-time balance recheck', () => {
 
     await act(async () => {
       try {
-        await latestHook?.executeBatch(recipientsWithFees, 'PARTIAL');
+        await latestHook?.executeBatch(recipientsWithFees, 'ATOMIC');
       } catch (error) {
         capturedError = error;
       }
@@ -158,7 +158,7 @@ describe('useExecuteBatch submit-time balance recheck', () => {
     getBalanceMock.mockResolvedValue(prepared.totalValueAttoFil + submitNetworkFee);
 
     await act(async () => {
-      await expect(latestHook?.executeBatch(recipientsWithFees, 'PARTIAL')).resolves.toBe(HASH);
+      await expect(latestHook?.executeBatch(recipientsWithFees, 'ATOMIC')).resolves.toBe(HASH);
     });
 
     expect(getBalanceMock).toHaveBeenCalledWith({ address: ACCOUNT });
@@ -190,7 +190,7 @@ describe('useExecuteBatch submit-time balance recheck', () => {
     getBalanceMock.mockResolvedValue(prepared.totalValueAttoFil + 1_000_000n);
 
     await act(async () => {
-      await latestHook?.executeBatch(recipientsWithFees, 'PARTIAL');
+      await latestHook?.executeBatch(recipientsWithFees, 'ATOMIC');
     });
 
     expect(estimateGasMock).toHaveBeenCalledWith({

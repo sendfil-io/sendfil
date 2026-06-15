@@ -1,5 +1,6 @@
 import type { BatchExecutionErrorCategory } from './errorHandling';
 import type { ErrorMode } from './multicall';
+import type { ExecutionMethod } from '../batchConfiguration';
 import type { SendFilNetworkKey, SupportedChainId } from '../networks';
 
 export type BatchTelemetryEventName =
@@ -12,6 +13,7 @@ export type BatchTelemetryEventName =
 
 export interface BatchTelemetryEvent {
   event: BatchTelemetryEventName;
+  executionMethod: ExecutionMethod;
   errorMode: ErrorMode;
   recipientCount: number;
   totalValueAttoFil: string;
