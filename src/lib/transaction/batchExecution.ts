@@ -14,7 +14,7 @@ import { type SendFilNetworkConfig } from '../networks';
 
 export interface BatchExecutionRecipient {
   address: string;
-  amount: number;
+  amount: string;
 }
 
 export type PreparedBatchTransaction = MulticallBatchResult | ThinBatchBatchResult;

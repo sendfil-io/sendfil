@@ -26,11 +26,11 @@ describe('INV-EXEC-001 prepared batch determinism', () => {
     const recipients = [
       {
         address: '0x1234567890abcdef1234567890abcdef12345678',
-        amount: 1.25,
+        amount: '1.25',
       },
       {
         address: 'f1abjxfbp274xpdqcpuaykwkfb43omjotacm2p3za',
-        amount: 2.5,
+        amount: '2.5',
       },
     ];
     const network = getDefaultNetworkConfig();
@@ -55,11 +55,11 @@ describe('INV-EXEC-001 prepared batch determinism', () => {
     const network = getNetworkConfig('calibration');
     const calibrationT4 = toF4(EVM_RECIPIENT, 't');
     const recipients = [
-      { address: EVM_RECIPIENT, amount: 1 },
-      { address: calibrationT4, amount: 2 },
-      { address: CALIBRATION_T1, amount: 3 },
-      { address: CALIBRATION_T2, amount: 4 },
-      { address: CALIBRATION_T3, amount: 5 },
+      { address: EVM_RECIPIENT, amount: '1' },
+      { address: calibrationT4, amount: '2' },
+      { address: CALIBRATION_T1, amount: '3' },
+      { address: CALIBRATION_T2, amount: '4' },
+      { address: CALIBRATION_T3, amount: '5' },
     ];
 
     const prepared = prepareBatchExecution(recipients, 'ATOMIC', network);
@@ -98,7 +98,7 @@ describe('INV-EXEC-001 prepared batch determinism', () => {
     };
 
     const prepared = prepareBatchExecution(
-      [{ address: CALIBRATION_T1, amount: 1 }],
+      [{ address: CALIBRATION_T1, amount: '1' }],
       'ATOMIC',
       network,
     );
@@ -112,7 +112,7 @@ describe('INV-EXEC-001 prepared batch determinism', () => {
   it('blocks Standard PARTIAL preparation because Multicall3 cannot refund failed value calls', () => {
     expect(() =>
       prepareBatchExecution(
-        [{ address: EVM_RECIPIENT, amount: 1 }],
+        [{ address: EVM_RECIPIENT, amount: '1' }],
         'PARTIAL',
         getNetworkConfig('calibration'),
       ),
@@ -127,8 +127,8 @@ describe('INV-EXEC-001 prepared batch determinism', () => {
 
     const prepared = prepareBatchExecution(
       [
-        { address: EVM_RECIPIENT, amount: 1 },
-        { address: CALIBRATION_T1, amount: 2 },
+        { address: EVM_RECIPIENT, amount: '1' },
+        { address: CALIBRATION_T1, amount: '2' },
       ],
       'PARTIAL',
       network,
@@ -164,6 +164,36 @@ describe('INV-EXEC-001 prepared batch determinism', () => {
     });
   });
 
+  it('INV-AMT-002 preserves exact 18-decimal amounts for Standard and ThinBatch execution', () => {
+    const network = {
+      ...getNetworkConfig('calibration'),
+      thinBatchAddress: '0x5555555555555555555555555555555555555555' as const,
+    };
+    const recipients = [
+      { address: EVM_RECIPIENT, amount: '0.000000000000000001' },
+      { address: CALIBRATION_T1, amount: '1.123456789012345678' },
+    ];
+
+    const standard = prepareBatchExecution(recipients, 'ATOMIC', network);
+    const thinBatch = prepareBatchExecution(recipients, 'PARTIAL', network, 'THINBATCH');
+    const expectedTotal = 1_123_456_789_012_345_679n;
+
+    expect(standard.totalValueAttoFil).toBe(expectedTotal);
+    expect(standard.batch.value).toBe(expectedTotal);
+    expect(standard.batch.calls[0]?.value).toBe(1n);
+    expect(standard.batch.calls[1]?.value).toBe(1_123_456_789_012_345_678n);
+
+    expect(thinBatch.totalValueAttoFil).toBe(expectedTotal);
+    expect(thinBatch.batch.value).toBe(expectedTotal);
+
+    if (thinBatch.batch.executionMethod !== 'THINBATCH') {
+      throw new Error('Expected ThinBatch execution');
+    }
+
+    expect(thinBatch.batch.payments[0]?.amount).toBe(1n);
+    expect(thinBatch.batch.payments[1]?.amount).toBe(1_123_456_789_012_345_678n);
+  });
+
   it('blocks ThinBatch preparation when the active network has no ThinBatch address', () => {
     const network = {
       ...getNetworkConfig('calibration'),
@@ -172,7 +202,7 @@ describe('INV-EXEC-001 prepared batch determinism', () => {
 
     expect(() =>
       prepareBatchExecution(
-        [{ address: EVM_RECIPIENT, amount: 1 }],
+        [{ address: EVM_RECIPIENT, amount: '1' }],
         'PARTIAL',
         network,
         'THINBATCH',

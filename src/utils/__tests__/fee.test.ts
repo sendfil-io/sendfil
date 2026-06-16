@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CoinType, newSecp256k1Address } from '@glif/filecoin-address';
 import { getNetworkConfig } from '../../lib/networks';
-import { calculateFeeRows, getFeeLabel } from '../fee';
+import { calculateExactFeeRows, calculateFeeRows, getFeeLabel } from '../fee';
 
 const MAINNET_FEE_A = '0x1111111111111111111111111111111111111111';
 const MAINNET_FEE_B = '0x2222222222222222222222222222222222222222';
@@ -62,6 +62,40 @@ describe('calculateFeeRows', () => {
       { address: '0x1234567890abcdef1234567890abcdef12345678', amount: 10 },
       { address: CALIBRATION_FEE_A, amount: 0.05 },
       { address: CALIBRATION_FEE_B, amount: 0.05 },
+    ]);
+  });
+
+  it('preserves exact recipient amount strings when appending fee rows for the live path', () => {
+    vi.stubEnv('VITE_FEE_ADDR_A_MAINNET', MAINNET_FEE_A);
+    vi.stubEnv('VITE_FEE_ADDR_B_MAINNET', MAINNET_FEE_B);
+    vi.stubEnv('VITE_FEE_PERCENT_MAINNET', '1');
+    vi.stubEnv('VITE_FEE_SPLIT_MAINNET', '0.5');
+
+    const result = calculateExactFeeRows(
+      [
+        {
+          address: '0x1234567890abcdef1234567890abcdef12345678',
+          amount: '1.123456789012345678',
+        },
+        {
+          address: 'f1abjxfbp274xpdqcpuaykwkfb43omjotacm2p3za',
+          amount: '0.000000000000000001',
+        },
+      ],
+      getNetworkConfig('mainnet'),
+    );
+
+    expect(result).toEqual([
+      {
+        address: '0x1234567890abcdef1234567890abcdef12345678',
+        amount: '1.123456789012345678',
+      },
+      {
+        address: 'f1abjxfbp274xpdqcpuaykwkfb43omjotacm2p3za',
+        amount: '0.000000000000000001',
+      },
+      { address: MAINNET_FEE_A, amount: '0.005617' },
+      { address: MAINNET_FEE_B, amount: '0.005617' },
     ]);
   });
 

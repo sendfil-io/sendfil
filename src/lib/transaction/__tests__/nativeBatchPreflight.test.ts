@@ -64,9 +64,9 @@ describe('native Filecoin batch preflight', () => {
     const sender = getNativeSender(CALIBRATION_T1);
     const rpc = getRpc();
     const recipients = [
-      { address: EVM_RECIPIENT, amount: 1 },
-      { address: toF4(EVM_RECIPIENT, 't'), amount: 2 },
-      { address: CALIBRATION_T1, amount: 3 },
+      { address: EVM_RECIPIENT, amount: '1' },
+      { address: toF4(EVM_RECIPIENT, 't'), amount: '2' },
+      { address: CALIBRATION_T1, amount: '3' },
     ];
 
     const result = await preflightNativeBatch({
@@ -117,8 +117,8 @@ describe('native Filecoin batch preflight', () => {
     const sender = getNativeSender(CALIBRATION_T1);
     const rpc = getRpc();
     const recipients = [
-      { address: EVM_RECIPIENT, amount: 1 },
-      { address: CALIBRATION_T1, amount: 2 },
+      { address: EVM_RECIPIENT, amount: '1' },
+      { address: CALIBRATION_T1, amount: '2' },
     ];
     const expectedPreparedBatch = prepareBatchExecution(
       recipients,
@@ -168,7 +168,7 @@ describe('native Filecoin batch preflight', () => {
 
     const result = await preflightNativeBatch({
       sender,
-      recipients: [{ address: MAINNET_F1, amount: 0.5 }],
+      recipients: [{ address: MAINNET_F1, amount: '0.5' }],
       errorMode: 'ATOMIC',
       network,
       rpc,
@@ -198,7 +198,7 @@ describe('native Filecoin batch preflight', () => {
     await expect(
       preflightNativeBatch({
         sender,
-        recipients: [{ address: CALIBRATION_T1, amount: 1 }],
+        recipients: [{ address: CALIBRATION_T1, amount: '1' }],
         errorMode: 'ATOMIC',
         network: getNetworkConfig('calibration'),
         rpc,
@@ -216,8 +216,8 @@ describe('native Filecoin batch preflight', () => {
     const sender = getNativeSender(CALIBRATION_T1);
     const rpc = getRpc();
     const recipients = [
-      { address: EVM_RECIPIENT, amount: 1 },
-      { address: CALIBRATION_T1, amount: 2 },
+      { address: EVM_RECIPIENT, amount: '1' },
+      { address: CALIBRATION_T1, amount: '2' },
     ];
     const expectedPreparedBatch = prepareBatchExecution(recipients, 'ATOMIC', network);
 
@@ -264,7 +264,7 @@ describe('native Filecoin batch preflight', () => {
     await expect(
       preflightNativeBatch({
         sender,
-        recipients: [{ address: CALIBRATION_T1, amount: 1 }],
+        recipients: [{ address: CALIBRATION_T1, amount: '1' }],
         errorMode: 'ATOMIC',
         network,
         rpc,

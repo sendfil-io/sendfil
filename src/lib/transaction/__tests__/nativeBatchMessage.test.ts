@@ -109,9 +109,9 @@ describe('native Filecoin batch message preparation', () => {
     const network = getNetworkConfig('calibration');
     const sender = getNativeSender(CALIBRATION_T1);
     const recipients = [
-      { address: EVM_RECIPIENT, amount: 1 },
-      { address: toF4(EVM_RECIPIENT, 't'), amount: 2 },
-      { address: CALIBRATION_T1, amount: 3 },
+      { address: EVM_RECIPIENT, amount: '1' },
+      { address: toF4(EVM_RECIPIENT, 't'), amount: '2' },
+      { address: CALIBRATION_T1, amount: '3' },
     ];
     const preparedBatch = prepareBatchExecution(recipients, 'ATOMIC', network);
 
@@ -150,7 +150,7 @@ describe('native Filecoin batch message preparation', () => {
     const network = getNetworkConfig('calibration');
     const sender = getNativeSender(CALIBRATION_T1);
     const preparedBatch = prepareBatchExecution(
-      [{ address: CALIBRATION_T1, amount: 1 }],
+      [{ address: CALIBRATION_T1, amount: '1' }],
       'ATOMIC',
       network,
     );
@@ -180,7 +180,7 @@ describe('native Filecoin batch message preparation', () => {
   it('rejects native sender and batch network mismatches', () => {
     const sender = getNativeSender(MAINNET_F1);
     const preparedBatch = prepareBatchExecution(
-      [{ address: CALIBRATION_T1, amount: 1 }],
+      [{ address: CALIBRATION_T1, amount: '1' }],
       'ATOMIC',
       getNetworkConfig('calibration'),
     );

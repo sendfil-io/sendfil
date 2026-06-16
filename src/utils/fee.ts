@@ -4,11 +4,23 @@ import {
   getNetworkConfig,
   getSupportedNetworkByChainId,
 } from '../lib/networks';
+import {
+  ATTO_FIL_PER_FIL,
+  attoFilToFilDecimal,
+  decimalNumberToScaledBigInt,
+  filDecimalToAttoFil,
+  truncateAttoFilToMicroFil,
+} from './filAmount';
 import { validateRecipientRows } from './recipientValidation';
 
 export interface Recipient {
   address: string;
   amount: number;
+}
+
+export interface ExactRecipient {
+  address: string;
+  amount: string;
 }
 
 function validateFeePolicy(
@@ -66,6 +78,22 @@ export function calculateFeeRows(
   recipients: Recipient[],
   network: Pick<SendFilNetworkConfig, 'feePolicy' | 'nativePrefix'>,
 ): Recipient[] {
+  return calculateExactFeeRows(
+    recipients.map((recipient) => ({
+      address: recipient.address,
+      amount: recipient.amount.toString(),
+    })),
+    network,
+  ).map((recipient) => ({
+    address: recipient.address,
+    amount: Number(recipient.amount),
+  }));
+}
+
+export function calculateExactFeeRows(
+  recipients: ExactRecipient[],
+  network: Pick<SendFilNetworkConfig, 'feePolicy' | 'nativePrefix'>,
+): ExactRecipient[] {
   const feePolicy = network.feePolicy;
 
   if (!feePolicy.enabled) {
@@ -83,14 +111,23 @@ export function calculateFeeRows(
     throw new Error('Fee address included in recipient list');
   }
 
-  const total = recipients.reduce((sum, recipient) => sum + recipient.amount, 0);
-  const feeTotal = (total * feePolicy.percent) / 100;
-  const feeA = Math.floor(feeTotal * feePolicy.split * 1e6) / 1e6;
-  const feeB = Math.floor(feeTotal * (1 - feePolicy.split) * 1e6) / 1e6;
+  const totalAttoFil = recipients.reduce(
+    (sum, recipient) => sum + filDecimalToAttoFil(recipient.amount),
+    0n,
+  );
+  const percent = decimalNumberToScaledBigInt(feePolicy.percent, 18);
+  const split = decimalNumberToScaledBigInt(feePolicy.split, 18);
+  const feeTotalAttoFil = (totalAttoFil * percent) / (100n * ATTO_FIL_PER_FIL);
+  const feeAAttoFil = truncateAttoFilToMicroFil(
+    (feeTotalAttoFil * split) / ATTO_FIL_PER_FIL,
+  );
+  const feeBAttoFil = truncateAttoFilToMicroFil(
+    (feeTotalAttoFil * (ATTO_FIL_PER_FIL - split)) / ATTO_FIL_PER_FIL,
+  );
 
   return [
     ...recipients,
-    { address: feePolicy.recipientA, amount: feeA },
-    { address: feePolicy.recipientB, amount: feeB },
+    { address: feePolicy.recipientA, amount: attoFilToFilDecimal(feeAAttoFil) },
+    { address: feePolicy.recipientB, amount: attoFilToFilDecimal(feeBAttoFil) },
   ];
 }
