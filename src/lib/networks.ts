@@ -34,6 +34,10 @@ export interface SendFilNetworkConfig {
 
 const MULTICALL3_DEFAULT = '0xcA11bde05977b3631167028862bE2a173976CA11' as const;
 const FIL_FORWARDER_DEFAULT = '0x2b3ef6906429b580b7b2080de5ca893bc282c225' as const;
+const THINBATCH_MAINNET_DEFAULT =
+  '0x647395311D78314075dd7b0eAdF9bcD26Eb75a04' as const;
+const THINBATCH_CALIBRATION_DEFAULT =
+  '0x67fE9e377CD2F554629E266Ba91F53AA652EAdEB' as const;
 
 const LEGACY_ENV_WARNINGS = new Set<string>();
 
@@ -143,6 +147,21 @@ function readBooleanEnv(envName: string, fallback: boolean): boolean {
   }
 
   return rawValue === 'true';
+}
+
+function resolveThinBatchAddress(
+  key: SendFilNetworkKey,
+): `0x${string}` | undefined {
+  const configuredAddress = readEnv(
+    key === 'mainnet'
+      ? 'VITE_THINBATCH_ADDRESS_MAINNET'
+      : 'VITE_THINBATCH_ADDRESS_CALIBRATION',
+  ) as `0x${string}` | undefined;
+
+  return configuredAddress ??
+    (key === 'mainnet'
+      ? THINBATCH_MAINNET_DEFAULT
+      : THINBATCH_CALIBRATION_DEFAULT);
 }
 
 export function getDefaultNetworkKey(): SendFilNetworkKey {
@@ -294,11 +313,7 @@ export function getNetworkConfig(key: SendFilNetworkKey): SendFilNetworkConfig {
           ? 'VITE_FILFORWARDER_ADDRESS_MAINNET'
           : 'VITE_FILFORWARDER_ADDRESS_CALIBRATION',
       ) as `0x${string}` | undefined) ?? FIL_FORWARDER_DEFAULT,
-    thinBatchAddress: readEnv(
-      key === 'mainnet'
-        ? 'VITE_THINBATCH_ADDRESS_MAINNET'
-        : 'VITE_THINBATCH_ADDRESS_CALIBRATION',
-    ) as `0x${string}` | undefined,
+    thinBatchAddress: resolveThinBatchAddress(key),
     feePolicy: resolveFeePolicy(key),
   };
 }

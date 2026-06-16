@@ -89,6 +89,15 @@ describe('networks', () => {
     });
   });
 
+  it('uses the recorded ThinBatch deployments by default', () => {
+    expect(getNetworkConfig('mainnet').thinBatchAddress).toBe(
+      '0x647395311D78314075dd7b0eAdF9bcD26Eb75a04',
+    );
+    expect(getNetworkConfig('calibration').thinBatchAddress).toBe(
+      '0x67fE9e377CD2F554629E266Ba91F53AA652EAdEB',
+    );
+  });
+
   it('resolves network-specific ThinBatch addresses when configured', () => {
     vi.stubEnv(
       'VITE_THINBATCH_ADDRESS_MAINNET',

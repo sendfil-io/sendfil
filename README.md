@@ -47,7 +47,7 @@ Payloads include:
 
 ## Known Limitations
 
-- `ThinBatch` requires a deployed `ThinBatchPayer` address per network. The contract source and app path are wired, and the example environment records the Calibration deployment. Public Calibration/Mainnet smoke verification is still tracked separately from deployment status.
+- `ThinBatch` requires a deployed `ThinBatchPayer` address per network. The contract source and app path are wired, and the example environment records Mainnet and Calibration deployments. Public Mainnet/Calibration smoke verification is still tracked separately from deployment status.
 - `Standard` no longer exposes Partial execution. Multicall3 `aggregate3Value(...)` does not refund value from failed allowed subcalls, so SendFIL only uses Standard for all-or-nothing Atomic batches.
 - App-level contract-recipient blocking (`eth_getCode`) is wired for `0x`/`f4` user-entered recipients. This guard runs before review estimation and again before submit; fee rows are controlled by SendFIL configuration.
 - There is no centralized-exchange `0x` warning flow yet.
@@ -74,7 +74,7 @@ Copy `.env.example` to `.env.local` and set:
 
 Runtime ThinBatch deployment addresses:
 
-- `VITE_THINBATCH_ADDRESS_MAINNET`
+- `VITE_THINBATCH_ADDRESS_MAINNET` (configured in `.env.example` for Mainnet)
 - `VITE_THINBATCH_ADDRESS_CALIBRATION` (configured in `.env.example` for Calibration)
 
 Calibration defaults to fee injection disabled. If you want testnet fee rows, also set:
