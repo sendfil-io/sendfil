@@ -286,9 +286,9 @@ describe('App confirm flow', () => {
     expect(executeBatchMock).toHaveBeenCalledTimes(1);
     expect(executeBatchMock).toHaveBeenCalledWith(
       [
-        { address: getAddress(BASE_ADDRESS), amount: 1 },
-        { address: FEE_A, amount: 0.005 },
-        { address: FEE_B, amount: 0.005 },
+        { address: getAddress(BASE_ADDRESS), amount: '1' },
+        { address: FEE_A, amount: '0.005' },
+        { address: FEE_B, amount: '0.005' },
       ],
       'ATOMIC',
       'STANDARD',
@@ -317,9 +317,9 @@ describe('App confirm flow', () => {
     expect(container.textContent).toContain('Any failing transfer reverts the whole batch.');
     expect(estimateBatchMock).toHaveBeenCalledWith(
       [
-        { address: getAddress(BASE_ADDRESS), amount: 1 },
-        { address: FEE_A, amount: 0.005 },
-        { address: FEE_B, amount: 0.005 },
+        { address: getAddress(BASE_ADDRESS), amount: '1' },
+        { address: FEE_A, amount: '0.005' },
+        { address: FEE_B, amount: '0.005' },
       ],
       'ATOMIC',
       'STANDARD',
@@ -331,9 +331,9 @@ describe('App confirm flow', () => {
     expect(executeBatchMock).toHaveBeenCalledTimes(1);
     expect(executeBatchMock).toHaveBeenCalledWith(
       [
-        { address: getAddress(BASE_ADDRESS), amount: 1 },
-        { address: FEE_A, amount: 0.005 },
-        { address: FEE_B, amount: 0.005 },
+        { address: getAddress(BASE_ADDRESS), amount: '1' },
+        { address: FEE_A, amount: '0.005' },
+        { address: FEE_B, amount: '0.005' },
       ],
       'ATOMIC',
       'STANDARD',

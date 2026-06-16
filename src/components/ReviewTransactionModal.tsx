@@ -14,6 +14,10 @@ import {
   type BatchExecutionError,
 } from '../lib/transaction/errorHandling';
 import { getFilfoxMessageUrl } from '../lib/networks';
+import {
+  MICRO_FIL_IN_ATTO_FIL,
+  attoFilToFilNumber,
+} from '../utils/filAmount';
 
 export type TransactionState = 'review' | 'signing' | 'pending' | 'confirmed' | 'failed';
 
@@ -21,6 +25,7 @@ export interface GasEstimate {
   gasLimit: number;
   gasFeeCap: string; // in attoFIL
   gasPremium: string; // in attoFIL
+  estimatedFeeAttoFil: bigint;
   estimatedFeeInFil: number;
 }
 
@@ -30,13 +35,13 @@ export interface ReviewTransactionModalProps {
   onConfirm: () => Promise<void>;
 
   // Recipient data
-  recipients: Array<{ address: string; amount: number }>;
+  recipients: Array<{ address: string; amount: string }>;
   validationErrors: string[];
   validationWarnings: string[];
 
   // Fee data
-  recipientTotal: number; // Sum of recipient amounts in FIL
-  feeTotal: number; // Platform fee (1%) in FIL
+  recipientTotalAttoFil: bigint; // Sum of recipient amounts in attoFIL
+  feeTotalAttoFil: bigint; // Platform fee in attoFIL
 
   // Gas estimation
   gasEstimate?: GasEstimate;
@@ -45,7 +50,7 @@ export interface ReviewTransactionModalProps {
   gasEstimationError?: BatchExecutionError;
 
   // Wallet state
-  walletBalance: number; // in FIL
+  walletBalanceAttoFil: bigint;
   insufficientBalance: boolean;
 
   // Transaction state
@@ -59,12 +64,19 @@ export interface ReviewTransactionModalProps {
 }
 
 // Format FIL amounts for display
-function formatFil(amount: number): string {
-  if (amount === 0) return '0 FIL';
-  if (amount < 0.000001) return '< 0.000001 FIL';
+function formatFil(amountAttoFil: bigint): string {
+  if (amountAttoFil === 0n) return '0 FIL';
+  if (amountAttoFil < MICRO_FIL_IN_ATTO_FIL) return '< 0.000001 FIL';
+
+  const amount = attoFilToFilNumber(amountAttoFil);
+
   if (amount < 0.001) return amount.toFixed(6) + ' FIL';
   if (amount < 1) return amount.toFixed(4) + ' FIL';
   return amount.toLocaleString(undefined, { maximumFractionDigits: 2 }) + ' FIL';
+}
+
+function formatRecipientFil(amount: string): string {
+  return `${amount} FIL`;
 }
 
 // Truncate addresses for display
@@ -85,13 +97,13 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
   recipients,
   validationErrors,
   validationWarnings,
-  recipientTotal,
-  feeTotal,
+  recipientTotalAttoFil,
+  feeTotalAttoFil,
   gasEstimate,
   isEstimatingGas,
   isCheckingContractRecipients = false,
   gasEstimationError,
-  walletBalance,
+  walletBalanceAttoFil,
   insufficientBalance,
   transactionState,
   transactionHash,
@@ -113,8 +125,9 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
   );
 
   // Calculate totals
-  const estimatedNetworkFee = gasEstimate?.estimatedFeeInFil || 0;
-  const grandTotal = recipientTotal + feeTotal + estimatedNetworkFee;
+  const estimatedNetworkFeeAttoFil = gasEstimate?.estimatedFeeAttoFil ?? 0n;
+  const grandTotalAttoFil =
+    recipientTotalAttoFil + feeTotalAttoFil + estimatedNetworkFeeAttoFil;
   const duplicateRecipientWarnings = getDuplicateRecipientWarnings(validationWarnings);
   const otherValidationWarnings = validationWarnings.filter(
     (warning) => !isDuplicateRecipientWarning(warning),
@@ -241,8 +254,8 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
             Insufficient Balance
           </h4>
           <p className="text-sm text-red-700 mt-1">
-            Your wallet balance ({formatFil(walletBalance)}) is less than the required amount (
-            {formatFil(grandTotal)}).
+            Your wallet balance ({formatFil(walletBalanceAttoFil)}) is less than the required amount (
+            {formatFil(grandTotalAttoFil)}).
           </p>
         </div>
       )}
@@ -337,12 +350,12 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
 
         <div className="flex justify-between items-center">
           <span className="text-gray-600">Total to send:</span>
-          <span className="font-semibold text-lg">{formatFil(recipientTotal)}</span>
+          <span className="font-semibold text-lg">{formatFil(recipientTotalAttoFil)}</span>
         </div>
 
         <div className="flex justify-between items-center">
           <span className="text-gray-600">{feeLabel}:</span>
-          <span className="font-medium">{formatFil(feeTotal)}</span>
+          <span className="font-medium">{formatFil(feeTotalAttoFil)}</span>
         </div>
 
         <div className="flex justify-between items-center">
@@ -373,9 +386,9 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
             {isEstimatingGas ? (
               <span className="text-gray-400">Estimating...</span>
             ) : gasEstimationError ? (
-              <span className="text-yellow-600">~ {formatFil(0.01)}</span>
+              <span className="text-yellow-600">~ {formatFil(10_000_000_000_000_000n)}</span>
             ) : (
-              formatFil(estimatedNetworkFee)
+              formatFil(estimatedNetworkFeeAttoFil)
             )}
           </span>
         </div>
@@ -383,7 +396,7 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
         <div className="border-t border-gray-200 pt-3">
           <div className="flex justify-between items-center">
             <span className="font-semibold">Grand Total:</span>
-            <span className="font-bold text-xl">{formatFil(grandTotal)}</span>
+            <span className="font-bold text-xl">{formatFil(grandTotalAttoFil)}</span>
           </div>
         </div>
       </div>
@@ -446,7 +459,7 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
                 <span className="font-mono text-gray-600">
                   #{index + 1}: {truncateAddress(recipient.address)}
                 </span>
-                <span className="font-medium">{formatFil(recipient.amount)}</span>
+                <span className="font-medium">{formatRecipientFil(recipient.amount)}</span>
               </div>
             ))}
           </div>
@@ -494,9 +507,9 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
       <p className="text-gray-600 text-center mb-4">
         {isAtomicMode
           ? `Successfully finalized ${formatFil(
-              recipientTotal,
+              recipientTotalAttoFil,
             )} to ${recipients.length} recipients in one atomic batch.`
-          : `Successfully sent ${formatFil(recipientTotal)} to ${recipients.length} recipients.`}
+          : `Successfully sent ${formatFil(recipientTotalAttoFil)} to ${recipients.length} recipients.`}
       </p>
       {transactionHash && (
         <a

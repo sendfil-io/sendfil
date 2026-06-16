@@ -21,9 +21,9 @@ const FEE_B = getAddress('0x2222222222222222222222222222222222222222');
 const HASH = `0x${'a'.repeat(64)}` as `0x${string}`;
 
 const recipientsWithFees: BatchExecutionRecipient[] = [
-  { address: RECIPIENT, amount: 1 },
-  { address: FEE_A, amount: 0.005 },
-  { address: FEE_B, amount: 0.005 },
+  { address: RECIPIENT, amount: '1' },
+  { address: FEE_A, amount: '0.005' },
+  { address: FEE_B, amount: '0.005' },
 ];
 
 const estimateGasMock = vi.fn();

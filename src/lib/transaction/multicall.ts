@@ -5,6 +5,7 @@ import {
   encodeFilecoinAddressToBytes,
   validateAddressForSending,
 } from '../../utils/addressEncoder';
+import { filDecimalToAttoFil } from '../../utils/filAmount';
 import { getDefaultNetworkConfig } from '../networks';
 
 export interface MulticallContractConfig {
@@ -198,19 +199,15 @@ export function buildMulticallBatch(
  * Convert FIL amount to attoFIL (wei) as bigint.
  * 1 FIL = 10^18 attoFIL
  */
-export function filToAttoFilBigInt(fil: number): bigint {
-  // Use string conversion to avoid floating point precision issues
-  const [whole, decimal = ''] = fil.toString().split('.');
-  const paddedDecimal = decimal.padEnd(18, '0').slice(0, 18);
-  const attoFilString = whole + paddedDecimal;
-  return BigInt(attoFilString);
+export function filToAttoFilBigInt(fil: string): bigint {
+  return filDecimalToAttoFil(fil);
 }
 
 /**
  * Convert recipient array from App format to BatchRecipient format.
  */
 export function convertRecipientsToBatch(
-  recipients: Array<{ address: string; amount: number }>,
+  recipients: Array<{ address: string; amount: string }>,
 ): BatchRecipient[] {
   return recipients.map((r) => ({
     address: r.address,

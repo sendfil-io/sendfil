@@ -22,7 +22,7 @@ Use this catalog before changing validation, network gating, review/send flow, R
 | `INV-ADDR-002` | Reject `f0` recipients | `implemented` | validation | `src/utils/__tests__/recipientValidation.test.ts`, `src/lib/transaction/__tests__/multicall.test.ts` |
 | `INV-ADDR-003` | Treat `0x` and `f4` twins as the same recipient identity internally | `partial` | validation, duplicate detection, transaction builder | `src/utils/__tests__/recipientValidation.test.ts`, `src/lib/transaction/__tests__/multicall.test.ts` |
 | `INV-AMT-001` | Reject blank, zero, and negative amounts | `implemented` | validation, amount parsing | `src/utils/__tests__/recipientValidation.test.ts` |
-| `INV-AMT-002` | Reject over-precise values and preserve exact accepted values | `partial` | validation, amount parsing, execution value preservation | `src/utils/__tests__/recipientValidation.test.ts` |
+| `INV-AMT-002` | Reject over-precise values and preserve exact accepted values | `implemented` | validation, amount parsing, execution value preservation | `src/utils/__tests__/recipientValidation.test.ts`, `src/lib/transaction/__tests__/batchExecution.test.ts`, `src/utils/__tests__/fee.test.ts` |
 | `INV-BATCH-001` | Enforce the 500-recipient cap | `implemented` | validation | `src/utils/__tests__/recipientValidation.test.ts` |
 | `INV-DUP-001` | Duplicate recipients require explicit confirmation before Send | `implemented` | duplicate detection, review UI gating | `src/utils/__tests__/recipientValidation.test.ts`, `src/components/__tests__/ReviewTransactionModal.test.tsx`, `tests/e2e/review-flow.spec.ts` |
 | `INV-NET-001` | Wrong network disables Send | `implemented` | network/wallet gating, review UI gating | `src/lib/senders/__tests__/connectedSender.test.ts`, `src/__tests__/app.invariants.test.tsx` |
@@ -170,12 +170,12 @@ validation, amount parsing, execution value preservation
   - `it('rejects values with more than 18 decimal places')`
 
 ### Status
-`partial`
+`implemented`
 
-Current repo note: the shared validator correctly accepts up to 18 decimal places and rejects more
-than 18. The live App still converts normalized amount strings to JavaScript `Number` values before
-fee calculation and execution, so exact end-to-end preservation for all valid 18-decimal FIL inputs
-remains a gap.
+Current repo note: the shared validator accepts up to 18 decimal places and rejects more than 18.
+The live App keeps accepted amount values as exact decimal strings through review, fee injection,
+and transaction preparation. Standard and ThinBatch execution convert those strings to attoFIL
+`bigint` values immediately before calldata/value construction.
 
 ## INV-BATCH-001 — Enforce the 500-recipient cap
 

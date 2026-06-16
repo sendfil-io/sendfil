@@ -1,6 +1,7 @@
 import { newFromString } from '@glif/filecoin-address';
 import { getAddress, isAddress } from 'viem';
 import { normalizeToEvmAddress } from './addressEncoder';
+import { filDecimalToAttoFil } from './filAmount';
 
 export interface RecipientInput {
   address: string;
@@ -70,12 +71,6 @@ function isNativeActorAddress(address: string): boolean {
   return /^[ft]2/.test(address);
 }
 
-function toAttoFil(amount: string): bigint {
-  const [whole, decimal = ''] = amount.split('.');
-  const paddedDecimal = decimal.padEnd(18, '0');
-  return BigInt(`${whole}${paddedDecimal}`);
-}
-
 function validateAmount(amount: string): AmountValidationResult {
   const trimmed = amount.trim();
 
@@ -93,7 +88,7 @@ function validateAmount(amount: string): AmountValidationResult {
     };
   }
 
-  if (toAttoFil(trimmed) <= 0n) {
+  if (filDecimalToAttoFil(trimmed) <= 0n) {
     return {
       isValid: false,
       error: 'Amount must be greater than 0',

@@ -227,7 +227,7 @@ describe('INV-NET-001 wrong network gating', () => {
 
     expect(container.textContent).toContain('Calibration Testnet');
     expect(estimateBatchMock).toHaveBeenCalledWith(
-      [{ address: getAddress(RECIPIENT), amount: 1 }],
+      [{ address: getAddress(RECIPIENT), amount: '1' }],
       'ATOMIC',
       'STANDARD',
     );
@@ -236,7 +236,7 @@ describe('INV-NET-001 wrong network gating', () => {
     await flushAsyncWork();
 
     expect(executeBatchMock).toHaveBeenCalledWith(
-      [{ address: getAddress(RECIPIENT), amount: 1 }],
+      [{ address: getAddress(RECIPIENT), amount: '1' }],
       'ATOMIC',
       'STANDARD',
     );
@@ -257,7 +257,7 @@ describe('INV-NET-001 wrong network gating', () => {
     expect(container.textContent).toContain('Calibration Testnet');
     expect(container.textContent).toContain('Atomic');
     expect(estimateBatchMock).toHaveBeenCalledWith(
-      [{ address: getAddress(RECIPIENT), amount: 1 }],
+      [{ address: getAddress(RECIPIENT), amount: '1' }],
       'ATOMIC',
       'STANDARD',
     );
@@ -266,7 +266,7 @@ describe('INV-NET-001 wrong network gating', () => {
     await flushAsyncWork();
 
     expect(executeBatchMock).toHaveBeenCalledWith(
-      [{ address: getAddress(RECIPIENT), amount: 1 }],
+      [{ address: getAddress(RECIPIENT), amount: '1' }],
       'ATOMIC',
       'STANDARD',
     );
@@ -292,7 +292,7 @@ describe('INV-NET-001 wrong network gating', () => {
     expect(container.textContent).toContain('Calibration Testnet');
     expect(container.textContent).toContain('ThinBatch');
     expect(estimateBatchMock).toHaveBeenCalledWith(
-      [{ address: getAddress(RECIPIENT), amount: 1 }],
+      [{ address: getAddress(RECIPIENT), amount: '1' }],
       'PARTIAL',
       'THINBATCH',
     );
@@ -301,7 +301,7 @@ describe('INV-NET-001 wrong network gating', () => {
     await flushAsyncWork();
 
     expect(executeBatchMock).toHaveBeenCalledWith(
-      [{ address: getAddress(RECIPIENT), amount: 1 }],
+      [{ address: getAddress(RECIPIENT), amount: '1' }],
       'PARTIAL',
       'THINBATCH',
     );
@@ -428,9 +428,9 @@ describe('INV-EXEC-001 review and submit alignment', () => {
     );
     expect(estimateBatchMock.mock.calls[0]).toEqual([
       [
-        { address: getAddress(RECIPIENT), amount: 1 },
-        { address: FEE_A, amount: 0.005 },
-        { address: FEE_B, amount: 0.005 },
+        { address: getAddress(RECIPIENT), amount: '1' },
+        { address: FEE_A, amount: '0.005' },
+        { address: FEE_B, amount: '0.005' },
       ],
       'ATOMIC',
       'STANDARD',

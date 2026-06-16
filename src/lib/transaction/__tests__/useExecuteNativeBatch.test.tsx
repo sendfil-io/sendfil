@@ -31,7 +31,7 @@ const RECIPIENT = newSecp256k1Address(
 const CID = 'bafy2bzacednativebatchcid';
 
 const recipients: BatchExecutionRecipient[] = [
-  { address: RECIPIENT, amount: 1 },
+  { address: RECIPIENT, amount: '1' },
 ];
 
 function getNativeSender() {

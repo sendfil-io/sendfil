@@ -9,9 +9,12 @@ import ReviewTransactionModal, {
 } from './components/ReviewTransactionModal';
 import UnavailableCapabilityModal from './components/UnavailableCapabilityModal';
 import { useBalance, usePublicClient } from 'wagmi';
-import { formatUnits } from 'viem';
 import { validateNoEvmContractRecipients } from './utils/contractRecipientGuard';
-import { calculateFeeRows, getFeeLabel } from './utils/fee';
+import { calculateExactFeeRows, getFeeLabel } from './utils/fee';
+import {
+  attoFilToFilNumber,
+  filDecimalToAttoFil,
+} from './utils/filAmount';
 import {
   validateRecipientRows,
   type RecipientValidationResult,
@@ -112,8 +115,10 @@ function createEmptyRecipientValidationResult(): RecipientValidationResult {
   };
 }
 
-function formatSummaryFil(amount: number): string {
-  if (amount === 0) return '0 FIL';
+function formatSummaryFil(amountAttoFil: bigint): string {
+  if (amountAttoFil === 0n) return '0 FIL';
+
+  const amount = attoFilToFilNumber(amountAttoFil);
 
   return `${amount.toLocaleString(undefined, {
     maximumFractionDigits: amount >= 1 ? 4 : 6,
@@ -193,6 +198,7 @@ function createFallbackReviewGasEstimate(recipientCount: number): GasEstimate {
     gasLimit: Number(bufferedGasLimit),
     gasFeeCap: gasPrice.toString(),
     gasPremium: gasPrice.toString(),
+    estimatedFeeAttoFil: bufferedGasLimit * gasPrice,
     estimatedFeeInFil: attoFilBigIntToFil(bufferedGasLimit * gasPrice),
   };
 }
@@ -202,14 +208,17 @@ function toReviewGasEstimate(estimate: BatchGasEstimate): GasEstimate {
     gasLimit: Number(estimate.gasLimit),
     gasFeeCap: estimate.gasFeeCap.toString(),
     gasPremium: estimate.gasPremium.toString(),
+    estimatedFeeAttoFil: estimate.estimatedFee,
     estimatedFeeInFil: attoFilBigIntToFil(estimate.estimatedFee),
   };
 }
 
-function formatWalletBalanceLabel(balanceFil: number): string {
-  if (balanceFil === 0) {
+function formatWalletBalanceLabel(balanceAttoFil: bigint): string {
+  if (balanceAttoFil === 0n) {
     return '0 FIL';
   }
+
+  const balanceFil = attoFilToFilNumber(balanceAttoFil);
 
   if (balanceFil < 0.000001) {
     return '< 0.000001 FIL';
@@ -773,7 +782,7 @@ export default function App() {
           : csvValidation.validRecipients
       ).map((recipient) => ({
         address: recipient.address,
-        amount: Number(recipient.amount),
+        amount: recipient.amount,
       })),
     [csvValidation.validRecipients, inputMode, manualValidation.validRecipients],
   );
@@ -782,7 +791,7 @@ export default function App() {
     if (validRecipients.length === 0) {
       return {
         recipients: validRecipients,
-        feeTotal: 0,
+        feeTotalAttoFil: 0n,
         error: undefined as string | undefined,
       };
     }
@@ -790,25 +799,25 @@ export default function App() {
     if (!connectedNetwork) {
       return {
         recipients: validRecipients,
-        feeTotal: 0,
+        feeTotalAttoFil: 0n,
         error: undefined as string | undefined,
       };
     }
 
     try {
-      const recipientsWithFees = calculateFeeRows(validRecipients, connectedNetwork);
+      const recipientsWithFees = calculateExactFeeRows(validRecipients, connectedNetwork);
 
       return {
         recipients: recipientsWithFees,
-        feeTotal: recipientsWithFees
+        feeTotalAttoFil: recipientsWithFees
           .slice(validRecipients.length)
-          .reduce((sum, row) => sum + row.amount, 0),
+          .reduce((sum, row) => sum + filDecimalToAttoFil(row.amount), 0n),
         error: undefined as string | undefined,
       };
     } catch (error) {
       return {
         recipients: validRecipients,
-        feeTotal: 0,
+        feeTotalAttoFil: 0n,
         error:
           error instanceof Error
             ? error.message
@@ -889,26 +898,31 @@ export default function App() {
     inputMode === 'manual' ? manualValidation.nonEmptyRowCount : csvValidation.nonEmptyRowCount;
   const hasReviewableRows = draftRecipientCount > 0;
 
-  const recipientTotal = validRecipients.reduce((sum, recipient) => sum + recipient.amount, 0);
-  const feeTotal = feeComputation.feeTotal;
+  const recipientTotalAttoFil = validRecipients.reduce(
+    (sum, recipient) => sum + filDecimalToAttoFil(recipient.amount),
+    0n,
+  );
+  const feeTotalAttoFil = feeComputation.feeTotalAttoFil;
 
-  const walletBalance = E2E_MOCK_WALLET_ENABLED
-    ? E2E_MOCK_BALANCE_FIL
+  const walletBalanceAttoFil = E2E_MOCK_WALLET_ENABLED
+    ? filDecimalToAttoFil(E2E_MOCK_BALANCE_FIL.toString())
     : balanceData
-      ? Number(formatUnits(balanceData.value, balanceData.decimals))
+      ? balanceData.value
       : nativeBalanceAttoFil !== undefined
-        ? attoFilBigIntToFil(nativeBalanceAttoFil)
-      : 0;
+        ? nativeBalanceAttoFil
+      : 0n;
   const nativeBalanceLabel =
     nativeBalanceAttoFil !== undefined
-      ? formatWalletBalanceLabel(attoFilBigIntToFil(nativeBalanceAttoFil))
+      ? formatWalletBalanceLabel(nativeBalanceAttoFil)
       : nativeBalanceError
         ? 'Balance unavailable'
         : activeNativeSender
           ? 'Balance loading'
           : undefined;
-  const estimatedNetworkFee = gasEstimate?.estimatedFeeInFil || 0;
-  const insufficientBalance = walletBalance < recipientTotal + feeTotal + estimatedNetworkFee;
+  const estimatedNetworkFeeAttoFil = gasEstimate?.estimatedFeeAttoFil ?? 0n;
+  const insufficientBalance =
+    walletBalanceAttoFil <
+    recipientTotalAttoFil + feeTotalAttoFil + estimatedNetworkFeeAttoFil;
 
   const manualRowErrors = React.useMemo(
     () => collectManualRowIssues(manualDisplayErrors),
@@ -1546,8 +1560,8 @@ f1cj...,3.3`;
                           `${csvData.length} recipients imported from the uploaded file.`,
                           `Current valid total: ${formatSummaryFil(
                             csvValidation.validRecipients.reduce(
-                              (sum, recipient) => sum + Number(recipient.amount),
-                              0,
+                              (sum, recipient) => sum + filDecimalToAttoFil(recipient.amount),
+                              0n,
                             ),
                           )}.`,
                         ]}
@@ -1606,9 +1620,11 @@ f1cj...,3.3`;
                       {activeValidationErrors.length > 0 ||
                       (inputMode === 'manual' && manualIncompleteRowCount > 0)
                         ? `${validRecipients.length} valid recipients • ${formatSummaryFil(
-                            recipientTotal,
+                            recipientTotalAttoFil,
                           )}`
-                        : `${draftRecipientCount} recipients • ${formatSummaryFil(recipientTotal)}`}
+                        : `${draftRecipientCount} recipients • ${formatSummaryFil(
+                            recipientTotalAttoFil,
+                          )}`}
                     </p>
                     <p className="mt-1 text-sm text-slate-500">{reviewHint}</p>
                   </div>
@@ -1650,13 +1666,13 @@ f1cj...,3.3`;
         recipients={validRecipients}
         validationErrors={activeValidationErrors}
         validationWarnings={activeValidationWarnings}
-        recipientTotal={recipientTotal}
-        feeTotal={feeTotal}
+        recipientTotalAttoFil={recipientTotalAttoFil}
+        feeTotalAttoFil={feeTotalAttoFil}
         gasEstimate={gasEstimate}
         isEstimatingGas={isEstimatingGas}
         isCheckingContractRecipients={isCheckingContractRecipients}
         gasEstimationError={gasEstimationError}
-        walletBalance={walletBalance}
+        walletBalanceAttoFil={walletBalanceAttoFil}
         insufficientBalance={insufficientBalance}
         transactionState={transactionState}
         transactionHash={transactionHash}
