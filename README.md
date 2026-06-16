@@ -2,6 +2,8 @@
 
 SendFIL is a client-only Vite SPA for batch sending FIL. The live app currently supports single-signer EVM/FEVM senders and native Filecoin `f1`/`t1` senders. Multi-sig sender support remains planned work.
 
+Production app: https://sendfil.io/
+
 ## Current Live Execution Surface
 
 - `Standard` remains the default path and uses `Multicall3.aggregate3Value(...)` plus `FilForwarder`.
@@ -45,7 +47,7 @@ Payloads include:
 
 ## Known Limitations
 
-- `ThinBatch` requires a deployed `ThinBatchPayer` address per network. The contract source and app path are wired, but public Calibration/Mainnet smoke verification still needs to be run after deployment.
+- `ThinBatch` requires a deployed `ThinBatchPayer` address per network. The contract source and app path are wired, and the example environment records the Calibration deployment. Public Calibration/Mainnet smoke verification is still tracked separately from deployment status.
 - `Standard` no longer exposes Partial execution. Multicall3 `aggregate3Value(...)` does not refund value from failed allowed subcalls, so SendFIL only uses Standard for all-or-nothing Atomic batches.
 - App-level contract-recipient blocking (`eth_getCode`) is wired for `0x`/`f4` user-entered recipients. This guard runs before review estimation and again before submit; fee rows are controlled by SendFIL configuration.
 - There is no centralized-exchange `0x` warning flow yet.
@@ -70,10 +72,10 @@ Copy `.env.example` to `.env.local` and set:
 - `VITE_FEE_ADDR_A_MAINNET`
 - `VITE_FEE_ADDR_B_MAINNET`
 
-Optional ThinBatch deployment addresses:
+Runtime ThinBatch deployment addresses:
 
 - `VITE_THINBATCH_ADDRESS_MAINNET`
-- `VITE_THINBATCH_ADDRESS_CALIBRATION`
+- `VITE_THINBATCH_ADDRESS_CALIBRATION` (configured in `.env.example` for Calibration)
 
 Calibration defaults to fee injection disabled. If you want testnet fee rows, also set:
 

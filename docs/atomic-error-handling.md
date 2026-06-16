@@ -32,7 +32,7 @@ For Standard, SendFIL encodes through `aggregate3Value(...)` only in `ATOMIC` mo
 
 For ThinBatch, the app encodes `ThinBatchPayer.payBatch(payments, errorMode)`. The contract validates the batch before any transfer. In `PARTIAL`, failed payment value is refunded to the caller; if the refund fails, the transaction reverts rather than leaving FIL in the contract. In `ATOMIC`, any failed payment reverts the whole transaction.
 
-ThinBatch pre-deployment safety notes:
+ThinBatch deployment and runtime safety notes:
 
 - `errorMode` is explicit in the only public `payBatch` entry point; there is no implicit mode default.
 - the constructor rejects a zero or non-contract FilForwarder address.
