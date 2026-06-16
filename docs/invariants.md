@@ -45,6 +45,7 @@ validation
 - Valid `f1`, `f2`, `f3`, `f4`, and `0x` rows are accepted with positive amounts.
 - Accepted rows are returned in `validRecipients`.
 - Accepted rows do not also produce validation errors.
+- `f2/t2` actor recipients produce a non-blocking value-transfer notice.
 - Whitespace trimming stays invisible to the user.
 
 ### Tests
@@ -52,6 +53,7 @@ validation
   - `describe('INV-ADDR-001 recipient acceptance', ...)`
   - `it('accepts valid f1, f2, f3, f4, and 0x recipients through the shared validator')`
   - `it('trims surrounding whitespace before validating supported recipients')`
+  - `it('emits a non-blocking value-transfer notice for actor recipients')`
 
 ### Status
 `implemented`
@@ -296,7 +298,7 @@ Current repo note: this is implemented for the live EVM/wagmi sender path and th
 ## INV-RPC-001 — Contract recipients detected via `eth_getCode` are blocked
 
 ### Rule
-EVM recipients (`0x` or `f4`) with deployed bytecode must be blocked before Send can proceed, using the public-client `getCode` / `eth_getCode` path or an equivalent check.
+EVM recipients (`0x` or `f4`) with deployed bytecode must be blocked before Send can proceed, using the public-client `getCode` / `eth_getCode` path or an equivalent check. The check applies to the final prepared payment destinations, including app-appended fee rows.
 
 ### Why this matters
 The v1 product scope only supports EVM EOAs as `0x`/`f4` recipients. Contract recipients can absorb value in ways that do not match the batch sender’s intent.
@@ -309,18 +311,22 @@ RPC contract-recipient check, review UI gating
 - Empty code (`0x`) is treated as EOA-like and allowed.
 - Non-empty code blocks review/send.
 - Native `f1/f2/f3` recipients do not invoke this check.
+- Appended EVM fee rows are checked before estimate/send.
 - Send is disabled and execution is not triggered when any EVM contract recipient is present.
 
 ### Tests
 - `src/__tests__/contractRecipientGuard.test.tsx`
   - `describe('INV-RPC-001 contract recipient guard', ...)`
-  - `it('does not require getCode for native f1 recipients')`
+  - `it('does not require getCode for native Filecoin recipients')`
   - `it('blocks send when an EVM recipient resolves to deployed bytecode')`
+  - `it('blocks send when an f4 twin resolves to deployed bytecode')`
+  - `it('fails closed when EVM recipient code cannot be verified')`
+  - `it('checks appended EVM fee rows before estimating or sending')`
 
 ### Status
 `implemented`
 
-Current repo note: the FEVM review/send flow checks user-entered `0x` and `f4` recipients with `getCode` before review estimation and repeats the check before submit. Native `f1/f2/f3` recipients do not invoke this check. ThinBatch does not duplicate this product policy on-chain; the local guard applies consistently to Standard and ThinBatch.
+Current repo note: the FEVM review/send flow checks final payment destinations with `getCode` before review estimation and repeats the check before submit. That includes user-entered `0x` and `f4` recipients plus appended EVM fee rows. Native `f1/f2/f3` recipients do not invoke this check. ThinBatch does not duplicate this product policy on-chain; the local guard applies consistently to Standard and ThinBatch.
 
 ## INV-EXEC-001 — Review estimate and submission use the same execution config
 

@@ -2,16 +2,22 @@ import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { JSDOM } from 'jsdom';
 import { createRoot, type Root } from 'react-dom/client';
-import { CoinType, newSecp256k1Address } from '@glif/filecoin-address';
+import { CoinType, newActorAddress, newSecp256k1Address } from '@glif/filecoin-address';
 import { getAddress } from 'viem';
 import App from '../App';
+import { toF4 } from '../utils/toF4';
 import type { RecipientValidationResult } from '../utils/recipientValidation';
 
 const FEE_A = '0x1111111111111111111111111111111111111111';
 const FEE_B = '0x2222222222222222222222222222222222222222';
 const CONTRACT_RECIPIENT = '0x1234567890abcdef1234567890abcdef12345678';
+const F4_CONTRACT_RECIPIENT = toF4(CONTRACT_RECIPIENT, 'f');
 const NATIVE_F1 = newSecp256k1Address(
   Uint8Array.from({ length: 33 }, (_, index) => index + 1),
+  CoinType.MAIN,
+).toString();
+const NATIVE_F2 = newActorAddress(
+  Uint8Array.from([1, 2, 3, 4]),
   CoinType.MAIN,
 ).toString();
 
@@ -113,6 +119,9 @@ describe('INV-RPC-001 contract recipient guard', () => {
   let root: Root;
 
   beforeEach(() => {
+    vi.stubEnv('VITE_FEE_ENABLED_MAINNET', 'false');
+    vi.stubEnv('VITE_FEE_ADDR_A_MAINNET', FEE_A);
+    vi.stubEnv('VITE_FEE_ADDR_B_MAINNET', FEE_B);
     vi.stubEnv('VITE_FEE_ADDR_A', FEE_A);
     vi.stubEnv('VITE_FEE_ADDR_B', FEE_B);
     vi.stubEnv('VITE_FEE_PERCENT', '1');
@@ -176,7 +185,25 @@ describe('INV-RPC-001 contract recipient guard', () => {
     dom.window.close();
   });
 
-  it('does not require getCode for native f1 recipients', async () => {
+  it('does not require getCode for native Filecoin recipients', async () => {
+    mockValidationResult = {
+      validRecipients: [
+        {
+          address: NATIVE_F1,
+          amount: '1',
+          lineNumber: 1,
+        },
+        {
+          address: NATIVE_F2,
+          amount: '2',
+          lineNumber: 2,
+        },
+      ],
+      errors: [],
+      warnings: [],
+      nonEmptyRowCount: 2,
+    };
+
     await act(async () => {
       root.render(<App />);
     });
@@ -219,6 +246,116 @@ describe('INV-RPC-001 contract recipient guard', () => {
     ) as HTMLButtonElement;
 
     expect(getCodeMock).toHaveBeenCalled();
+    expect(sendButton.disabled).toBe(true);
+
+    click(sendButton);
+    await flushAsyncWork();
+
+    expect(sendTransactionAsyncMock).not.toHaveBeenCalled();
+  });
+
+  it('blocks send when an f4 twin resolves to deployed bytecode', async () => {
+    getCodeMock.mockResolvedValue('0x60016000');
+    mockValidationResult = {
+      validRecipients: [
+        {
+          address: F4_CONTRACT_RECIPIENT,
+          amount: '1',
+          lineNumber: 1,
+        },
+      ],
+      errors: [],
+      warnings: [],
+      nonEmptyRowCount: 1,
+    };
+
+    await act(async () => {
+      root.render(<App />);
+    });
+
+    click(getElementByTestId(container, 'review-batch-button'));
+    await flushAsyncWork();
+
+    const sendButton = getElementByTestId(
+      container,
+      'send-batch-button',
+    ) as HTMLButtonElement;
+
+    expect(getCodeMock).toHaveBeenCalledWith({
+      address: getAddress(CONTRACT_RECIPIENT),
+    });
+    expect(sendButton.disabled).toBe(true);
+
+    click(sendButton);
+    await flushAsyncWork();
+
+    expect(sendTransactionAsyncMock).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when EVM recipient code cannot be verified', async () => {
+    getCodeMock.mockRejectedValue(new Error('RPC unavailable'));
+    mockValidationResult = {
+      validRecipients: [
+        {
+          address: getAddress(CONTRACT_RECIPIENT),
+          amount: '1',
+          lineNumber: 1,
+        },
+      ],
+      errors: [],
+      warnings: [],
+      nonEmptyRowCount: 1,
+    };
+
+    await act(async () => {
+      root.render(<App />);
+    });
+
+    click(getElementByTestId(container, 'review-batch-button'));
+    await flushAsyncWork();
+
+    const sendButton = getElementByTestId(
+      container,
+      'send-batch-button',
+    ) as HTMLButtonElement;
+
+    expect(container.textContent).toContain(
+      'Could not verify EVM recipients for deployed contract code: RPC unavailable',
+    );
+    expect(sendButton.disabled).toBe(true);
+
+    click(sendButton);
+    await flushAsyncWork();
+
+    expect(sendTransactionAsyncMock).not.toHaveBeenCalled();
+  });
+
+  it('checks appended EVM fee rows before estimating or sending', async () => {
+    vi.stubEnv('VITE_FEE_ENABLED_MAINNET', 'true');
+    getCodeMock.mockImplementation(
+      async ({ address }: { address: `0x${string}` }) =>
+        address.toLowerCase() === FEE_A.toLowerCase()
+          ? '0x60016000'
+          : '0x',
+    );
+
+    await act(async () => {
+      root.render(<App />);
+    });
+
+    click(getElementByTestId(container, 'review-batch-button'));
+    await flushAsyncWork();
+
+    const sendButton = getElementByTestId(
+      container,
+      'send-batch-button',
+    ) as HTMLButtonElement;
+
+    expect(getCodeMock).toHaveBeenCalledWith({ address: getAddress(FEE_A) });
+    expect(container.textContent).toContain(
+      `EVM contract recipients are not supported: ${FEE_A}.`,
+    );
+    expect(estimateGasMock).not.toHaveBeenCalled();
     expect(sendButton.disabled).toBe(true);
 
     click(sendButton);

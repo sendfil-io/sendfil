@@ -491,7 +491,9 @@ export default function App() {
   const [isEstimatingGas, setIsEstimatingGas] = React.useState(false);
   const [gasEstimationError, setGasEstimationError] =
     React.useState<BatchExecutionError | undefined>(undefined);
+  const [isCheckingContractRecipients, setIsCheckingContractRecipients] = React.useState(false);
   const [contractRecipientErrors, setContractRecipientErrors] = React.useState<string[]>([]);
+  const contractRecipientCheckSequence = React.useRef(0);
   const [batchConfiguration, setBatchConfiguration] = React.useState<BatchConfiguration>(
     DEFAULT_BATCH_CONFIGURATION,
   );
@@ -776,25 +778,6 @@ export default function App() {
     [csvValidation.validRecipients, inputMode, manualValidation.validRecipients],
   );
 
-  React.useEffect(() => {
-    setContractRecipientErrors([]);
-  }, [connectedNetwork?.chainId, validRecipients]);
-
-  const checkEvmContractRecipients = React.useCallback(async (): Promise<string[]> => {
-    if (E2E_MOCK_WALLET_ENABLED) {
-      setContractRecipientErrors([]);
-      return [];
-    }
-
-    const errors = await validateNoEvmContractRecipients(
-      validRecipients,
-      contractRecipientClient,
-    );
-
-    setContractRecipientErrors(errors);
-    return errors;
-  }, [contractRecipientClient, validRecipients]);
-
   const feeComputation = React.useMemo(() => {
     if (validRecipients.length === 0) {
       return {
@@ -833,6 +816,43 @@ export default function App() {
       };
     }
   }, [connectedNetwork, validRecipients]);
+
+  React.useEffect(() => {
+    contractRecipientCheckSequence.current += 1;
+    setContractRecipientErrors([]);
+    setIsCheckingContractRecipients(false);
+  }, [connectedNetwork?.chainId, feeComputation.recipients]);
+
+  const checkEvmContractRecipients = React.useCallback(async (): Promise<string[]> => {
+    const checkId = contractRecipientCheckSequence.current + 1;
+    contractRecipientCheckSequence.current = checkId;
+
+    if (E2E_MOCK_WALLET_ENABLED) {
+      setContractRecipientErrors([]);
+      setIsCheckingContractRecipients(false);
+      return [];
+    }
+
+    setIsCheckingContractRecipients(true);
+
+    try {
+      const errors = await validateNoEvmContractRecipients(
+        feeComputation.recipients,
+        contractRecipientClient,
+      );
+
+      if (contractRecipientCheckSequence.current === checkId) {
+        setContractRecipientErrors(errors);
+      }
+
+      return errors;
+    } finally {
+      if (contractRecipientCheckSequence.current === checkId) {
+        setIsCheckingContractRecipients(false);
+      }
+    }
+  }, [contractRecipientClient, feeComputation.recipients]);
+
   const activeValidationErrors =
     inputMode === 'manual'
       ? [
@@ -1634,6 +1654,7 @@ f1cj...,3.3`;
         feeTotal={feeTotal}
         gasEstimate={gasEstimate}
         isEstimatingGas={isEstimatingGas}
+        isCheckingContractRecipients={isCheckingContractRecipients}
         gasEstimationError={gasEstimationError}
         walletBalance={walletBalance}
         insufficientBalance={insufficientBalance}
