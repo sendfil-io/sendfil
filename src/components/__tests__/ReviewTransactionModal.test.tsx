@@ -243,6 +243,21 @@ describe('ReviewTransactionModal', () => {
     expect(getButton(container, 'Send').disabled).toBe(true);
   });
 
+  it('blocks send while EVM contract-recipient checks are pending', () => {
+    const props = getBaseProps();
+    props.isCheckingContractRecipients = true;
+
+    act(() => {
+      root.render(<ReviewTransactionModal {...props} />);
+    });
+
+    expect(container.textContent).toContain('Checking EVM recipients');
+    expect(container.textContent).toContain(
+      'SendFIL is verifying that 0x and f4 recipients do not have deployed contract code.',
+    );
+    expect(getButton(container, 'Send').disabled).toBe(true);
+  });
+
   it('renders atomic-specific failure guidance', () => {
     const props = getBaseProps();
     props.batchConfiguration = {

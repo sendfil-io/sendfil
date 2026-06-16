@@ -41,6 +41,7 @@ export interface ReviewTransactionModalProps {
   // Gas estimation
   gasEstimate?: GasEstimate;
   isEstimatingGas: boolean;
+  isCheckingContractRecipients?: boolean;
   gasEstimationError?: BatchExecutionError;
 
   // Wallet state
@@ -88,6 +89,7 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
   feeTotal,
   gasEstimate,
   isEstimatingGas,
+  isCheckingContractRecipients = false,
   gasEstimationError,
   walletBalance,
   insufficientBalance,
@@ -130,6 +132,7 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
     (requiresDuplicateConfirmation && !hasAcknowledgedDuplicateRecipients) ||
     insufficientBalance ||
     hasBlockingAtomicPreflightError ||
+    isCheckingContractRecipients ||
     isEstimatingGas ||
     transactionState !== 'review';
 
@@ -240,6 +243,18 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
           <p className="text-sm text-red-700 mt-1">
             Your wallet balance ({formatFil(walletBalance)}) is less than the required amount (
             {formatFil(grandTotal)}).
+          </p>
+        </div>
+      )}
+
+      {isCheckingContractRecipients && (
+        <div
+          className="mb-4 rounded-md border border-blue-200 bg-blue-50 p-4"
+          data-testid="contract-recipient-checking"
+        >
+          <h4 className="font-semibold text-blue-900">Checking EVM recipients</h4>
+          <p className="mt-1 text-sm text-blue-800">
+            SendFIL is verifying that 0x and f4 recipients do not have deployed contract code.
           </p>
         </div>
       )}

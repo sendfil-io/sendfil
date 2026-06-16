@@ -27,6 +27,8 @@ export interface RecipientValidationResult {
 }
 
 export const DUPLICATE_RECIPIENT_WARNING_MARKER = 'Duplicate recipient matches';
+export const ACTOR_RECIPIENT_VALUE_TRANSFER_WARNING =
+  'Actor recipients receive a FIL value transfer only; SendFIL will not call actor methods.';
 
 interface AddressValidationResult {
   isValid: boolean;
@@ -62,6 +64,10 @@ function getRowLabel(
   lineNumber: number,
 ): string {
   return source === 'csv' ? `Line ${lineNumber}` : `Recipient ${lineNumber}`;
+}
+
+function isNativeActorAddress(address: string): boolean {
+  return /^[ft]2/.test(address);
 }
 
 function toAttoFil(amount: string): bigint {
@@ -217,6 +223,10 @@ export function validateRecipientRows(
       );
     } else {
       seenRecipients.set(addressValidation.duplicateKey!, rowLabel);
+    }
+
+    if (isNativeActorAddress(addressValidation.normalizedAddress)) {
+      warnings.push(`${rowLabel}: ${ACTOR_RECIPIENT_VALUE_TRANSFER_WARNING}`);
     }
 
     validRecipients.push({

@@ -1,17 +1,22 @@
 import { describe, expect, it, vi } from 'vitest';
+import { CoinType, newActorAddress } from '@glif/filecoin-address';
 import { getAddress } from 'viem';
 import { toF4 } from '../toF4';
 import { validateNoEvmContractRecipients } from '../contractRecipientGuard';
 
 const EVM_ADDRESS = '0x1234567890abcdef1234567890abcdef12345678';
 const NATIVE_ADDRESS = 'f1abjxfbp274xpdqcpuaykwkfb43omjotacm2p3za';
+const NATIVE_ACTOR_ADDRESS = newActorAddress(
+  Uint8Array.from([1, 2, 3, 4]),
+  CoinType.MAIN,
+).toString();
 
 describe('validateNoEvmContractRecipients', () => {
   it('skips native Filecoin recipients', async () => {
     const getCode = vi.fn();
 
     const errors = await validateNoEvmContractRecipients(
-      [{ address: NATIVE_ADDRESS }],
+      [{ address: NATIVE_ADDRESS }, { address: NATIVE_ACTOR_ADDRESS }],
       { getCode },
     );
 

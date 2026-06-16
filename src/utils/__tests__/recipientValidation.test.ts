@@ -8,6 +8,7 @@ import { getAddress } from 'viem';
 import { describe, expect, it } from 'vitest';
 import { toF4 } from '../toF4';
 import {
+  ACTOR_RECIPIENT_VALUE_TRANSFER_WARNING,
   DUPLICATE_RECIPIENT_WARNING_MARKER,
   validateRecipientRows,
 } from '../recipientValidation';
@@ -68,7 +69,9 @@ describe('INV-ADDR-001 recipient acceptance', () => {
     );
 
     expect(result.errors).toEqual([]);
-    expect(result.warnings).toEqual([]);
+    expect(result.warnings).toEqual([
+      `Recipient 2: ${ACTOR_RECIPIENT_VALUE_TRANSFER_WARNING}`,
+    ]);
     expect(result.validRecipients).toEqual([
       { address: MAINNET_F1, amount: '1.25', lineNumber: 1 },
       { address: MAINNET_F2, amount: '2', lineNumber: 2 },
@@ -94,12 +97,35 @@ describe('INV-ADDR-001 recipient acceptance', () => {
     );
 
     expect(result.errors).toEqual([]);
+    expect(result.warnings).toEqual([]);
     expect(result.validRecipients).toEqual([
       {
         address: MAINNET_F1,
         amount: '1.000000000000000001',
         lineNumber: 1,
       },
+    ]);
+  });
+
+  it('emits a non-blocking value-transfer notice for actor recipients', () => {
+    const mainnetResult = validateRecipientRows(
+      [{ address: MAINNET_F2, amount: '1' }],
+      { source: 'csv', expectedNetworkPrefix: 'f' },
+    );
+
+    expect(mainnetResult.errors).toEqual([]);
+    expect(mainnetResult.warnings).toEqual([
+      `Line 1: ${ACTOR_RECIPIENT_VALUE_TRANSFER_WARNING}`,
+    ]);
+
+    const calibrationResult = validateRecipientRows(
+      [{ address: CALIBRATION_T2, amount: '2' }],
+      { source: 'manual', expectedNetworkPrefix: 't' },
+    );
+
+    expect(calibrationResult.errors).toEqual([]);
+    expect(calibrationResult.warnings).toEqual([
+      `Recipient 1: ${ACTOR_RECIPIENT_VALUE_TRANSFER_WARNING}`,
     ]);
   });
 });
@@ -190,6 +216,7 @@ describe('INV-AMT-001 amount sign and presence rules', () => {
     );
 
     expect(result.errors).toEqual([]);
+    expect(result.warnings).toEqual([]);
     expect(result.validRecipients).toEqual([
       {
         address: MAINNET_F1,
@@ -356,6 +383,9 @@ describe('network-aware validation regression coverage', () => {
     );
 
     expect(result.errors).toEqual([]);
+    expect(result.warnings).toEqual([
+      `Recipient 2: ${ACTOR_RECIPIENT_VALUE_TRANSFER_WARNING}`,
+    ]);
     expect(result.validRecipients).toEqual([
       { address: CALIBRATION_T1, amount: '1', lineNumber: 1 },
       { address: CALIBRATION_T2, amount: '2', lineNumber: 2 },
