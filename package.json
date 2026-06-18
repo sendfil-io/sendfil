@@ -43,7 +43,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.33.0",
-    "@playwright/test": "^1.60.0",
+    "@playwright/test": "^1.61.0",
     "@tailwindcss/postcss": "^4.3.0",
     "@types/node": "^25.9.3",
     "@types/react": "^19.2.15",
@@ -64,9 +64,9 @@
     "msw": "^2.14.6",
     "postcss": "^8.5.15",
     "prettier": "^3.8.4",
-    "tailwindcss": "^4.3.0",
+    "tailwindcss": "^4.3.1",
     "typescript": "^6.0.3",
     "vite": "^8.0.16",
-    "vitest": "^4.1.8"
+    "vitest": "^4.1.9"
   }
 }
