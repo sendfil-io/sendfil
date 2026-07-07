@@ -29,6 +29,7 @@ Use this catalog before changing validation, network gating, review/send flow, R
 | `INV-BAL-001` | Submit-time balance recheck blocks EVM sends when current balance is insufficient | `implemented` | submit guard, wallet RPC | `src/lib/transaction/__tests__/submitBalanceCheck.test.ts`, `src/lib/transaction/__tests__/useExecuteBatch.submitBalance.test.tsx` |
 | `INV-RPC-001` | Contract recipients detected via `eth_getCode` are blocked | `implemented` | RPC contract-recipient check, review UI gating | `src/__tests__/contractRecipientGuard.test.tsx`, `src/utils/__tests__/contractRecipientGuard.test.ts` |
 | `INV-EXEC-001` | Review estimate and submission use the same execution config | `implemented` | estimate/execute flow, transaction builder | `src/lib/transaction/__tests__/batchExecution.test.ts`, `src/lib/transaction/__tests__/thinBatch.test.ts`, `src/lib/transaction/__tests__/nativeBatchPreflight.test.ts`, `src/__tests__/app.invariants.test.tsx` |
+| `INV-MSIG-001` | Native multisig proposals wrap the prepared FEVM batch without changing it | `implemented` | native multisig proposal preparation, submit guard | `src/lib/multisig/__tests__/actorParams.test.ts`, `src/lib/multisig/__tests__/rpc.test.ts`, `src/lib/multisig/__tests__/useExecuteMultisigProposal.test.tsx` |
 
 ## INV-ADDR-001 — Accept valid `f1/f2/f3/f4/0x` recipients
 
@@ -372,3 +373,37 @@ estimate/execute flow, transaction builder
 `implemented`
 
 Current repo note: the live App path estimates and submits through the EVM/wagmi `useExecuteBatch` flow for EVM senders and through `useExecuteNativeBatch` for native Filecoin senders. Standard remains the default execution method, but Standard is Atomic-only because Multicall3 `aggregate3Value(...)` does not refund value for failed allowed subcalls. ThinBatch is selectable only when the active network exposes `thinBatchAddress`; the shared network config records deployed Mainnet and Calibration ThinBatch defaults. `PARTIAL` is available only on ThinBatch where failed payment value is refunded. Both EVM and native sender paths pass the selected execution method and error mode into the same preparation layer. The native path prepares one Filecoin `InvokeEVM` message from the selected FEVM batch payload, fetches nonce and Lotus gas, signs through the connected native wallet provider, submits with `Filecoin.MpoolPush`, and polls status by CID.
+
+## INV-MSIG-001 — Native multisig proposals wrap the prepared FEVM batch without changing it
+
+### Rule
+When an `f2/t2` multisig is selected as the funding source, SendFIL must first prepare the same FEVM batch payload used by the native single-signer path, then wrap that payload in a Filecoin multisig `Propose` message. The connected native signer pays proposal gas; the multisig pays the batch value.
+
+### Why this matters
+Multisig proposal encoding has two balances and two execution layers. If the inner payload, params encoding, target, value, or balance checks drift, a signer could approve something different from the reviewed batch or attempt to spend from the wrong account.
+
+### Execution boundary
+native multisig proposal preparation, submit guard
+
+### Acceptance criteria
+- The inner batch is prepared through `prepareBatchExecution(...)` with the selected recipients, execution method, error mode, and active network.
+- The outer Filecoin message is addressed to the selected `f2/t2` multisig with Method `Propose` and Value `0`.
+- The proposal target is the prepared FEVM target in `f4/t4` form, proposal Value equals the prepared batch value, proposal Method is `InvokeEVM`, and proposal Params are the decoded `InvokeEVM` params bytes.
+- Submit-time checks require multisig available balance to cover the prepared batch total and the connected signer balance to cover estimated proposal gas.
+- Pending approve/cancel actions are enabled only for SendFIL-compatible proposals targeting the configured Multicall3 or ThinBatch contract on the active network.
+
+### Tests
+- `src/lib/multisig/__tests__/actorParams.test.ts`
+  - `it('encodes Propose params with decoded InvokeEVM params bytes')`
+  - `it('encodes ProposalHashData and TxnIDParams for approve/cancel')`
+- `src/lib/multisig/__tests__/rpc.test.ts`
+  - `it('loads pending proposal compatibility and signer action gates')`
+- `src/lib/multisig/__tests__/useExecuteMultisigProposal.test.tsx`
+  - `it('signs a multisig Propose message after rechecking multisig and signer balances')`
+  - `it('blocks signing when multisig spendable balance is insufficient')`
+  - `it('blocks signing when signer gas balance is insufficient')`
+
+### Status
+`implemented`
+
+Current repo note: `src/lib/multisig/proposalBuilder.ts` builds the inner prepared batch and wraps it in actor-compatible multisig params. `src/lib/multisig/useExecuteMultisigProposal.ts` estimates the outer proposal gas, rechecks both funding balances before signing, submits through the connected native Filecoin provider, and polls the proposal message CID. The UI reports proposal submission; higher-threshold multisigs still require later approvals, and real FilSnap/Ledger Mainnet plus Calibration smoke coverage remains a production-readiness requirement.

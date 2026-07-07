@@ -7,6 +7,7 @@ import ReviewTransactionModal, {
   TransactionState,
   GasEstimate,
 } from './components/ReviewTransactionModal';
+import { MultisigFundingPanel } from './components/multisig/MultisigFundingPanel';
 import UnavailableCapabilityModal from './components/UnavailableCapabilityModal';
 import { useBalance, usePublicClient } from 'wagmi';
 import { formatUnits } from 'viem';
@@ -33,6 +34,10 @@ import { BatchExecutionError } from './lib/transaction/errorHandling';
 import { createMockBatchExecutionAdapter } from './lib/transaction/mockAdapter';
 import { useExecuteBatch } from './lib/transaction/useExecuteBatch';
 import { useExecuteNativeBatch } from './lib/transaction/useExecuteNativeBatch';
+import {
+  useExecuteMultisigProposal,
+  useMultisigs,
+} from './lib/multisig';
 import {
   getNetworkConfig,
   getSupportedNetworkByChainId,
@@ -514,12 +519,29 @@ export default function App() {
   });
   const activeNativeSender =
     connectedSender?.kind === 'native-filecoin' ? connectedSender : undefined;
+  const multisigs = useMultisigs({
+    sender: activeNativeSender,
+    provider: nativeFilecoinProvider,
+    network: activeNativeSender?.network,
+  });
+  const selectedMultisig =
+    batchConfiguration.senderWalletType === 'MULTI_SIG'
+      ? multisigs.selectedMultisig
+      : undefined;
   const nativeBatchExecution = useExecuteNativeBatch({
     sender: activeNativeSender,
     provider: nativeFilecoinProvider,
   });
+  const multisigBatchExecution = useExecuteMultisigProposal({
+    sender: activeNativeSender,
+    provider: nativeFilecoinProvider,
+    multisig: selectedMultisig,
+    network: activeNativeSender?.network,
+  });
   const activeBatchExecution = activeNativeSender
-    ? nativeBatchExecution
+    ? selectedMultisig
+      ? multisigBatchExecution
+      : nativeBatchExecution
     : evmBatchExecution;
   const {
     estimateBatch,
@@ -529,6 +551,15 @@ export default function App() {
     error: transactionError,
     reset: resetExecution,
   } = activeBatchExecution;
+
+  React.useEffect(() => {
+    if (!activeNativeSender && batchConfiguration.senderWalletType === 'MULTI_SIG') {
+      setBatchConfiguration((current) => ({
+        ...current,
+        senderWalletType: 'SINGLE_SIG',
+      }));
+    }
+  }, [activeNativeSender, batchConfiguration.senderWalletType]);
 
   const handleCSVUpload = (result: CSVUploadResult) => {
     setCsvData(result.recipients);
@@ -596,11 +627,13 @@ export default function App() {
 
   const handleSenderWalletTypeSelect = (value: SenderWalletType) => {
     if (value === 'MULTI_SIG') {
-      openUnavailableCapabilityNotice(
-        'Multi-sig is not available in v1 yet',
-        'The selector is now in place, but the v1 live flow still supports only the single-signer path. Single-signer remains selected for this batch.',
-      );
-      return;
+      if (!activeNativeSender) {
+        openUnavailableCapabilityNotice(
+          'Native signer required',
+          'Filecoin native multisigs use f1/t1 signers. Connect FilSnap or Ledger Filecoin before selecting multisig funding.',
+        );
+        return;
+      }
     }
 
     setBatchConfiguration((current) => ({ ...current, senderWalletType: value }));
@@ -743,6 +776,20 @@ export default function App() {
             `ThinBatch is not configured for ${connectedNetwork.chainName}. Switch back to Standard or configure the network ThinBatch address.`,
           ]
         : [];
+  const multisigFundingErrors =
+    batchConfiguration.senderWalletType === 'MULTI_SIG'
+      ? !activeNativeSender
+        ? ['Connect a native Filecoin f1/t1 signer before using multisig funding.']
+        : multisigs.selectedError
+          ? [multisigs.selectedError]
+          : !multisigs.selectedAddress
+            ? ['Add or select an f2/t2 multisig before proposing this batch.']
+            : !selectedMultisig
+              ? ['Selected multisig state is still loading.']
+              : !selectedMultisig.connectedSignerCanApprove
+                ? ['The connected native signer is not a signer on the selected multisig.']
+                : []
+      : [];
 
   const manualDisplayErrors = React.useMemo(
     () =>
@@ -860,6 +907,7 @@ export default function App() {
           ...(feeComputation.error ? [feeComputation.error] : []),
           ...networkValidationErrors,
           ...executionConfigurationErrors,
+          ...multisigFundingErrors,
           ...contractRecipientErrors,
         ]
       : [
@@ -868,6 +916,7 @@ export default function App() {
           ...(feeComputation.error ? [feeComputation.error] : []),
           ...networkValidationErrors,
           ...executionConfigurationErrors,
+          ...multisigFundingErrors,
           ...contractRecipientErrors,
         ];
   const activeBlockingValidationErrors =
@@ -877,6 +926,7 @@ export default function App() {
           ...(feeComputation.error ? [feeComputation.error] : []),
           ...networkValidationErrors,
           ...executionConfigurationErrors,
+          ...multisigFundingErrors,
           ...contractRecipientErrors,
         ]
       : activeValidationErrors;
@@ -892,13 +942,24 @@ export default function App() {
   const recipientTotal = validRecipients.reduce((sum, recipient) => sum + recipient.amount, 0);
   const feeTotal = feeComputation.feeTotal;
 
-  const walletBalance = E2E_MOCK_WALLET_ENABLED
+  const singleSignerWalletBalance = E2E_MOCK_WALLET_ENABLED
     ? E2E_MOCK_BALANCE_FIL
     : balanceData
       ? Number(formatUnits(balanceData.value, balanceData.decimals))
       : nativeBalanceAttoFil !== undefined
         ? attoFilBigIntToFil(nativeBalanceAttoFil)
       : 0;
+  const multisigFundingSelected =
+    batchConfiguration.senderWalletType === 'MULTI_SIG' && Boolean(selectedMultisig);
+  const multisigSpendableBalance =
+    selectedMultisig !== undefined
+      ? attoFilBigIntToFil(selectedMultisig.availableBalanceAttoFil)
+      : 0;
+  const signerGasBalance =
+    nativeBalanceAttoFil !== undefined ? attoFilBigIntToFil(nativeBalanceAttoFil) : 0;
+  const walletBalance = multisigFundingSelected
+    ? multisigSpendableBalance
+    : singleSignerWalletBalance;
   const nativeBalanceLabel =
     nativeBalanceAttoFil !== undefined
       ? formatWalletBalanceLabel(attoFilBigIntToFil(nativeBalanceAttoFil))
@@ -908,7 +969,10 @@ export default function App() {
           ? 'Balance loading'
           : undefined;
   const estimatedNetworkFee = gasEstimate?.estimatedFeeInFil || 0;
-  const insufficientBalance = walletBalance < recipientTotal + feeTotal + estimatedNetworkFee;
+  const insufficientBalance = multisigFundingSelected
+    ? multisigSpendableBalance < recipientTotal + feeTotal ||
+      signerGasBalance < estimatedNetworkFee
+    : walletBalance < recipientTotal + feeTotal + estimatedNetworkFee;
 
   const manualRowErrors = React.useMemo(
     () => collectManualRowIssues(manualDisplayErrors),
@@ -1203,6 +1267,37 @@ f1cj...,3.3`;
                   testId: 'sender-wallet-multi-sig',
                 },
               ]}
+            />
+
+            <MultisigFundingPanel
+              enabled={Boolean(activeNativeSender && connectedNetwork)}
+              network={activeNativeSender?.network}
+              connectedSigner={activeNativeSender}
+              savedMultisigs={multisigs.savedMultisigs}
+              selectedAddress={multisigs.selectedAddress}
+              selectedMultisig={multisigs.selectedMultisig}
+              pendingProposals={multisigs.pendingProposals}
+              isLoadingSelected={multisigs.isLoadingSelected}
+              selectedError={multisigs.selectedError}
+              onSelect={(multisigAddress) => {
+                multisigs.selectMultisig(multisigAddress);
+                if (multisigAddress) {
+                  setBatchConfiguration((current) => ({
+                    ...current,
+                    senderWalletType: 'MULTI_SIG',
+                  }));
+                } else {
+                  setBatchConfiguration((current) => ({
+                    ...current,
+                    senderWalletType: 'SINGLE_SIG',
+                  }));
+                }
+              }}
+              onAdd={multisigs.addMultisig}
+              onRemove={multisigs.removeMultisig}
+              onCreate={multisigs.createMultisig}
+              onApprove={multisigs.approveProposal}
+              onCancel={multisigs.cancelProposal}
             />
           </div>
 
@@ -1658,6 +1753,13 @@ f1cj...,3.3`;
         gasEstimationError={gasEstimationError}
         walletBalance={walletBalance}
         insufficientBalance={insufficientBalance}
+        fundingMode={multisigFundingSelected ? 'native-multisig' : 'single-signer'}
+        fundingSourceLabel={
+          multisigFundingSelected && selectedMultisig
+            ? `Multisig ${selectedMultisig.address}`
+            : 'Wallet'
+        }
+        signerGasBalance={multisigFundingSelected ? signerGasBalance : undefined}
         transactionState={transactionState}
         transactionHash={transactionHash}
         transactionError={transactionError}

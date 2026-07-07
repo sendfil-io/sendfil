@@ -47,6 +47,9 @@ export interface ReviewTransactionModalProps {
   // Wallet state
   walletBalance: number; // in FIL
   insufficientBalance: boolean;
+  fundingMode?: 'single-signer' | 'native-multisig';
+  fundingSourceLabel?: string;
+  signerGasBalance?: number;
 
   // Transaction state
   transactionState: TransactionState;
@@ -93,6 +96,9 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
   gasEstimationError,
   walletBalance,
   insufficientBalance,
+  fundingMode = 'single-signer',
+  fundingSourceLabel = 'wallet',
+  signerGasBalance,
   transactionState,
   transactionHash,
   transactionError,
@@ -114,6 +120,10 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
 
   // Calculate totals
   const estimatedNetworkFee = gasEstimate?.estimatedFeeInFil || 0;
+  const fundingRequiredTotal =
+    fundingMode === 'native-multisig'
+      ? recipientTotal + feeTotal
+      : recipientTotal + feeTotal + estimatedNetworkFee;
   const grandTotal = recipientTotal + feeTotal + estimatedNetworkFee;
   const duplicateRecipientWarnings = getDuplicateRecipientWarnings(validationWarnings);
   const otherValidationWarnings = validationWarnings.filter(
@@ -241,8 +251,19 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
             Insufficient Balance
           </h4>
           <p className="text-sm text-red-700 mt-1">
-            Your wallet balance ({formatFil(walletBalance)}) is less than the required amount (
-            {formatFil(grandTotal)}).
+            {fundingMode === 'native-multisig'
+              ? `${fundingSourceLabel} spendable balance (${formatFil(
+                  walletBalance,
+                )}) must cover ${formatFil(
+                  fundingRequiredTotal,
+                )}, and the connected signer must cover the estimated gas${
+                  signerGasBalance !== undefined
+                    ? ` (${formatFil(signerGasBalance)} available)`
+                    : ''
+                }.`
+              : `Your wallet balance (${formatFil(
+                  walletBalance,
+                )}) is less than the required amount (${formatFil(grandTotal)}).`}
           </p>
         </div>
       )}
@@ -382,9 +403,17 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
 
         <div className="border-t border-gray-200 pt-3">
           <div className="flex justify-between items-center">
-            <span className="font-semibold">Grand Total:</span>
-            <span className="font-bold text-xl">{formatFil(grandTotal)}</span>
+            <span className="font-semibold">
+              {fundingMode === 'native-multisig' ? 'Multisig required:' : 'Grand Total:'}
+            </span>
+            <span className="font-bold text-xl">{formatFil(fundingRequiredTotal)}</span>
           </div>
+          {fundingMode === 'native-multisig' && (
+            <div className="mt-2 flex justify-between text-sm text-gray-600">
+              <span>Signer gas required:</span>
+              <span>{formatFil(estimatedNetworkFee)}</span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -463,15 +492,23 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
         </div>
       </div>
       <h3 className="text-lg font-semibold mb-2">Awaiting Signature</h3>
-      <p className="text-gray-600 text-center">Please confirm the transaction in your wallet...</p>
+      <p className="text-gray-600 text-center">
+        Please confirm the {fundingMode === 'native-multisig' ? 'proposal' : 'transaction'} in your wallet...
+      </p>
     </div>
   );
 
   const renderPendingState = () => (
     <div className="flex flex-col items-center py-8">
       <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-500 mb-4" />
-      <h3 className="text-lg font-semibold mb-2">Transaction Pending</h3>
-      <p className="text-gray-600 text-center mb-4">Your batch is being processed...</p>
+      <h3 className="text-lg font-semibold mb-2">
+        {fundingMode === 'native-multisig' ? 'Proposal Pending' : 'Transaction Pending'}
+      </h3>
+      <p className="text-gray-600 text-center mb-4">
+        {fundingMode === 'native-multisig'
+          ? 'Your multisig proposal is being processed...'
+          : 'Your batch is being processed...'}
+      </p>
       {transactionHash && (
         <a
           href={getFilfoxUrl(transactionHash)}
@@ -490,9 +527,13 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
       <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mb-4">
         <span className="text-3xl">✅</span>
       </div>
-      <h3 className="text-lg font-semibold text-green-800 mb-2">Transaction Confirmed</h3>
+      <h3 className="text-lg font-semibold text-green-800 mb-2">
+        {fundingMode === 'native-multisig' ? 'Proposal Confirmed' : 'Transaction Confirmed'}
+      </h3>
       <p className="text-gray-600 text-center mb-4">
-        {isAtomicMode
+        {fundingMode === 'native-multisig'
+          ? 'The multisig proposal was submitted. It may execute immediately if the threshold is already met.'
+          : isAtomicMode
           ? `Successfully finalized ${formatFil(
               recipientTotal,
             )} to ${recipients.length} recipients in one atomic batch.`
@@ -567,7 +608,7 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
                   : 'bg-blue-500 hover:bg-blue-600 text-white'
               }`}
             >
-              Send
+              {fundingMode === 'native-multisig' ? 'Propose batch' : 'Send'}
             </button>
           </>
         );
