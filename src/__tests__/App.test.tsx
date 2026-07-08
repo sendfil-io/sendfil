@@ -269,6 +269,24 @@ describe('App confirm flow', () => {
     );
   });
 
+  it('shows the multisig panel only after selecting the multisig sender type', async () => {
+    await act(async () => {
+      root.render(<App />);
+    });
+
+    expect(container.textContent).not.toContain('Native multisig');
+
+    click(getElementByTestId(container, 'sender-wallet-multi-sig'));
+
+    expect(getElementByTestId(container, 'sender-wallet-multi-sig').getAttribute('aria-pressed')).toBe(
+      'true',
+    );
+    expect(container.textContent).toContain('Native multisig');
+    expect(container.textContent).toContain(
+      'Connect FilSnap or Ledger Filecoin to add or create a multisig.',
+    );
+  });
+
   it('calls executeBatch with fee rows in default Standard Atomic mode', async () => {
     executeBatchMock.mockImplementation(async () => {
       setMockExecutionSnapshot({

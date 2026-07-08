@@ -88,14 +88,24 @@ export function MultisigFundingPanel({
   const [actionStatus, setActionStatus] = React.useState<string | undefined>();
   const [isCreating, setIsCreating] = React.useState(false);
   const [isAdding, setIsAdding] = React.useState(false);
+  const [mode, setMode] = React.useState<'add' | 'create'>('add');
   const connectedSignerAddress = connectedSigner?.address;
   const [createValues, setCreateValues] = React.useState<CreateMultisigFormValues>(() =>
     createDefaultCreateValues(connectedSignerAddress),
+  );
+  const canManageMultisigs = enabled && Boolean(network && connectedSigner);
+  const selectedSavedMultisig = savedMultisigs.find(
+    (multisig) => multisig.address === selectedAddress,
   );
 
   React.useEffect(() => {
     setCreateValues(createDefaultCreateValues(connectedSignerAddress));
   }, [connectedSignerAddress]);
+
+  React.useEffect(() => {
+    setFormError(undefined);
+    setActionStatus(undefined);
+  }, [canManageMultisigs, mode]);
 
   const addSigner = () => {
     setCreateValues((current) => ({
@@ -177,324 +187,342 @@ export function MultisigFundingPanel({
   const expectedSignerPrefix = network?.nativePrefix === 't' ? 't1...' : 'f1...';
 
   return (
-    <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-4">
-      <div className="flex items-start justify-between gap-3">
+    <div
+      className="mt-4 border-t border-slate-100 pt-4"
+      data-testid="multisig-funding-panel"
+    >
+      <div className="flex items-center justify-between gap-3">
         <div>
           <h3 className="text-sm font-semibold text-slate-950">Native multisig</h3>
-          <p className="mt-1 text-xs leading-5 text-slate-500">
-            {enabled
-              ? 'Use an f2/t2 multisig as the funding source.'
-              : 'Connect a native Filecoin signer to use multisig funding.'}
-          </p>
         </div>
         <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
           {network?.walletLabel ?? 'No network'}
         </span>
       </div>
 
-      {formError && (
-        <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
-          {formError}
-        </div>
-      )}
+      {!canManageMultisigs ? (
+        <p className="mt-2 text-xs leading-5 text-slate-500">
+          Connect FilSnap or Ledger Filecoin to add or create a multisig.
+        </p>
+      ) : (
+        <div className="mt-3 space-y-4">
+          {formError && (
+            <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+              {formError}
+            </div>
+          )}
 
-      {actionStatus && (
-        <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-          {actionStatus}
-        </div>
-      )}
+          {actionStatus && (
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+              {actionStatus}
+            </div>
+          )}
 
-      <div className="mt-4 space-y-2">
-        <button
-          type="button"
-          onClick={() => onSelect(undefined)}
-          className={`w-full rounded-xl border px-3 py-2 text-left text-sm transition-colors ${
-            selectedAddress
-              ? 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-white'
-              : 'border-[#1f69ff] bg-[#eef4ff] font-semibold text-[#124ac4]'
-          }`}
-        >
-          Connected signer funds batch
-        </button>
-
-        {savedMultisigs.map((multisig) => (
-          <div
-            key={multisig.address}
-            className={`rounded-xl border px-3 py-2 ${
-              selectedAddress === multisig.address
-                ? 'border-[#1f69ff] bg-[#eef4ff]'
-                : 'border-slate-200 bg-slate-50'
-            }`}
-          >
-            <button
-              type="button"
-              onClick={() => onSelect(multisig.address)}
-              className="block w-full text-left"
-            >
-              <span className="block text-sm font-semibold text-slate-900">
-                {multisig.label || truncateAddress(multisig.address)}
-              </span>
-              <span className="mt-1 block font-mono text-xs text-slate-500">
-                {multisig.address}
-              </span>
-            </button>
-            <button
-              type="button"
-              onClick={() => onRemove(multisig.address)}
-              className="mt-2 text-xs font-semibold text-slate-500 hover:text-red-700"
-            >
-              Remove
-            </button>
-          </div>
-        ))}
-      </div>
-
-      {selectedAddress && (
-        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
-          {isLoadingSelected ? (
-            <p className="text-sm text-slate-500">Loading multisig state...</p>
-          ) : selectedError ? (
-            <p className="text-sm text-red-700">{selectedError}</p>
-          ) : selectedMultisig ? (
-            <div className="space-y-2 text-sm">
-              <div className="flex justify-between gap-3">
-                <span className="text-slate-500">Balance</span>
-                <span className="font-semibold text-slate-900">
-                  {formatFilFromAtto(selectedMultisig.balanceAttoFil)}
-                </span>
+          {savedMultisigs.length > 0 && (
+            <div>
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                  Saved
+                </p>
+                {selectedAddress && (
+                  <button
+                    type="button"
+                    onClick={() => onSelect(undefined)}
+                    className="text-xs font-semibold text-slate-500 hover:text-slate-900"
+                  >
+                    Clear
+                  </button>
+                )}
               </div>
-              <div className="flex justify-between gap-3">
-                <span className="text-slate-500">Spendable</span>
-                <span className="font-semibold text-slate-900">
-                  {formatFilFromAtto(selectedMultisig.availableBalanceAttoFil)}
-                </span>
-              </div>
-              <div className="flex justify-between gap-3">
-                <span className="text-slate-500">Threshold</span>
-                <span className="font-semibold text-slate-900">
-                  {selectedMultisig.threshold} / {selectedMultisig.signers.length}
-                </span>
-              </div>
-              <div className="flex justify-between gap-3">
-                <span className="text-slate-500">Signer</span>
-                <span
-                  className={
-                    selectedMultisig.connectedSignerCanApprove
-                      ? 'font-semibold text-emerald-700'
-                      : 'font-semibold text-red-700'
-                  }
-                >
-                  {selectedMultisig.connectedSignerCanApprove ? 'Member' : 'Not a member'}
-                </span>
+
+              <div className="mt-2 divide-y divide-slate-100 border-y border-slate-100">
+                {savedMultisigs.map((multisig) => {
+                  const isSelected = selectedAddress === multisig.address;
+
+                  return (
+                    <div
+                      key={multisig.address}
+                      className="flex items-center gap-2 py-2"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => onSelect(multisig.address)}
+                        className="min-w-0 flex-1 text-left"
+                      >
+                        <span
+                          className={`block truncate text-sm font-semibold ${
+                            isSelected ? 'text-[#124ac4]' : 'text-slate-900'
+                          }`}
+                        >
+                          {multisig.label || truncateAddress(multisig.address)}
+                        </span>
+                        <span className="block truncate font-mono text-xs text-slate-500">
+                          {multisig.address}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onRemove(multisig.address)}
+                        className="shrink-0 text-xs font-semibold text-slate-400 hover:text-red-700"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             </div>
-          ) : null}
-        </div>
-      )}
+          )}
 
-      {selectedMultisig && pendingProposals.length > 0 && (
-        <div className="mt-4 space-y-2">
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-            Pending proposals
-          </p>
-          {pendingProposals.map((proposal) => (
-            <div
-              key={`${selectedMultisig.address}-${proposal.id}`}
-              className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm"
-            >
-              <div className="flex justify-between gap-3">
-                <span className="font-semibold text-slate-900">#{proposal.id}</span>
-                <span className="text-slate-500">
-                  {proposal.approvals.length} / {selectedMultisig.threshold}
-                </span>
+          {selectedAddress && (
+            <div className="border-y border-slate-100 py-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-slate-950">
+                    {selectedSavedMultisig?.label || truncateAddress(selectedAddress)}
+                  </p>
+                  <p className="mt-1 truncate font-mono text-xs text-slate-500">
+                    {selectedAddress}
+                  </p>
+                </div>
               </div>
-              <p className="mt-1 font-mono text-xs text-slate-500">
-                {truncateAddress(proposal.to)}
+
+              {isLoadingSelected ? (
+                <p className="mt-3 text-sm text-slate-500">Loading multisig state...</p>
+              ) : selectedError ? (
+                <p className="mt-3 text-sm text-red-700">{selectedError}</p>
+              ) : selectedMultisig ? (
+                <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+                  <div>
+                    <dt className="text-slate-500">Spendable</dt>
+                    <dd className="mt-0.5 font-semibold text-slate-900">
+                      {formatFilFromAtto(selectedMultisig.availableBalanceAttoFil)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-slate-500">Threshold</dt>
+                    <dd className="mt-0.5 font-semibold text-slate-900">
+                      {selectedMultisig.threshold} / {selectedMultisig.signers.length}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-slate-500">Balance</dt>
+                    <dd className="mt-0.5 font-semibold text-slate-900">
+                      {formatFilFromAtto(selectedMultisig.balanceAttoFil)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-slate-500">Signer</dt>
+                    <dd
+                      className={`mt-0.5 font-semibold ${
+                        selectedMultisig.connectedSignerCanApprove
+                          ? 'text-emerald-700'
+                          : 'text-red-700'
+                      }`}
+                    >
+                      {selectedMultisig.connectedSignerCanApprove ? 'Member' : 'Not member'}
+                    </dd>
+                  </div>
+                </dl>
+              ) : null}
+            </div>
+          )}
+
+          {selectedMultisig && pendingProposals.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                Pending
               </p>
-              <p className="mt-1 text-xs text-slate-500">
-                {formatFilFromAtto(proposal.valueAttoFil)}
-              </p>
-              {!proposal.isSendFilCompatible && (
-                <p className="mt-2 text-xs text-amber-700">
-                  {proposal.compatibilityReason}
-                </p>
-              )}
-              <div className="mt-3 flex gap-2">
+              <div className="mt-2 divide-y divide-slate-100 border-y border-slate-100">
+                {pendingProposals.map((proposal) => (
+                  <div
+                    key={`${selectedMultisig.address}-${proposal.id}`}
+                    className="py-3 text-sm"
+                  >
+                    <div className="flex justify-between gap-3">
+                      <span className="font-semibold text-slate-900">
+                        Proposal #{proposal.id}
+                      </span>
+                      <span className="text-slate-500">
+                        {proposal.approvals.length} / {selectedMultisig.threshold}
+                      </span>
+                    </div>
+                    <p className="mt-1 font-mono text-xs text-slate-500">
+                      {truncateAddress(proposal.to)}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      {formatFilFromAtto(proposal.valueAttoFil)}
+                    </p>
+                    {!proposal.isSendFilCompatible && (
+                      <p className="mt-2 text-xs text-amber-700">
+                        {proposal.compatibilityReason}
+                      </p>
+                    )}
+                    <div className="mt-3 flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleProposalAction(proposal, 'approve')}
+                        disabled={!proposal.canApprove}
+                        className={`flex-1 rounded-lg px-3 py-2 text-xs font-semibold ${
+                          proposal.canApprove
+                            ? 'bg-[#1f69ff] text-white hover:bg-[#1857d4]'
+                            : 'cursor-not-allowed bg-slate-200 text-slate-500'
+                        }`}
+                      >
+                        Approve
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleProposalAction(proposal, 'cancel')}
+                        disabled={!proposal.canCancel}
+                        className={`flex-1 rounded-lg px-3 py-2 text-xs font-semibold ${
+                          proposal.canCancel
+                            ? 'border border-red-200 bg-red-50 text-red-700 hover:bg-red-100'
+                            : 'cursor-not-allowed border border-slate-200 bg-slate-50 text-slate-400'
+                        }`}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div>
+            <div className="grid grid-cols-2 rounded-full border border-slate-200 bg-slate-50 p-1">
+              <button
+                type="button"
+                onClick={() => setMode('add')}
+                data-testid="multisig-mode-add"
+                className={`rounded-full px-3 py-1.5 text-sm font-semibold transition-colors ${
+                  mode === 'add'
+                    ? 'bg-white text-[#124ac4] shadow-sm'
+                    : 'text-slate-500 hover:text-slate-900'
+                }`}
+              >
+                Add
+              </button>
+              <button
+                type="button"
+                onClick={() => setMode('create')}
+                data-testid="multisig-mode-create"
+                className={`rounded-full px-3 py-1.5 text-sm font-semibold transition-colors ${
+                  mode === 'create'
+                    ? 'bg-white text-[#124ac4] shadow-sm'
+                    : 'text-slate-500 hover:text-slate-900'
+                }`}
+              >
+                Create
+              </button>
+            </div>
+
+            {mode === 'add' ? (
+              <div className="mt-3 space-y-2">
+                <input
+                  value={importAddress}
+                  onChange={(event) => setImportAddress(event.target.value)}
+                  placeholder={expectedPrefix}
+                  aria-label="Multisig address"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-sm text-slate-900 placeholder:text-slate-300 focus:border-[#1f69ff] focus:outline-none focus:ring-2 focus:ring-[#1f69ff]/20"
+                />
+                <input
+                  value={importLabel}
+                  onChange={(event) => setImportLabel(event.target.value)}
+                  placeholder="Label"
+                  aria-label="Multisig label"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-300 focus:border-[#1f69ff] focus:outline-none focus:ring-2 focus:ring-[#1f69ff]/20"
+                />
                 <button
                   type="button"
-                  onClick={() => handleProposalAction(proposal, 'approve')}
-                  disabled={!proposal.canApprove}
-                  className={`flex-1 rounded-lg px-3 py-2 text-xs font-semibold ${
-                    proposal.canApprove
+                  onClick={handleAdd}
+                  disabled={isAdding}
+                  className={`w-full rounded-xl px-3 py-2 text-sm font-semibold ${
+                    !isAdding
+                      ? 'border border-[#1f69ff]/35 bg-white text-[#124ac4] hover:border-[#1f69ff]'
+                      : 'cursor-not-allowed bg-slate-200 text-slate-500'
+                  }`}
+                >
+                  {isAdding ? 'Adding...' : 'Add multisig'}
+                </button>
+              </div>
+            ) : (
+              <div className="mt-3 space-y-2">
+                {createValues.signers.map((signer, index) => (
+                  <div key={`create-signer-${index}`} className="flex gap-2">
+                    <input
+                      value={signer}
+                      onChange={(event) => updateSigner(index, event.target.value)}
+                      placeholder={expectedSignerPrefix}
+                      aria-label={`Signer ${index + 1}`}
+                      className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-sm text-slate-900 placeholder:text-slate-300 focus:border-[#1f69ff] focus:outline-none focus:ring-2 focus:ring-[#1f69ff]/20"
+                    />
+                    {createValues.signers.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => removeSigner(index)}
+                        className="h-10 w-10 rounded-xl border border-slate-200 bg-slate-50 text-slate-500 hover:text-slate-900"
+                        aria-label={`Remove signer ${index + 1}`}
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={addSigner}
+                  className="text-sm font-semibold text-[#124ac4]"
+                >
+                  + Add signer
+                </button>
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="number"
+                    min={1}
+                    max={createValues.signers.length}
+                    step={1}
+                    value={createValues.threshold}
+                    onChange={(event) =>
+                      setCreateValues((current) => ({
+                        ...current,
+                        threshold: Number(event.target.value),
+                      }))
+                    }
+                    className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 focus:border-[#1f69ff] focus:outline-none focus:ring-2 focus:ring-[#1f69ff]/20"
+                    aria-label="Threshold"
+                  />
+                  <input
+                    value={createValues.initialDepositFil}
+                    onChange={(event) =>
+                      setCreateValues((current) => ({
+                        ...current,
+                        initialDepositFil: event.target.value,
+                      }))
+                    }
+                    placeholder="Deposit FIL"
+                    aria-label="Initial deposit"
+                    className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-300 focus:border-[#1f69ff] focus:outline-none focus:ring-2 focus:ring-[#1f69ff]/20"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCreate}
+                  disabled={isCreating}
+                  className={`w-full rounded-xl px-3 py-2 text-sm font-semibold ${
+                    !isCreating
                       ? 'bg-[#1f69ff] text-white hover:bg-[#1857d4]'
                       : 'cursor-not-allowed bg-slate-200 text-slate-500'
                   }`}
                 >
-                  Approve
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleProposalAction(proposal, 'cancel')}
-                  disabled={!proposal.canCancel}
-                  className={`flex-1 rounded-lg px-3 py-2 text-xs font-semibold ${
-                    proposal.canCancel
-                      ? 'border border-red-200 bg-red-50 text-red-700 hover:bg-red-100'
-                      : 'cursor-not-allowed border border-slate-200 bg-slate-50 text-slate-400'
-                  }`}
-                >
-                  Cancel
+                  {isCreating ? 'Creating...' : 'Create multisig'}
                 </button>
               </div>
-            </div>
-          ))}
+            )}
+          </div>
         </div>
       )}
-
-      <div className="mt-4 border-t border-slate-100 pt-4">
-        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-          Add saved multisig
-        </p>
-        <div className="mt-2 space-y-2">
-          <input
-            value={importAddress}
-            onChange={(event) => setImportAddress(event.target.value)}
-            placeholder={expectedPrefix}
-            disabled={!enabled}
-            className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-sm text-slate-900 placeholder:text-slate-300 focus:border-[#1f69ff] focus:outline-none focus:ring-2 focus:ring-[#1f69ff]/20 disabled:cursor-not-allowed disabled:bg-slate-100"
-          />
-          <input
-            value={importLabel}
-            onChange={(event) => setImportLabel(event.target.value)}
-            placeholder="Label"
-            disabled={!enabled}
-            className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-300 focus:border-[#1f69ff] focus:outline-none focus:ring-2 focus:ring-[#1f69ff]/20 disabled:cursor-not-allowed disabled:bg-slate-100"
-          />
-          <button
-            type="button"
-            onClick={handleAdd}
-            disabled={!enabled || isAdding}
-            className={`w-full rounded-xl px-3 py-2 text-sm font-semibold ${
-              enabled && !isAdding
-                ? 'border border-[#1f69ff]/35 bg-white text-[#124ac4] hover:border-[#1f69ff]'
-                : 'cursor-not-allowed bg-slate-200 text-slate-500'
-            }`}
-          >
-            {isAdding ? 'Adding...' : 'Add multisig'}
-          </button>
-        </div>
-      </div>
-
-      <div className="mt-4 border-t border-slate-100 pt-4">
-        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-          Create multisig
-        </p>
-        <div className="mt-2 space-y-2">
-          {createValues.signers.map((signer, index) => (
-            <div key={`create-signer-${index}`} className="flex gap-2">
-              <input
-                value={signer}
-                onChange={(event) => updateSigner(index, event.target.value)}
-                placeholder={expectedSignerPrefix}
-                disabled={!enabled}
-                className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-sm text-slate-900 placeholder:text-slate-300 focus:border-[#1f69ff] focus:outline-none focus:ring-2 focus:ring-[#1f69ff]/20 disabled:cursor-not-allowed disabled:bg-slate-100"
-              />
-              {createValues.signers.length > 1 && (
-                <button
-                  type="button"
-                  onClick={() => removeSigner(index)}
-                  className="h-10 w-10 rounded-xl border border-slate-200 bg-slate-50 text-slate-500 hover:text-slate-900"
-                  aria-label={`Remove signer ${index + 1}`}
-                >
-                  ×
-                </button>
-              )}
-            </div>
-          ))}
-          <button
-            type="button"
-            onClick={addSigner}
-            disabled={!enabled}
-            className="text-sm font-semibold text-[#124ac4] disabled:text-slate-400"
-          >
-            + Add signer
-          </button>
-          <div className="grid grid-cols-2 gap-2">
-            <input
-              type="number"
-              min={1}
-              step={1}
-              value={createValues.threshold}
-              onChange={(event) =>
-                setCreateValues((current) => ({
-                  ...current,
-                  threshold: Number(event.target.value),
-                }))
-              }
-              disabled={!enabled}
-              className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 focus:border-[#1f69ff] focus:outline-none focus:ring-2 focus:ring-[#1f69ff]/20 disabled:cursor-not-allowed disabled:bg-slate-100"
-              aria-label="Threshold"
-            />
-            <input
-              value={createValues.initialDepositFil}
-              onChange={(event) =>
-                setCreateValues((current) => ({
-                  ...current,
-                  initialDepositFil: event.target.value,
-                }))
-              }
-              disabled={!enabled}
-              placeholder="Deposit FIL"
-              className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-300 focus:border-[#1f69ff] focus:outline-none focus:ring-2 focus:ring-[#1f69ff]/20 disabled:cursor-not-allowed disabled:bg-slate-100"
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <input
-              type="number"
-              min={0}
-              step={1}
-              value={createValues.startEpoch ?? ''}
-              onChange={(event) =>
-                setCreateValues((current) => ({
-                  ...current,
-                  startEpoch:
-                    event.target.value === '' ? undefined : Number(event.target.value),
-                }))
-              }
-              disabled={!enabled}
-              placeholder="Start epoch"
-              className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-300 focus:border-[#1f69ff] focus:outline-none focus:ring-2 focus:ring-[#1f69ff]/20 disabled:cursor-not-allowed disabled:bg-slate-100"
-            />
-            <input
-              type="number"
-              min={0}
-              step={1}
-              value={createValues.unlockDuration ?? ''}
-              onChange={(event) =>
-                setCreateValues((current) => ({
-                  ...current,
-                  unlockDuration:
-                    event.target.value === '' ? undefined : Number(event.target.value),
-                }))
-              }
-              disabled={!enabled}
-              placeholder="Unlock duration"
-              className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-300 focus:border-[#1f69ff] focus:outline-none focus:ring-2 focus:ring-[#1f69ff]/20 disabled:cursor-not-allowed disabled:bg-slate-100"
-            />
-          </div>
-          <button
-            type="button"
-            onClick={handleCreate}
-            disabled={!enabled || isCreating}
-            className={`w-full rounded-xl px-3 py-2 text-sm font-semibold ${
-              enabled && !isCreating
-                ? 'bg-[#1f69ff] text-white hover:bg-[#1857d4]'
-                : 'cursor-not-allowed bg-slate-200 text-slate-500'
-            }`}
-          >
-            {isCreating ? 'Creating...' : 'Create multisig'}
-          </button>
-        </div>
-      </div>
     </div>
   );
 }

@@ -552,15 +552,6 @@ export default function App() {
     reset: resetExecution,
   } = activeBatchExecution;
 
-  React.useEffect(() => {
-    if (!activeNativeSender && batchConfiguration.senderWalletType === 'MULTI_SIG') {
-      setBatchConfiguration((current) => ({
-        ...current,
-        senderWalletType: 'SINGLE_SIG',
-      }));
-    }
-  }, [activeNativeSender, batchConfiguration.senderWalletType]);
-
   const handleCSVUpload = (result: CSVUploadResult) => {
     setCsvData(result.recipients);
     setCsvErrors(result.errors);
@@ -626,16 +617,6 @@ export default function App() {
   };
 
   const handleSenderWalletTypeSelect = (value: SenderWalletType) => {
-    if (value === 'MULTI_SIG') {
-      if (!activeNativeSender) {
-        openUnavailableCapabilityNotice(
-          'Native signer required',
-          'Filecoin native multisigs use f1/t1 signers. Connect FilSnap or Ledger Filecoin before selecting multisig funding.',
-        );
-        return;
-      }
-    }
-
     setBatchConfiguration((current) => ({ ...current, senderWalletType: value }));
   };
 
@@ -1269,36 +1250,27 @@ f1cj...,3.3`;
               ]}
             />
 
-            <MultisigFundingPanel
-              enabled={Boolean(activeNativeSender && connectedNetwork)}
-              network={activeNativeSender?.network}
-              connectedSigner={activeNativeSender}
-              savedMultisigs={multisigs.savedMultisigs}
-              selectedAddress={multisigs.selectedAddress}
-              selectedMultisig={multisigs.selectedMultisig}
-              pendingProposals={multisigs.pendingProposals}
-              isLoadingSelected={multisigs.isLoadingSelected}
-              selectedError={multisigs.selectedError}
-              onSelect={(multisigAddress) => {
-                multisigs.selectMultisig(multisigAddress);
-                if (multisigAddress) {
-                  setBatchConfiguration((current) => ({
-                    ...current,
-                    senderWalletType: 'MULTI_SIG',
-                  }));
-                } else {
-                  setBatchConfiguration((current) => ({
-                    ...current,
-                    senderWalletType: 'SINGLE_SIG',
-                  }));
-                }
-              }}
-              onAdd={multisigs.addMultisig}
-              onRemove={multisigs.removeMultisig}
-              onCreate={multisigs.createMultisig}
-              onApprove={multisigs.approveProposal}
-              onCancel={multisigs.cancelProposal}
-            />
+            {batchConfiguration.senderWalletType === 'MULTI_SIG' && (
+              <MultisigFundingPanel
+                enabled={Boolean(activeNativeSender && connectedNetwork)}
+                network={activeNativeSender?.network}
+                connectedSigner={activeNativeSender}
+                savedMultisigs={multisigs.savedMultisigs}
+                selectedAddress={multisigs.selectedAddress}
+                selectedMultisig={multisigs.selectedMultisig}
+                pendingProposals={multisigs.pendingProposals}
+                isLoadingSelected={multisigs.isLoadingSelected}
+                selectedError={multisigs.selectedError}
+                onSelect={(multisigAddress) => {
+                  multisigs.selectMultisig(multisigAddress);
+                }}
+                onAdd={multisigs.addMultisig}
+                onRemove={multisigs.removeMultisig}
+                onCreate={multisigs.createMultisig}
+                onApprove={multisigs.approveProposal}
+                onCancel={multisigs.cancelProposal}
+              />
+            )}
           </div>
 
           <div className="mt-auto hidden pt-8 lg:block">
