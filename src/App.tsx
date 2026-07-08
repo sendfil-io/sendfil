@@ -13,10 +13,7 @@ import { useBalance, usePublicClient } from 'wagmi';
 import { formatUnits } from 'viem';
 import { validateNoEvmContractRecipients } from './utils/contractRecipientGuard';
 import { calculateFeeRows, getFeeLabel } from './utils/fee';
-import {
-  validateRecipientRows,
-  type RecipientValidationResult,
-} from './utils/recipientValidation';
+import { validateRecipientRows, type RecipientValidationResult } from './utils/recipientValidation';
 import {
   DEFAULT_BATCH_CONFIGURATION,
   getErrorHandlingLabel,
@@ -26,19 +23,14 @@ import {
   type ExecutionMethod,
   type SenderWalletType,
 } from './lib/batchConfiguration';
-import {
-  attoFilBigIntToFil,
-  type BatchGasEstimate,
-} from './lib/transaction/batchExecution';
+import { attoFilBigIntToFil, type BatchGasEstimate } from './lib/transaction/batchExecution';
 import { BatchExecutionError } from './lib/transaction/errorHandling';
 import { createMockBatchExecutionAdapter } from './lib/transaction/mockAdapter';
 import { useExecuteBatch } from './lib/transaction/useExecuteBatch';
 import { useExecuteNativeBatch } from './lib/transaction/useExecuteNativeBatch';
+import { useExecuteMultisigProposal, useMultisigs } from './lib/multisig';
 import {
-  useExecuteMultisigProposal,
-  useMultisigs,
-} from './lib/multisig';
-import {
+  getDefaultNetworkConfig,
   getNetworkConfig,
   getSupportedNetworkByChainId,
   getSupportedNetworkListLabel,
@@ -329,9 +321,7 @@ function ConfigurationChoiceGroup({
                   {option.badge && (
                     <span
                       className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] ${
-                        isSelected
-                          ? 'bg-white text-[#124ac4]'
-                          : 'bg-slate-200 text-slate-600'
+                        isSelected ? 'bg-white text-[#124ac4]' : 'bg-slate-200 text-slate-600'
                       }`}
                     >
                       {option.badge}
@@ -387,16 +377,16 @@ export default function App() {
     }),
     [],
   );
-  const nativeFilecoinProviders = React.useMemo(
-    () => getNativeFilecoinWalletProviders(),
-    [],
-  );
-  const [nativeFilecoinSender, setNativeFilecoinSender] =
-    React.useState<NativeFilecoinConnectedSender | undefined>();
-  const [nativeFilecoinProvider, setNativeFilecoinProvider] =
-    React.useState<NativeFilecoinWalletProvider | undefined>();
-  const [nativeWalletConnectionError, setNativeWalletConnectionError] =
-    React.useState<string | undefined>();
+  const nativeFilecoinProviders = React.useMemo(() => getNativeFilecoinWalletProviders(), []);
+  const [nativeFilecoinSender, setNativeFilecoinSender] = React.useState<
+    NativeFilecoinConnectedSender | undefined
+  >();
+  const [nativeFilecoinProvider, setNativeFilecoinProvider] = React.useState<
+    NativeFilecoinWalletProvider | undefined
+  >();
+  const [nativeWalletConnectionError, setNativeWalletConnectionError] = React.useState<
+    string | undefined
+  >();
   const connectedSenderState = useConnectedSender({
     e2eMockWallet,
     nativeFilecoinSender,
@@ -419,24 +409,20 @@ export default function App() {
   const contractRecipientClient = usePublicClient({
     chainId: connectedNetwork?.chainId,
   });
-  const evmBalanceSource =
-    balanceSource.kind === 'evm-wagmi' ? balanceSource : undefined;
+  const evmBalanceSource = balanceSource.kind === 'evm-wagmi' ? balanceSource : undefined;
   const { data: balanceData } = useBalance({
     address: evmBalanceSource?.address,
     chainId: evmBalanceSource?.chainId,
     query: {
       enabled: Boolean(
-        evmBalanceSource?.enabled &&
-          hasSupportedConnectedNetwork &&
-          !E2E_MOCK_WALLET_ENABLED,
+        evmBalanceSource?.enabled && hasSupportedConnectedNetwork && !E2E_MOCK_WALLET_ENABLED,
       ),
     },
   });
   const nativeBalanceSource =
     balanceSource.kind === 'native-filecoin-lotus' ? balanceSource : undefined;
   const [nativeBalanceAttoFil, setNativeBalanceAttoFil] = React.useState<bigint | undefined>();
-  const [nativeBalanceError, setNativeBalanceError] =
-    React.useState<string | undefined>();
+  const [nativeBalanceError, setNativeBalanceError] = React.useState<string | undefined>();
 
   React.useEffect(() => {
     let isCancelled = false;
@@ -494,8 +480,9 @@ export default function App() {
   const [isReviewModalOpen, setIsReviewModalOpen] = React.useState(false);
   const [gasEstimate, setGasEstimate] = React.useState<GasEstimate | undefined>(undefined);
   const [isEstimatingGas, setIsEstimatingGas] = React.useState(false);
-  const [gasEstimationError, setGasEstimationError] =
-    React.useState<BatchExecutionError | undefined>(undefined);
+  const [gasEstimationError, setGasEstimationError] = React.useState<
+    BatchExecutionError | undefined
+  >(undefined);
   const [isCheckingContractRecipients, setIsCheckingContractRecipients] = React.useState(false);
   const [contractRecipientErrors, setContractRecipientErrors] = React.useState<string[]>([]);
   const contractRecipientCheckSequence = React.useRef(0);
@@ -519,15 +506,15 @@ export default function App() {
   });
   const activeNativeSender =
     connectedSender?.kind === 'native-filecoin' ? connectedSender : undefined;
+  const defaultMultisigNetwork = React.useMemo(() => getDefaultNetworkConfig(), []);
+  const multisigNetwork = activeNativeSender?.network ?? connectedNetwork ?? defaultMultisigNetwork;
   const multisigs = useMultisigs({
     sender: activeNativeSender,
     provider: nativeFilecoinProvider,
-    network: activeNativeSender?.network,
+    network: multisigNetwork,
   });
   const selectedMultisig =
-    batchConfiguration.senderWalletType === 'MULTI_SIG'
-      ? multisigs.selectedMultisig
-      : undefined;
+    batchConfiguration.senderWalletType === 'MULTI_SIG' ? multisigs.selectedMultisig : undefined;
   const nativeBatchExecution = useExecuteNativeBatch({
     sender: activeNativeSender,
     provider: nativeFilecoinProvider,
@@ -536,7 +523,7 @@ export default function App() {
     sender: activeNativeSender,
     provider: nativeFilecoinProvider,
     multisig: selectedMultisig,
-    network: activeNativeSender?.network,
+    network: multisigNetwork,
   });
   const activeBatchExecution = activeNativeSender
     ? selectedMultisig
@@ -589,9 +576,7 @@ export default function App() {
         setNativeFilecoinSender(senderResult.sender);
       } catch (error) {
         const message =
-          error instanceof Error
-            ? error.message
-            : 'Failed to connect native Filecoin wallet.';
+          error instanceof Error ? error.message : 'Failed to connect native Filecoin wallet.';
 
         setNativeWalletConnectionError(message);
         throw error;
@@ -666,9 +651,7 @@ export default function App() {
 
   const removeRecipient = (index: number) => {
     setManualRecipients((current) => current.filter((_, currentIndex) => currentIndex !== index));
-    setManualInteractions((current) =>
-      current.filter((_, currentIndex) => currentIndex !== index),
-    );
+    setManualInteractions((current) => current.filter((_, currentIndex) => currentIndex !== index));
   };
 
   const updateRecipient = (index: number, field: keyof Recipient, value: string) => {
@@ -679,10 +662,7 @@ export default function App() {
     });
   };
 
-  const markRecipientTouched = (
-    index: number,
-    field: keyof ManualRecipientInteraction,
-  ) => {
+  const markRecipientTouched = (index: number, field: keyof ManualRecipientInteraction) => {
     setManualInteractions((current) => {
       const nextInteractions = [...current];
       const existingInteraction = nextInteractions[index] ?? {
@@ -741,9 +721,7 @@ export default function App() {
   const isNetworkMismatch = isUnsupportedConnectedNetwork;
   const networkValidationErrors =
     isNetworkMismatch && hasEnteredData
-      ? [
-          `Switch to ${getSupportedNetworkListLabel()} to review and send this batch.`,
-        ]
+      ? [`Switch to ${getSupportedNetworkListLabel()} to review and send this batch.`]
       : [];
   const executionConfigurationErrors =
     selectedExecutionMethod === 'STANDARD' && selectedErrorMode === 'PARTIAL'
@@ -771,6 +749,7 @@ export default function App() {
                 ? ['The connected native signer is not a signer on the selected multisig.']
                 : []
       : [];
+  const displayedMultisigFundingErrors = hasEnteredData ? multisigFundingErrors : [];
 
   const manualDisplayErrors = React.useMemo(
     () =>
@@ -795,10 +774,9 @@ export default function App() {
 
   const validRecipients = React.useMemo(
     () =>
-      (
-        inputMode === 'manual'
-          ? manualValidation.validRecipients
-          : csvValidation.validRecipients
+      (inputMode === 'manual'
+        ? manualValidation.validRecipients
+        : csvValidation.validRecipients
       ).map((recipient) => ({
         address: recipient.address,
         amount: Number(recipient.amount),
@@ -888,7 +866,7 @@ export default function App() {
           ...(feeComputation.error ? [feeComputation.error] : []),
           ...networkValidationErrors,
           ...executionConfigurationErrors,
-          ...multisigFundingErrors,
+          ...displayedMultisigFundingErrors,
           ...contractRecipientErrors,
         ]
       : [
@@ -897,7 +875,7 @@ export default function App() {
           ...(feeComputation.error ? [feeComputation.error] : []),
           ...networkValidationErrors,
           ...executionConfigurationErrors,
-          ...multisigFundingErrors,
+          ...displayedMultisigFundingErrors,
           ...contractRecipientErrors,
         ];
   const activeBlockingValidationErrors =
@@ -929,7 +907,7 @@ export default function App() {
       ? Number(formatUnits(balanceData.value, balanceData.decimals))
       : nativeBalanceAttoFil !== undefined
         ? attoFilBigIntToFil(nativeBalanceAttoFil)
-      : 0;
+        : 0;
   const multisigFundingSelected =
     batchConfiguration.senderWalletType === 'MULTI_SIG' && Boolean(selectedMultisig);
   const multisigSpendableBalance =
@@ -951,8 +929,7 @@ export default function App() {
           : undefined;
   const estimatedNetworkFee = gasEstimate?.estimatedFeeInFil || 0;
   const insufficientBalance = multisigFundingSelected
-    ? multisigSpendableBalance < recipientTotal + feeTotal ||
-      signerGasBalance < estimatedNetworkFee
+    ? multisigSpendableBalance < recipientTotal + feeTotal || signerGasBalance < estimatedNetworkFee
     : walletBalance < recipientTotal + feeTotal + estimatedNetworkFee;
 
   const manualRowErrors = React.useMemo(
@@ -1001,7 +978,11 @@ export default function App() {
         : 'Upload a CSV file to continue.';
     }
 
-    if (inputMode === 'manual' && manualIncompleteRowCount > 0 && activeValidationErrors.length === 0) {
+    if (
+      inputMode === 'manual' &&
+      manualIncompleteRowCount > 0 &&
+      activeValidationErrors.length === 0
+    ) {
       return 'Complete each draft row with both an address and amount before review.';
     }
 
@@ -1141,11 +1122,7 @@ export default function App() {
         return;
       }
 
-      await executeBatch(
-        feeComputation.recipients,
-        selectedErrorMode,
-        selectedExecutionMethod,
-      );
+      await executeBatch(feeComputation.recipients, selectedErrorMode, selectedExecutionMethod);
     } catch {
       // useExecuteBatch stores the failure state used by the modal
     }
@@ -1252,8 +1229,8 @@ f1cj...,3.3`;
 
             {batchConfiguration.senderWalletType === 'MULTI_SIG' && (
               <MultisigFundingPanel
-                enabled={Boolean(activeNativeSender && connectedNetwork)}
-                network={activeNativeSender?.network}
+                enabled={Boolean(activeNativeSender)}
+                network={multisigNetwork}
                 connectedSigner={activeNativeSender}
                 savedMultisigs={multisigs.savedMultisigs}
                 selectedAddress={multisigs.selectedAddress}
@@ -1276,7 +1253,6 @@ f1cj...,3.3`;
           <div className="mt-auto hidden pt-8 lg:block">
             <SocialLinks />
           </div>
-
         </aside>
 
         <main className="flex-1 px-4 py-6 sm:px-8 lg:px-12 lg:py-10">
@@ -1417,7 +1393,9 @@ f1cj...,3.3`;
                       title="Error handling"
                       description="Choose what happens when a payment within a batch transaction fails."
                       selectedValue={batchConfiguration.errorHandling}
-                      onSelect={(value) => handleErrorHandlingSelect(value as ErrorHandlingPreference)}
+                      onSelect={(value) =>
+                        handleErrorHandlingSelect(value as ErrorHandlingPreference)
+                      }
                       options={[
                         {
                           value: 'PARTIAL',
@@ -1552,7 +1530,9 @@ f1cj...,3.3`;
                             </div>
                           </div>
 
-                          {(rowErrors.length > 0 || rowWarnings.length > 0 || Boolean(draftHint)) && (
+                          {(rowErrors.length > 0 ||
+                            rowWarnings.length > 0 ||
+                            Boolean(draftHint)) && (
                             <div className="mt-2 space-y-1">
                               {rowErrors.map((message) => (
                                 <p
@@ -1570,9 +1550,7 @@ f1cj...,3.3`;
                                   {message}
                                 </p>
                               ))}
-                              {draftHint && (
-                                <p className="text-sm text-slate-500">{draftHint}</p>
-                              )}
+                              {draftHint && <p className="text-sm text-slate-500">{draftHint}</p>}
                             </div>
                           )}
                         </div>
@@ -1697,7 +1675,7 @@ f1cj...,3.3`;
                         ? 'Switch Network to Review'
                         : !canUseLiveSendPath
                           ? 'Sender Not Available'
-                        : `Review Batch${draftRecipientCount > 0 ? ` (${draftRecipientCount})` : ''}`}
+                          : `Review Batch${draftRecipientCount > 0 ? ` (${draftRecipientCount})` : ''}`}
                   </button>
                 </div>
               </div>

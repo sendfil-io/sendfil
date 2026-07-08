@@ -7,13 +7,7 @@ import App from '../App';
 import { BatchExecutionError } from '../lib/transaction/errorHandling';
 import type { RecipientValidationResult } from '../utils/recipientValidation';
 
-type MockBatchExecutionState =
-  | 'idle'
-  | 'building'
-  | 'signing'
-  | 'pending'
-  | 'confirmed'
-  | 'failed';
+type MockBatchExecutionState = 'idle' | 'building' | 'signing' | 'pending' | 'confirmed' | 'failed';
 
 interface MockExecutionSnapshot {
   state: MockBatchExecutionState;
@@ -278,13 +272,15 @@ describe('App confirm flow', () => {
 
     click(getElementByTestId(container, 'sender-wallet-multi-sig'));
 
-    expect(getElementByTestId(container, 'sender-wallet-multi-sig').getAttribute('aria-pressed')).toBe(
-      'true',
-    );
+    expect(
+      getElementByTestId(container, 'sender-wallet-multi-sig').getAttribute('aria-pressed'),
+    ).toBe('true');
     expect(container.textContent).toContain('Native multisig');
     expect(container.textContent).toContain(
-      'Connect FilSnap or Ledger Filecoin to add or create a multisig.',
+      'Connect FilSnap or Ledger Filecoin to create, approve, or send.',
     );
+    expect(container.textContent).toContain('Add multisig');
+    expect(container.textContent).toContain('Create');
   });
 
   it('calls executeBatch with fee rows in default Standard Atomic mode', async () => {
@@ -395,8 +391,7 @@ describe('App confirm flow', () => {
     const rejectedError = new BatchExecutionError({
       category: 'USER_REJECTED',
       title: 'Transaction rejected',
-      message:
-        'The batch was not submitted because the wallet signature request was rejected.',
+      message: 'The batch was not submitted because the wallet signature request was rejected.',
       errorMode: 'ATOMIC',
       stage: 'execution',
       recoverable: true,
