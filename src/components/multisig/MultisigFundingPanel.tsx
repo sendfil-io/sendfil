@@ -506,34 +506,42 @@ export function MultisigFundingPanel({
               >
                 + Add signer
               </button>
-              <div className="grid grid-cols-2 gap-2">
-                <input
-                  type="number"
-                  min={1}
-                  max={createValues.signers.length}
-                  step={1}
-                  value={createValues.threshold}
-                  onChange={(event) =>
-                    setCreateValues((current) => ({
-                      ...current,
-                      threshold: Number(event.target.value),
-                    }))
-                  }
-                  className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 focus:border-[#1f69ff] focus:outline-none focus:ring-2 focus:ring-[#1f69ff]/20"
-                  aria-label="Threshold"
-                />
-                <input
-                  value={createValues.initialDepositFil}
-                  onChange={(event) =>
-                    setCreateValues((current) => ({
-                      ...current,
-                      initialDepositFil: event.target.value,
-                    }))
-                  }
-                  placeholder="Deposit FIL"
-                  aria-label="Initial deposit"
-                  className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-300 focus:border-[#1f69ff] focus:outline-none focus:ring-2 focus:ring-[#1f69ff]/20"
-                />
+              <div className="space-y-1">
+                <div className="flex items-center justify-between gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                  <span>Signatures required</span>
+                  <span className="shrink-0 text-slate-500">
+                    {createValues.threshold} of {createValues.signers.length}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="number"
+                    min={1}
+                    max={createValues.signers.length}
+                    step={1}
+                    value={createValues.threshold}
+                    onChange={(event) =>
+                      setCreateValues((current) => ({
+                        ...current,
+                        threshold: Number(event.target.value),
+                      }))
+                    }
+                    className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 focus:border-[#1f69ff] focus:outline-none focus:ring-2 focus:ring-[#1f69ff]/20"
+                    aria-label="Signatures required"
+                  />
+                  <input
+                    value={createValues.initialDepositFil}
+                    onChange={(event) =>
+                      setCreateValues((current) => ({
+                        ...current,
+                        initialDepositFil: event.target.value,
+                      }))
+                    }
+                    placeholder="Deposit FIL"
+                    aria-label="Initial deposit"
+                    className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-300 focus:border-[#1f69ff] focus:outline-none focus:ring-2 focus:ring-[#1f69ff]/20"
+                  />
+                </div>
               </div>
               <button
                 type="button"
