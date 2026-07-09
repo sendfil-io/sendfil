@@ -232,7 +232,7 @@ describe('ReviewTransactionModal', () => {
       stage: 'preflight',
       recoverable: true,
       hint:
-        'Correct the failing recipient rows and try again, or use configured ThinBatch Partial for best-effort delivery.',
+        'Correct the failing recipient rows and try again, or use Partial for best-effort delivery when available.',
     });
 
     act(() => {
@@ -251,9 +251,9 @@ describe('ReviewTransactionModal', () => {
       root.render(<ReviewTransactionModal {...props} />);
     });
 
-    expect(container.textContent).toContain('Checking EVM recipients');
+    expect(container.textContent).toContain('Checking 0x and f4 recipients');
     expect(container.textContent).toContain(
-      'SendFIL is verifying that 0x and f4 recipients do not have deployed contract code.',
+      'SendFIL is checking that those recipients are wallet addresses, not contracts.',
     );
     expect(getButton(container, 'Send').disabled).toBe(true);
   });
@@ -274,7 +274,7 @@ describe('ReviewTransactionModal', () => {
       stage: 'confirmation',
       recoverable: true,
       hint:
-        'Correct the failing recipient rows and try again, or use configured ThinBatch Partial for best-effort delivery.',
+        'Correct the failing recipient rows and try again, or use Partial for best-effort delivery when available.',
     });
 
     act(() => {

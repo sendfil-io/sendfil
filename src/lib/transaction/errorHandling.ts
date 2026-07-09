@@ -41,7 +41,7 @@ export const ERROR_MODE_COPY: Record<ErrorMode, ErrorModeCopy> = {
   PARTIAL: {
     reviewSummary: 'ThinBatch refunds failed payments while successful transfers continue.',
     reviewDetail:
-      'Partial mode is only enabled for ThinBatch so failed payment value can be refunded instead of left in Multicall3.',
+      'Failed payments are refunded while successful payments can continue.',
     failureSummary:
       'Some transfers may already be finalized; failed payment value is refunded by ThinBatch unless the refund itself reverts.',
     retryHint: 'Switch to Atomic if you need all-or-nothing delivery.',
@@ -52,7 +52,7 @@ export const ERROR_MODE_COPY: Record<ErrorMode, ErrorModeCopy> = {
       'Atomic mode requires every recipient call to succeed in the same aggregate transaction.',
     failureSummary: 'No transfers are finalized if any internal call fails.',
     retryHint:
-      'Correct the failing recipient rows and try again, or use configured ThinBatch Partial for best-effort delivery.',
+      'Correct the failing recipient rows and try again, or use Partial for best-effort delivery when available.',
   },
 };
 
@@ -214,13 +214,13 @@ function createBatchExecutionError(
     case 'RPC_FAILURE':
       return new BatchExecutionError({
         category,
-        title: 'RPC connection failed',
+        title: 'Network connection failed',
         message:
-          'SendFIL could not reach the configured RPC provider while estimating or sending this batch.',
+          'SendFIL could not reach the Filecoin network while estimating or sending this batch.',
         errorMode: context.errorMode,
         stage: context.stage,
         recoverable: true,
-        hint: 'Retry in a moment. If the problem persists, verify the configured RPC endpoint.',
+        hint: 'Retry in a moment. If the problem persists, switch networks or try again later.',
         details,
         cause,
       });
@@ -232,7 +232,7 @@ function createBatchExecutionError(
         message:
           context.errorMode === 'ATOMIC'
             ? `The batch failed unexpectedly. ${ERROR_MODE_COPY.ATOMIC.failureSummary}`
-            : 'The wallet or RPC returned an unexpected error while processing the batch.',
+            : 'The wallet or network returned an unexpected error while processing the batch.',
         errorMode: context.errorMode,
         stage: context.stage,
         recoverable: true,

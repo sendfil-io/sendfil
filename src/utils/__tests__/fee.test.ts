@@ -84,6 +84,6 @@ describe('calculateFeeRows', () => {
 
     expect(() =>
       calculateFeeRows([{ address: MAINNET_FEE_A, amount: 1 }], getNetworkConfig('mainnet')),
-    ).toThrow('Fee address included in recipient list');
+    ).toThrow('One recipient is already used by SendFIL fees. Remove it to continue.');
   });
 });

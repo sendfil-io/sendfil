@@ -508,6 +508,7 @@ export default function App() {
     connectedSender?.kind === 'native-filecoin' ? connectedSender : undefined;
   const defaultMultisigNetwork = React.useMemo(() => getDefaultNetworkConfig(), []);
   const multisigNetwork = activeNativeSender?.network ?? connectedNetwork ?? defaultMultisigNetwork;
+  const configurationNetwork = connectedNetwork ?? defaultMultisigNetwork;
   const multisigs = useMultisigs({
     sender: activeNativeSender,
     provider: nativeFilecoinProvider,
@@ -608,20 +609,16 @@ export default function App() {
   const handleExecutionMethodSelect = (value: ExecutionMethod) => {
     if (value === 'STANDARD' && batchConfiguration.errorHandling === 'PARTIAL') {
       openUnavailableCapabilityNotice(
-        'Standard Partial is disabled',
-        'Multicall3 does not refund value for failed allowed subcalls. Select Atomic before switching to Standard, or keep ThinBatch for Partial execution.',
+        'Partial requires ThinBatch',
+        'Standard batches are all-or-nothing. Select Atomic for Standard, or keep ThinBatch for best-effort delivery.',
       );
       return;
     }
 
-    if (value === 'THINBATCH' && !connectedNetwork?.thinBatchAddress) {
-      const envName =
-        connectedNetwork?.key === 'calibration'
-          ? 'VITE_THINBATCH_ADDRESS_CALIBRATION'
-          : 'VITE_THINBATCH_ADDRESS_MAINNET';
+    if (value === 'THINBATCH' && !configurationNetwork.thinBatchAddress) {
       openUnavailableCapabilityNotice(
-        'ThinBatch is not configured for this network',
-        `Set ${envName} to the deployed ThinBatch contract address before using this execution method. Standard remains selected for this batch.`,
+        'ThinBatch is unavailable on this network',
+        'Use Standard for this batch, or switch to a supported network where ThinBatch is available.',
       );
       return;
     }
@@ -633,7 +630,7 @@ export default function App() {
     if (value === 'PARTIAL' && batchConfiguration.executionMethod === 'STANDARD') {
       openUnavailableCapabilityNotice(
         'Partial requires ThinBatch',
-        'Standard uses Multicall3 value calls, which cannot safely refund failed partial payments. Use Atomic with Standard, or configure ThinBatch for Partial execution.',
+        'Partial sends are only available with ThinBatch. Switch the transaction method to ThinBatch before choosing Partial.',
       );
       return;
     }
@@ -726,13 +723,13 @@ export default function App() {
   const executionConfigurationErrors =
     selectedExecutionMethod === 'STANDARD' && selectedErrorMode === 'PARTIAL'
       ? [
-          'Standard Partial is disabled because failed value calls cannot be refunded by Multicall3. Select Atomic or use configured ThinBatch for Partial execution.',
+          'Partial is only available with ThinBatch. Select Atomic or switch the transaction method to ThinBatch.',
         ]
       : selectedExecutionMethod === 'THINBATCH' &&
           connectedNetwork &&
           !connectedNetwork.thinBatchAddress
         ? [
-            `ThinBatch is not configured for ${connectedNetwork.chainName}. Switch back to Standard or configure the network ThinBatch address.`,
+            `ThinBatch is unavailable on ${connectedNetwork.chainName}. Switch back to Standard for this batch.`,
           ]
         : [];
   const multisigFundingErrors =
@@ -1353,28 +1350,7 @@ f1cj...,3.3`;
                       {
                         value: 'STANDARD',
                         label: 'Standard',
-                        helper: (
-                          <>
-                            <a
-                              href="https://docs.filecoin.io/smart-contracts/advanced/multicall"
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="underline decoration-slate-400 underline-offset-2 hover:decoration-slate-700"
-                            >
-                              Multicall3
-                            </a>{' '}
-                            +{' '}
-                            <a
-                              href="https://docs.filecoin.io/smart-contracts/filecoin-evm-runtime/filforwarder"
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="underline decoration-slate-400 underline-offset-2 hover:decoration-slate-700"
-                            >
-                              FilForwarder
-                            </a>{' '}
-                            to batch all payments in a single transaction.
-                          </>
-                        ),
+                        helper: 'Default one-transaction send for normal payment batches.',
                         badge: 'Default',
                         testId: 'execution-method-standard',
                       },
@@ -1382,7 +1358,7 @@ f1cj...,3.3`;
                         value: 'THINBATCH',
                         label: 'ThinBatch',
                         helper:
-                          'Uses the ThinBatch contract for one-call execution with per-recipient audit events.',
+                          'Enables best-effort delivery and per-recipient results when available.',
                         testId: 'execution-method-thinbatch',
                       },
                     ]}
@@ -1401,7 +1377,7 @@ f1cj...,3.3`;
                           value: 'PARTIAL',
                           label: 'Partial',
                           helper:
-                            'Best-effort execution with failed payment refunds. Requires ThinBatch.',
+                            'Best-effort: successful payments can continue if one fails.',
                           testId: 'error-handling-partial',
                         },
                         {

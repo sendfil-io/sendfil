@@ -50,7 +50,7 @@ export async function validateNoEvmContractRecipients(
 
   if (!client) {
     return [
-      'Could not verify EVM recipients for deployed contract code. Check the network connection and retry.',
+      'Could not verify whether 0x or f4 recipients are contract addresses. Check the network connection and retry.',
     ];
   }
 
@@ -64,8 +64,8 @@ export async function validateNoEvmContractRecipients(
     } catch (error) {
       return [
         error instanceof Error && error.message.length > 0
-          ? `Could not verify EVM recipients for deployed contract code: ${error.message}`
-          : 'Could not verify EVM recipients for deployed contract code. Check the network connection and retry.',
+          ? `Could not verify whether 0x or f4 recipients are contract addresses: ${error.message}`
+          : 'Could not verify whether 0x or f4 recipients are contract addresses. Check the network connection and retry.',
       ];
     }
 

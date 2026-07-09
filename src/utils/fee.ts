@@ -19,7 +19,9 @@ function validateFeePolicy(
   recipientB: string;
 } {
   if (!feePolicy.recipientA || !feePolicy.recipientB) {
-    throw new Error('Fee addresses are not configured for the active network');
+    throw new Error(
+      'SendFIL fee settings are unavailable for this network. Please try again later.',
+    );
   }
 
   const validation = validateRecipientRows(
@@ -36,7 +38,7 @@ function validateFeePolicy(
 
   if (validation.errors.length > 0) {
     throw new Error(
-      `Invalid fee address configuration: ${validation.errors
+      `SendFIL fee settings need attention before this batch can be sent: ${validation.errors
         .map((error) => error.replace(/^Recipient \d+:\s*/, ''))
         .join('; ')}`,
     );
@@ -80,7 +82,7 @@ export function calculateFeeRows(
         recipient.address === feePolicy.recipientA || recipient.address === feePolicy.recipientB,
     )
   ) {
-    throw new Error('Fee address included in recipient list');
+    throw new Error('One recipient is already used by SendFIL fees. Remove it to continue.');
   }
 
   const total = recipients.reduce((sum, recipient) => sum + recipient.amount, 0);
