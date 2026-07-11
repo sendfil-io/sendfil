@@ -1,16 +1,9 @@
-import {
-  Address,
-  CoinType,
-  newFromString,
-  newIDAddress,
-  Protocol,
-} from '@glif/filecoin-address';
+import { Address, CoinType, newFromString, newIDAddress, Protocol } from '@glif/filecoin-address';
 import { blake2b } from 'blakejs';
 import type { NetworkPrefix, SendFilNetworkKey } from '../networks';
 import { encodeInvokeEvmParams } from '../transaction/nativeBatchMessage';
 
-const BASE64_ALPHABET =
-  'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+const BASE64_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 const BASE32_LOWER_ALPHABET = 'abcdefghijklmnopqrstuvwxyz234567';
 
 export const INIT_ACTOR_ID = 1;
@@ -55,17 +48,18 @@ export interface ProposeReturn {
   ret: Uint8Array;
 }
 
+export interface ApproveReturn {
+  applied: boolean;
+  code: number;
+  ret: Uint8Array;
+}
+
 export interface ExecReturn {
   idAddress: string;
   robustAddress: string;
 }
 
-type DecodedCbor =
-  | number
-  | bigint
-  | boolean
-  | Uint8Array
-  | DecodedCbor[];
+type DecodedCbor = number | bigint | boolean | Uint8Array | DecodedCbor[];
 
 function concatBytes(parts: Uint8Array[]): Uint8Array {
   const length = parts.reduce((sum, part) => sum + part.length, 0);
@@ -108,24 +102,15 @@ function encodeMajorType(majorType: number, value: bigint): Uint8Array {
   }
 
   if (value <= 0xffffn) {
-    return concatBytes([
-      Uint8Array.from([prefix | 25]),
-      numberToBytes(value, 2),
-    ]);
+    return concatBytes([Uint8Array.from([prefix | 25]), numberToBytes(value, 2)]);
   }
 
   if (value <= 0xffffffffn) {
-    return concatBytes([
-      Uint8Array.from([prefix | 26]),
-      numberToBytes(value, 4),
-    ]);
+    return concatBytes([Uint8Array.from([prefix | 26]), numberToBytes(value, 4)]);
   }
 
   if (value <= 0xffffffffffffffffn) {
-    return concatBytes([
-      Uint8Array.from([prefix | 27]),
-      numberToBytes(value, 8),
-    ]);
+    return concatBytes([Uint8Array.from([prefix | 27]), numberToBytes(value, 8)]);
   }
 
   throw new Error('CBOR integer is too large');
@@ -171,10 +156,14 @@ function bigintMagnitudeBytes(value: bigint): Uint8Array {
     return new Uint8Array();
   }
 
-  const hex = value.toString(16).padStart(
-    value.toString(16).length % 2 === 0 ? value.toString(16).length : value.toString(16).length + 1,
-    '0',
-  );
+  const hex = value
+    .toString(16)
+    .padStart(
+      value.toString(16).length % 2 === 0
+        ? value.toString(16).length
+        : value.toString(16).length + 1,
+      '0',
+    );
   const bytes = new Uint8Array(hex.length / 2);
 
   for (let index = 0; index < bytes.length; index += 1) {
@@ -193,9 +182,7 @@ function encodeTokenAmount(value: bigint): Uint8Array {
     return encodeByteString(new Uint8Array());
   }
 
-  return encodeByteString(
-    concatBytes([Uint8Array.from([0]), bigintMagnitudeBytes(value)]),
-  );
+  return encodeByteString(concatBytes([Uint8Array.from([0]), bigintMagnitudeBytes(value)]));
 }
 
 function base64ToBytes(value: string): Uint8Array {
@@ -332,10 +319,7 @@ export function encodeInitExecParams({
   codeCid,
   constructorParams,
 }: InitExecParamsInput): Uint8Array {
-  return encodeArray([
-    encodeCid(codeCid),
-    encodeByteString(constructorParams),
-  ]);
+  return encodeArray([encodeCid(codeCid), encodeByteString(constructorParams)]);
 }
 
 export function encodeProposeParams({
@@ -396,7 +380,10 @@ export function inferNetworkKeyFromPrefix(prefix: NetworkPrefix): SendFilNetwork
   return prefix === 'f' ? 'mainnet' : 'calibration';
 }
 
-function readCborHeader(bytes: Uint8Array, offset: number): {
+function readCborHeader(
+  bytes: Uint8Array,
+  offset: number,
+): {
   major: number;
   value: bigint;
   offset: number;
@@ -416,7 +403,15 @@ function readCborHeader(bytes: Uint8Array, offset: number): {
   }
 
   const byteLength =
-    additional === 24 ? 1 : additional === 25 ? 2 : additional === 26 ? 4 : additional === 27 ? 8 : 0;
+    additional === 24
+      ? 1
+      : additional === 25
+        ? 2
+        : additional === 26
+          ? 4
+          : additional === 27
+            ? 8
+            : 0;
 
   if (byteLength === 0) {
     throw new Error('Unsupported CBOR additional information');
@@ -435,7 +430,10 @@ function readCborHeader(bytes: Uint8Array, offset: number): {
   return { major, value, offset: nextOffset };
 }
 
-function decodeCborValue(bytes: Uint8Array, startOffset = 0): {
+function decodeCborValue(
+  bytes: Uint8Array,
+  startOffset = 0,
+): {
   value: DecodedCbor;
   offset: number;
 } {
@@ -522,24 +520,79 @@ function assertDecodedNumber(value: DecodedCbor): number {
   return value;
 }
 
-export function decodeProposeReturn(paramsBase64: string): ProposeReturn | undefined {
+function decodeActorReturnTuple(paramsBase64: string, name: string, length: number): DecodedCbor[] {
   if (!paramsBase64) {
-    return undefined;
+    throw new Error(`${name} is empty`);
   }
 
-  const decoded = decodeCborValue(paramsBase64ToBytes(paramsBase64));
-  const fields = assertDecodedArray(decoded.value, 4);
+  const bytes = paramsBase64ToBytes(paramsBase64);
 
-  if (typeof fields[1] !== 'boolean') {
-    throw new Error('Expected ProposeReturn applied flag');
+  if (bytesToParamsBase64(bytes) !== paramsBase64) {
+    throw new Error(`${name} is not canonical base64`);
   }
+
+  const decoded = decodeCborValue(bytes);
+
+  if (decoded.offset !== bytes.length) {
+    throw new Error(`${name} has trailing CBOR data`);
+  }
+
+  return assertDecodedArray(decoded.value, length);
+}
+
+function assertActorReturnCode(value: DecodedCbor, name: string): number {
+  const code = assertDecodedNumber(value);
+
+  if (!Number.isSafeInteger(code) || code < 0 || code > 0xffffffff) {
+    throw new Error(`${name} exit code must be an unsigned 32-bit integer`);
+  }
+
+  return code;
+}
+
+function assertTransactionId(value: DecodedCbor): number {
+  const txnId = assertDecodedNumber(value);
+
+  if (!Number.isSafeInteger(txnId) || txnId < 0) {
+    throw new Error('ProposeReturn transaction ID must be a nonnegative safe integer');
+  }
+
+  return txnId;
+}
+
+function assertAppliedFlag(value: DecodedCbor, name: string): boolean {
+  if (typeof value !== 'boolean') {
+    throw new Error(`Expected ${name} applied flag`);
+  }
+
+  return value;
+}
+
+export function decodeProposeReturn(paramsBase64: string): ProposeReturn {
+  const fields = decodeActorReturnTuple(paramsBase64, 'ProposeReturn', 4);
 
   return {
-    txnId: assertDecodedNumber(fields[0]),
-    applied: fields[1],
-    code: assertDecodedNumber(fields[2]),
+    txnId: assertTransactionId(fields[0]),
+    applied: assertAppliedFlag(fields[1], 'ProposeReturn'),
+    code: assertActorReturnCode(fields[2], 'ProposeReturn'),
     ret: assertDecodedBytes(fields[3]),
   };
+}
+
+export function decodeApproveReturn(paramsBase64: string): ApproveReturn {
+  const fields = decodeActorReturnTuple(paramsBase64, 'ApproveReturn', 3);
+
+  return {
+    applied: assertAppliedFlag(fields[0], 'ApproveReturn'),
+    code: assertActorReturnCode(fields[1], 'ApproveReturn'),
+    ret: assertDecodedBytes(fields[2]),
+  };
+}
+
+export function decodeCancelReturn(paramsBase64: string): void {
+  if (paramsBase64 !== '') {
+    throw new Error('CancelReturn must be empty');
+  }
 }
 
 export function decodeExecReturn(
@@ -550,13 +603,35 @@ export function decodeExecReturn(
     return undefined;
   }
 
-  const decoded = decodeCborValue(paramsBase64ToBytes(paramsBase64));
+  const bytes = paramsBase64ToBytes(paramsBase64);
+
+  if (bytesToParamsBase64(bytes) !== paramsBase64) {
+    throw new Error('ExecReturn is not canonical base64');
+  }
+
+  const decoded = decodeCborValue(bytes);
+
+  if (decoded.offset !== bytes.length) {
+    throw new Error('ExecReturn has trailing CBOR data');
+  }
+
   const fields = assertDecodedArray(decoded.value, 2);
   const idBytes = assertDecodedBytes(fields[0]);
   const robustBytes = assertDecodedBytes(fields[1]);
   const coinType = networkKey === 'mainnet' ? CoinType.MAIN : CoinType.TEST;
-  const idAddress = new Address(idBytes, coinType).toString();
-  const robustAddress = new Address(robustBytes, coinType).toString();
+  const id = new Address(idBytes, coinType);
+  const robust = new Address(robustBytes, coinType);
+
+  if (id.protocol() !== Protocol.ID) {
+    throw new Error('ExecReturn ID address is not an f0/t0 address');
+  }
+
+  if (robust.protocol() !== Protocol.ACTOR) {
+    throw new Error('ExecReturn robust address is not an f2/t2 actor address');
+  }
+
+  const idAddress = id.toString();
+  const robustAddress = robust.toString();
 
   return { idAddress, robustAddress };
 }

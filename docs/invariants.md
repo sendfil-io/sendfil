@@ -16,33 +16,37 @@ Use this catalog before changing validation, network gating, review/send flow, R
 
 ## Invariant Index
 
-| ID | Rule | Status | Boundary | Test files |
-|---|---|---|---|---|
-| `INV-ADDR-001` | Accept valid `f1/f2/f3/f4/0x` recipients | `implemented` | validation | `src/utils/__tests__/recipientValidation.test.ts` |
-| `INV-ADDR-002` | Reject `f0` recipients | `implemented` | validation | `src/utils/__tests__/recipientValidation.test.ts`, `src/lib/transaction/__tests__/multicall.test.ts` |
-| `INV-ADDR-003` | Treat `0x` and `f4` twins as the same recipient identity internally | `partial` | validation, duplicate detection, transaction builder | `src/utils/__tests__/recipientValidation.test.ts`, `src/lib/transaction/__tests__/multicall.test.ts` |
-| `INV-AMT-001` | Reject blank, zero, and negative amounts | `implemented` | validation, amount parsing | `src/utils/__tests__/recipientValidation.test.ts` |
-| `INV-AMT-002` | Reject over-precise values and preserve exact accepted values | `partial` | validation, amount parsing, execution value preservation | `src/utils/__tests__/recipientValidation.test.ts` |
-| `INV-BATCH-001` | Enforce the 500-recipient cap | `implemented` | validation | `src/utils/__tests__/recipientValidation.test.ts` |
-| `INV-DUP-001` | Duplicate recipients require explicit confirmation before Send | `implemented` | duplicate detection, review UI gating | `src/utils/__tests__/recipientValidation.test.ts`, `src/components/__tests__/ReviewTransactionModal.test.tsx`, `tests/e2e/review-flow.spec.ts` |
-| `INV-NET-001` | Wrong network disables Send | `implemented` | network/wallet gating, review UI gating | `src/lib/senders/__tests__/connectedSender.test.ts`, `src/__tests__/app.invariants.test.tsx` |
-| `INV-BAL-001` | Submit-time balance recheck blocks EVM sends when current balance is insufficient | `implemented` | submit guard, wallet RPC | `src/lib/transaction/__tests__/submitBalanceCheck.test.ts`, `src/lib/transaction/__tests__/useExecuteBatch.submitBalance.test.tsx` |
-| `INV-RPC-001` | Contract recipients detected via `eth_getCode` are blocked | `implemented` | RPC contract-recipient check, review UI gating | `src/__tests__/contractRecipientGuard.test.tsx`, `src/utils/__tests__/contractRecipientGuard.test.ts` |
-| `INV-EXEC-001` | Review estimate and submission use the same execution config | `implemented` | estimate/execute flow, transaction builder | `src/lib/transaction/__tests__/batchExecution.test.ts`, `src/lib/transaction/__tests__/thinBatch.test.ts`, `src/lib/transaction/__tests__/nativeBatchPreflight.test.ts`, `src/__tests__/app.invariants.test.tsx` |
-| `INV-MSIG-001` | Native multisig proposals wrap the prepared FEVM batch without changing it | `implemented` | native multisig proposal preparation, submit guard | `src/lib/multisig/__tests__/actorParams.test.ts`, `src/lib/multisig/__tests__/rpc.test.ts`, `src/lib/multisig/__tests__/useExecuteMultisigProposal.test.tsx` |
+| ID              | Rule                                                                                           | Status        | Boundary                                                   | Test files                                                                                                                                                                                                                      |
+| --------------- | ---------------------------------------------------------------------------------------------- | ------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `INV-ADDR-001`  | Accept valid `f1/f2/f3/f4/0x` recipients                                                       | `implemented` | validation                                                 | `src/utils/__tests__/recipientValidation.test.ts`                                                                                                                                                                               |
+| `INV-ADDR-002`  | Reject `f0` recipients                                                                         | `implemented` | validation                                                 | `src/utils/__tests__/recipientValidation.test.ts`, `src/lib/transaction/__tests__/multicall.test.ts`                                                                                                                            |
+| `INV-ADDR-003`  | Treat `0x` and `f4` twins as the same recipient identity internally                            | `partial`     | validation, duplicate detection, transaction builder       | `src/utils/__tests__/recipientValidation.test.ts`, `src/lib/transaction/__tests__/multicall.test.ts`                                                                                                                            |
+| `INV-AMT-001`   | Reject blank, zero, and negative amounts                                                       | `implemented` | validation, amount parsing                                 | `src/utils/__tests__/recipientValidation.test.ts`                                                                                                                                                                               |
+| `INV-AMT-002`   | Reject over-precise values and preserve exact accepted values                                  | `partial`     | validation, amount parsing, execution value preservation   | `src/utils/__tests__/recipientValidation.test.ts`                                                                                                                                                                               |
+| `INV-BATCH-001` | Enforce the 500-recipient cap                                                                  | `partial`     | validation, execution capacity                             | `src/utils/__tests__/recipientValidation.test.ts`, `src/__tests__/App.test.tsx`                                                                                                                                                 |
+| `INV-DUP-001`   | Duplicate recipients require explicit confirmation before Send                                 | `implemented` | duplicate detection, review UI gating                      | `src/utils/__tests__/recipientValidation.test.ts`, `src/components/__tests__/ReviewTransactionModal.test.tsx`, `tests/e2e/review-flow.spec.ts`                                                                                  |
+| `INV-NET-001`   | Wrong network disables Send                                                                    | `implemented` | network/wallet gating, review UI gating                    | `src/lib/senders/__tests__/connectedSender.test.ts`, `src/__tests__/app.invariants.test.tsx`                                                                                                                                    |
+| `INV-BAL-001`   | Submit-time balance recheck blocks EVM sends when current balance is insufficient              | `implemented` | submit guard, wallet RPC                                   | `src/lib/transaction/__tests__/submitBalanceCheck.test.ts`, `src/lib/transaction/__tests__/useExecuteBatch.submitBalance.test.tsx`                                                                                              |
+| `INV-RPC-001`   | Contract recipients detected via `eth_getCode` are blocked                                     | `implemented` | RPC contract-recipient check, review UI gating             | `src/__tests__/contractRecipientGuard.test.tsx`, `src/utils/__tests__/contractRecipientGuard.test.ts`                                                                                                                           |
+| `INV-EXEC-001`  | Review estimate and submission use the same execution config                                   | `implemented` | estimate/execute flow, transaction builder                 | `src/lib/transaction/__tests__/batchExecution.test.ts`, `src/lib/transaction/__tests__/thinBatch.test.ts`, `src/lib/transaction/__tests__/nativeBatchPreflight.test.ts`, `src/__tests__/app.invariants.test.tsx`                |
+| `INV-MSIG-001`  | Native multisig proposals preserve the prepared batch and approvals verify its exact semantics | `implemented` | native multisig preparation, approval guard, actor outcome | `src/lib/multisig/__tests__/proposalVerifier.test.ts`, `src/lib/multisig/__tests__/rpc.test.ts`, `src/lib/multisig/__tests__/useExecuteMultisigProposal.test.tsx`, `src/lib/multisig/__tests__/useMultisigs.lifecycle.test.tsx` |
 
 ## INV-ADDR-001 — Accept valid `f1/f2/f3/f4/0x` recipients
 
 ### Rule
+
 The shared recipient validation path must accept valid recipient rows for `f1`, `f2`, `f3`, `f4`, and `0x` address types. Acceptance must happen through the same validator used by manual entry and CSV review.
 
 ### Why this matters
+
 If support regresses for any accepted recipient type, valid payouts become impossible or diverge between input paths.
 
 ### Execution boundary
+
 validation
 
 ### Acceptance criteria
+
 - Valid `f1`, `f2`, `f3`, `f4`, and `0x` rows are accepted with positive amounts.
 - Accepted rows are returned in `validRecipients`.
 - Accepted rows do not also produce validation errors.
@@ -50,6 +54,7 @@ validation
 - Whitespace trimming stays invisible to the user.
 
 ### Tests
+
 - `src/utils/__tests__/recipientValidation.test.ts`
   - `describe('INV-ADDR-001 recipient acceptance', ...)`
   - `it('accepts valid f1, f2, f3, f4, and 0x recipients through the shared validator')`
@@ -57,26 +62,32 @@ validation
   - `it('emits a non-blocking value-transfer notice for actor recipients')`
 
 ### Status
+
 `implemented`
 
 ## INV-ADDR-002 — Reject `f0` recipients
 
 ### Rule
+
 `f0` recipients are rejected as unsupported ID addresses. The app must reject them rather than resolve them to another format.
 
 ### Why this matters
+
 ID-address acceptance would silently change send targets and violate the client-only validation model.
 
 ### Execution boundary
+
 validation
 
 ### Acceptance criteria
+
 - `f0` rows are rejected.
 - `t0` rows are rejected when testnet-form inputs are validated.
 - Error copy identifies `f0/t0` ID addresses as unsupported.
 - Rejected rows are absent from `validRecipients`.
 
 ### Tests
+
 - `src/utils/__tests__/recipientValidation.test.ts`
   - `describe('INV-ADDR-002 f0 rejection', ...)`
   - `it('rejects f0 and t0 recipients as unsupported ID addresses')`
@@ -84,26 +95,32 @@ validation
   - `it('INV-ADDR-002 rejects malformed recipient inputs before encoding')`
 
 ### Status
+
 `implemented`
 
 ## INV-ADDR-003 — Treat `0x` and `f4` twins as the same recipient identity internally
 
 ### Rule
+
 Equivalent `0x` and `f4` encodings must collapse to the same internal EVM identity for duplicate detection and execution routing.
 
 ### Why this matters
+
 If twin encodings are treated as distinct identities, duplicate warnings break and the builder can send inconsistent payloads for the same destination.
 
 ### Execution boundary
+
 validation, duplicate detection, transaction builder
 
 ### Acceptance criteria
+
 - Duplicate detection is based on canonical identity, not raw string equality.
 - A `0x` address and its `f4` twin emit duplicate warnings.
 - Builder output canonicalizes both encodings to the same direct EVM target.
 - `0x` and `f4` recipients stay on the direct EVM transfer path.
 
 ### Tests
+
 - `src/utils/__tests__/recipientValidation.test.ts`
   - `describe('INV-ADDR-003 twin identity handling', ...)`
   - `it('treats a 0x address and its f4 twin as the same duplicate identity')`
@@ -112,6 +129,7 @@ validation, duplicate detection, transaction builder
   - `it('INV-ADDR-003 canonicalizes 0x and f4 twins to the same EVM transfer target')`
 
 ### Status
+
 `partial`
 
 Current repo note: duplicate detection already treats `0x` and `f4`/`t4` twins as the same identity.
@@ -122,41 +140,51 @@ identity, and execution target normalization are deliberately documented as one 
 ## INV-AMT-001 — Reject blank, zero, and negative amounts
 
 ### Rule
+
 Blank, zero, and negative FIL amounts are invalid and must be blocked by validation before review submission.
 
 ### Why this matters
+
 Allowing empty or non-positive values produces incorrect totals, confusing review states, and unsafe sends.
 
 ### Execution boundary
+
 validation, amount parsing
 
 ### Acceptance criteria
+
 - Blank and whitespace-only amounts are rejected.
 - Zero values are rejected.
 - Negative values are rejected.
 - Tiny positive values above zero remain valid.
 
 ### Tests
+
 - `src/utils/__tests__/recipientValidation.test.ts`
   - `describe('INV-AMT-001 amount sign and presence rules', ...)`
   - `it('rejects blank, zero, and negative amount strings')`
   - `it('accepts a tiny positive value at 1 attoFIL')`
 
 ### Status
+
 `implemented`
 
 ## INV-AMT-002 — Reject over-precise values and preserve exact accepted values
 
 ### Rule
+
 FIL-denominated inputs may use at most 18 decimal places. Over-precise values must be rejected rather than rounded or truncated.
 
 ### Why this matters
+
 If precision silently changes, users can send the wrong value and review totals stop matching execution inputs.
 
 ### Execution boundary
+
 validation, amount parsing, execution value preservation
 
 ### Acceptance criteria
+
 - Whole values pass.
 - Exactly 18 decimal places pass.
 - 19 decimal places fail.
@@ -165,12 +193,14 @@ validation, amount parsing, execution value preservation
 - Accepted 18-decimal values keep exact value semantics through fee calculation and execution.
 
 ### Tests
+
 - `src/utils/__tests__/recipientValidation.test.ts`
   - `describe('INV-AMT-002 precision rules', ...)`
   - `it('accepts values with up to 18 decimal places')`
   - `it('rejects values with more than 18 decimal places')`
 
 ### Status
+
 `partial`
 
 Current repo note: the shared validator correctly accepts up to 18 decimal places and rejects more
@@ -181,42 +211,56 @@ remains a gap.
 ## INV-BATCH-001 — Enforce the 500-recipient cap
 
 ### Rule
+
 The shared validation pipeline must cap batches at 500 non-empty recipient rows.
 
 ### Why this matters
+
 Losing the boundary increases execution risk, review noise, and wallet transaction size beyond the intended v1 operating envelope.
 
 ### Execution boundary
+
 validation
 
 ### Acceptance criteria
+
 - Exactly 500 non-empty valid rows are allowed.
 - 501 non-empty valid rows are rejected.
 - Intentionally blank rows do not count toward the cap.
 - Error copy names the 500-recipient limit.
 
 ### Tests
+
 - `src/utils/__tests__/recipientValidation.test.ts`
   - `describe('INV-BATCH-001 batch size cap', ...)`
   - `it('accepts exactly 500 non-empty recipients')`
   - `it('rejects 501 non-empty recipients')`
   - `it('ignores blank rows when enforcing the 500-recipient cap')`
+- `src/__tests__/App.test.tsx`
+  - `it('reserves two internal fee rows from the ThinBatch payment cap')`
 
 ### Status
-`implemented`
+
+`partial`
+
+Current repo note: Standard allows 500 user-entered recipients and up to two appended fee rows. The deployed ThinBatch contract caps the complete payment array at 500, so the App conservatively limits fee-enabled ThinBatch input to 498 user recipients. Calibration or another fee-disabled ThinBatch network still allows 500. Treat the invariant as partial until product copy and the DevSpec explicitly distinguish user recipients from internal fee payments, or the deployed contract capacity changes.
 
 ## INV-DUP-001 — Duplicate recipients require explicit confirmation before Send
 
 ### Rule
+
 Duplicates are warnings, not hard row errors, but Send must remain disabled until the sender explicitly acknowledges them in Review.
 
 ### Why this matters
+
 Duplicate rows can be intentional, but silent submission without acknowledgment makes accidental double-pays easy.
 
 ### Execution boundary
+
 duplicate detection, review UI gating
 
 ### Acceptance criteria
+
 - Duplicate rows emit warnings.
 - Duplicate warnings do not become hard validation errors by themselves.
 - Review shows a duplicate warning panel.
@@ -224,6 +268,7 @@ duplicate detection, review UI gating
 - The same rule applies to manual entry and CSV review.
 
 ### Tests
+
 - `src/utils/__tests__/recipientValidation.test.ts`
   - `describe('INV-DUP-001 duplicate warning behavior', ...)`
   - `it('emits duplicate warnings for repeated 0x rows without turning them into errors')`
@@ -235,25 +280,31 @@ duplicate detection, review UI gating
   - `csv review preserves duplicate warnings and requires acknowledgment`
 
 ### Status
+
 `implemented`
 
 ## INV-NET-001 — Wrong network disables Send
 
 ### Rule
+
 The live app flow must not allow a batch to be submitted while the wallet is on an unsupported network.
 
 ### Why this matters
+
 Chain mismatch can send the batch through the wrong execution environment or make estimates and explorer links meaningless.
 
 ### Execution boundary
+
 network/wallet gating, review UI gating
 
 ### Acceptance criteria
+
 - Unsupported chain state shows wrong-network copy.
 - Review progression is blocked while wrong-network state is active.
 - No estimate or execute call fires while the block is active.
 
 ### Tests
+
 - `src/__tests__/app.invariants.test.tsx`
   - `describe('INV-NET-001 wrong network gating', ...)`
   - `it('blocks review and send while the wallet is connected to an unsupported chain')`
@@ -263,6 +314,7 @@ network/wallet gating, review UI gating
   - `it('models native f1/t1 senders as live send-capable when their provider can sign and submit')`
 
 ### Status
+
 `implemented`
 
 Current repo note: the live block happens at the App review boundary, not by a wallet-driven switch action inside the review modal. `src/lib/senders/useConnectedSender.ts` now centralizes the live connected-sender state for the App. It exposes the EVM/wagmi sender path and the native Filecoin sender path when the connected native provider can sign, submit, read balance, and preserve one-approval batch behavior.
@@ -270,15 +322,19 @@ Current repo note: the live block happens at the App review boundary, not by a w
 ## INV-BAL-001 — Submit-Time Balance Recheck
 
 ### Rule
+
 The existing EVM/wagmi and native Filecoin submit paths must re-read the connected sender balance immediately before wallet submission. The batch must not be submitted unless current balance covers the prepared batch transfer value plus the latest estimated network fee.
 
 ### Why this matters
+
 The review-time balance can become stale if the sender spends or receives FIL while the review modal is open. Sending without a fresh check can push an avoidable insufficient-funds request into the wallet.
 
 ### Execution boundary
+
 submit guard, wallet RPC
 
 ### Acceptance criteria
+
 - The recheck runs after submit-time gas estimation and before wallet submission.
 - Required balance includes prepared transfer value, which contains recipient rows and appended fee rows, plus estimated network fee.
 - If current balance is insufficient, wallet submission is not called.
@@ -286,12 +342,14 @@ submit guard, wallet RPC
 - Native Filecoin senders use the Lotus balance reader before native message signing and `MpoolPush`.
 
 ### Tests
+
 - `src/lib/transaction/__tests__/submitBalanceCheck.test.ts`
   - `describe('submit-time balance recheck helper', ...)`
 - `src/lib/transaction/__tests__/useExecuteBatch.submitBalance.test.tsx`
   - `describe('useExecuteBatch submit-time balance recheck', ...)`
 
 ### Status
+
 `implemented`
 
 Current repo note: this is implemented for the live EVM/wagmi sender path and the native Filecoin sender path wired through `useExecuteNativeBatch`.
@@ -299,15 +357,19 @@ Current repo note: this is implemented for the live EVM/wagmi sender path and th
 ## INV-RPC-001 — Contract recipients detected via `eth_getCode` are blocked
 
 ### Rule
+
 EVM recipients (`0x` or `f4`) with deployed bytecode must be blocked before Send can proceed, using the public-client `getCode` / `eth_getCode` path or an equivalent check. The check applies to the final prepared payment destinations, including app-appended fee rows.
 
 ### Why this matters
+
 The v1 product scope only supports EVM EOAs as `0x`/`f4` recipients. Contract recipients can absorb value in ways that do not match the batch sender’s intent.
 
 ### Execution boundary
+
 RPC contract-recipient check, review UI gating
 
 ### Acceptance criteria
+
 - `getCode` is used for `0x` and `f4` recipients.
 - Empty code (`0x`) is treated as EOA-like and allowed.
 - Non-empty code blocks review/send.
@@ -316,6 +378,7 @@ RPC contract-recipient check, review UI gating
 - Send is disabled and execution is not triggered when any EVM contract recipient is present.
 
 ### Tests
+
 - `src/__tests__/contractRecipientGuard.test.tsx`
   - `describe('INV-RPC-001 contract recipient guard', ...)`
   - `it('does not require getCode for native Filecoin recipients')`
@@ -325,6 +388,7 @@ RPC contract-recipient check, review UI gating
   - `it('checks appended EVM fee rows before estimating or sending')`
 
 ### Status
+
 `implemented`
 
 Current repo note: the FEVM review/send flow checks final payment destinations with `getCode` before review estimation and repeats the check before submit. That includes user-entered `0x` and `f4` recipients plus appended EVM fee rows. Native `f1/f2/f3` recipients do not invoke this check. ThinBatch does not duplicate this product policy on-chain; the local guard applies consistently to Standard and ThinBatch.
@@ -332,15 +396,19 @@ Current repo note: the FEVM review/send flow checks final payment destinations w
 ## INV-EXEC-001 — Review estimate and submission use the same execution config
 
 ### Rule
+
 Review-time estimation and send-time submission must prepare the same execution configuration for the same recipients, execution method, and error mode.
 
 ### Why this matters
+
 If estimate and execute diverge, the review screen stops being a trustworthy preview of what the wallet will actually submit.
 
 ### Execution boundary
+
 estimate/execute flow, transaction builder
 
 ### Acceptance criteria
+
 - The same recipients, execution method, and error mode produce the same prepared batch config.
 - `executionMethod`, `to`, `data`, `value`, `recipientCount`, `totalValueAttoFil`, and `errorMode` stay aligned.
 - The live app passes the same prepared recipient set to both estimate and execute.
@@ -349,6 +417,7 @@ estimate/execute flow, transaction builder
 - Standard cannot be prepared with `PARTIAL`; value-bearing Multicall3 partial calls are not refund-safe.
 
 ### Tests
+
 - `src/lib/transaction/__tests__/batchExecution.test.ts`
   - `describe('INV-EXEC-001 prepared batch determinism', ...)`
   - `it('produces the same prepared execution config for estimate and submit inputs')`
@@ -370,40 +439,68 @@ estimate/execute flow, transaction builder
   - `it('passes configured ThinBatch execution through estimate and execute on Calibration')`
 
 ### Status
+
 `implemented`
 
 Current repo note: the live App path estimates and submits through the EVM/wagmi `useExecuteBatch` flow for EVM senders and through `useExecuteNativeBatch` for native Filecoin senders. Standard remains the default execution method, but Standard is Atomic-only because Multicall3 `aggregate3Value(...)` does not refund value for failed allowed subcalls. ThinBatch is selectable only when the active network exposes `thinBatchAddress`; the shared network config records deployed Mainnet and Calibration ThinBatch defaults. `PARTIAL` is available only on ThinBatch where failed payment value is refunded. Both EVM and native sender paths pass the selected execution method and error mode into the same preparation layer. The native path prepares one Filecoin `InvokeEVM` message from the selected FEVM batch payload, fetches nonce and Lotus gas, signs through the connected native wallet provider, submits with `Filecoin.MpoolPush`, and polls status by CID.
 
-## INV-MSIG-001 — Native multisig proposals wrap the prepared FEVM batch without changing it
+## INV-MSIG-001 — Native multisig proposals preserve and verify the prepared FEVM batch
 
 ### Rule
-When an `f2/t2` multisig is selected as the funding source, SendFIL must first prepare the same FEVM batch payload used by the native single-signer path, then wrap that payload in a Filecoin multisig `Propose` message. The connected native signer pays proposal gas; the multisig pays the batch value.
+
+When an `f2/t2` multisig is selected as the funding source, SendFIL must first prepare the same FEVM batch payload used by the native single-signer path, then wrap that payload in a Filecoin multisig `Propose` message. Before enabling approval for a pending proposal, SendFIL must decode and verify the complete nested batch rather than trusting only its outer target. The connected native signer pays proposal gas; the multisig pays the batch value.
 
 ### Why this matters
+
 Multisig proposal encoding has two balances and two execution layers. If the inner payload, params encoding, target, value, or balance checks drift, a signer could approve something different from the reviewed batch or attempt to spend from the wrong account.
 
 ### Execution boundary
-native multisig proposal preparation, submit guard
+
+native multisig proposal preparation, pending-approval guard, actor outcome verification
 
 ### Acceptance criteria
+
 - The inner batch is prepared through `prepareBatchExecution(...)` with the selected recipients, execution method, error mode, and active network.
 - The outer Filecoin message is addressed to the selected `f2/t2` multisig with Method `Propose` and Value `0`.
 - The proposal target is the prepared FEVM target in `f4/t4` form, proposal Value equals the prepared batch value, proposal Method is `InvokeEVM`, and proposal Params are the decoded `InvokeEVM` params bytes.
 - Submit-time checks require multisig available balance to cover the prepared batch total and the connected signer balance to cover estimated proposal gas.
-- Pending approve/cancel actions are enabled only for SendFIL-compatible proposals targeting the configured Multicall3 or ThinBatch contract on the active network.
+- Loaded actor and pending state is bound to the selected network, actor address, and connected signer; stale responses cannot authorize another actor.
+- In-app approval is enabled only after canonical CBOR and ABI decoding proves every nested call is a supported SendFIL payment with matching totals, execution mode, batch limit, active fee rows, and contract-recipient policy.
+- The approval screen displays every decoded recipient and exact amount before authorization.
+- Pending proposals with duplicate payment destinations require a fresh explicit acknowledgment before approval, and the hook enforces that acknowledgment below the UI boundary.
+- Confirmed Propose and Approve messages decode the actor return and distinguish queued proposals, successful threshold execution, and nonzero inner exit codes.
+- Propose, Approve, and Cancel remain single-flight through confirmation. A timeout or undecodable confirmed return is treated as an uncertain, non-retryable outcome because the original CID may still execute.
+- While a proposal is nonterminal, sender, multisig, network, and wallet disconnect controls remain locked; status and Filfox links use the submitted network snapshot rather than live wallet state.
+- Review and submission are blocked while a native wallet connect, disconnect, or network transition is unresolved; late wallet completions cannot reset a proposal submitted after that transition began.
+- Action CIDs and terminal results stay bound to the submitted actor identity, and refresh never targets a newly selected actor.
 
 ### Tests
+
 - `src/lib/multisig/__tests__/actorParams.test.ts`
-  - `it('encodes Propose params with decoded InvokeEVM params bytes')`
-  - `it('encodes ProposalHashData and TxnIDParams for approve/cancel')`
+  - actor-compatible CBOR/hash golden vectors and strict actor-return decoding
+- `src/lib/multisig/__tests__/proposalVerifier.test.ts`
+  - canonical Standard and ThinBatch decoding
+  - arbitrary-selector, nested-call, target, value, mode, recipient, batch-limit, and fee-policy rejection
 - `src/lib/multisig/__tests__/rpc.test.ts`
-  - `it('loads pending proposal compatibility and signer action gates')`
+  - actor CodeCID identity, malformed-proposal isolation, and fail-closed contract-recipient checks
 - `src/lib/multisig/__tests__/useExecuteMultisigProposal.test.tsx`
-  - `it('signs a multisig Propose message after rechecking multisig and signer balances')`
+  - queued, applied-success, applied-failure, malformed-return, gas-field, and through-confirmation concurrency coverage
   - `it('blocks signing when multisig spendable balance is insufficient')`
-  - `it('blocks signing when signer gas balance is insufficient')`
+  - `it('blocks signing when the connected signer cannot cover proposal gas')`
+  - `it('rechecks signer membership immediately before proposal submission')`
+- `src/lib/multisig/__tests__/useMultisigs.lifecycle.test.tsx`
+  - address/network/signer race coverage and guarded action refresh
+  - create/ExecReturn/persistence coverage, including unverifiable confirmed creation warnings
+  - approval and cancellation submission, terminal outcomes, single-flight locking, and positive refresh
+  - submit-time proposal-policy and duplicate-acknowledgment enforcement
+- `src/components/multisig/__tests__/MultisigFundingPanel.render.test.tsx`
+  - decoded-payment review, approval/cancellation locking, CID links, and stale-identity hiding
+- `src/__tests__/App.test.tsx`
+  - `it('refreshes, reviews, submits, and reconciles a native multisig proposal')`
+  - pending wallet/network locking and submitted-network status-link coverage
 
 ### Status
+
 `implemented`
 
-Current repo note: `src/lib/multisig/proposalBuilder.ts` builds the inner prepared batch and wraps it in actor-compatible multisig params. `src/lib/multisig/useExecuteMultisigProposal.ts` estimates the outer proposal gas, rechecks both funding balances before signing, submits through the connected native Filecoin provider, and polls the proposal message CID. The UI reports proposal submission; higher-threshold multisigs still require later approvals, and real FilSnap/Ledger Mainnet plus Calibration smoke coverage remains a production-readiness requirement.
+Current repo note: `src/lib/multisig/proposalBuilder.ts` builds the inner prepared batch and wraps it in actor-compatible multisig params. `src/lib/multisig/proposalVerifier.ts` independently decodes pending proposals and reconstructs their canonical Standard or ThinBatch calldata before approval is enabled. `src/lib/multisig/useExecuteMultisigProposal.ts` estimates the outer proposal gas, rechecks both funding balances before signing, submits through the connected native Filecoin provider, and verifies both the outer receipt and nested actor outcome. Higher-threshold multisigs still require later approvals. Real FilSnap/Ledger Mainnet plus Calibration smoke coverage remains a production-readiness requirement.

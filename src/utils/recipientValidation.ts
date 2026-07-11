@@ -44,7 +44,7 @@ interface AmountValidationResult {
   error?: string;
 }
 
-const DEFAULT_MAX_RECIPIENTS = 500;
+export const DEFAULT_MAX_RECIPIENTS = 500;
 
 function normalizeEvmInput(address: string): `0x${string}` | null {
   if (!/^0x/i.test(address)) {
@@ -59,10 +59,7 @@ function normalizeEvmInput(address: string): `0x${string}` | null {
   return getAddress(normalizedPrefixAddress);
 }
 
-function getRowLabel(
-  source: RecipientValidationOptions['source'],
-  lineNumber: number,
-): string {
+function getRowLabel(source: RecipientValidationOptions['source'], lineNumber: number): string {
   return source === 'csv' ? `Line ${lineNumber}` : `Recipient ${lineNumber}`;
 }
 
@@ -218,9 +215,7 @@ export function validateRecipientRows(
 
     const duplicateSource = seenRecipients.get(addressValidation.duplicateKey!);
     if (duplicateSource) {
-      warnings.push(
-        `${rowLabel}: ${DUPLICATE_RECIPIENT_WARNING_MARKER} ${duplicateSource}`,
-      );
+      warnings.push(`${rowLabel}: ${DUPLICATE_RECIPIENT_WARNING_MARKER} ${duplicateSource}`);
     } else {
       seenRecipients.set(addressValidation.duplicateKey!, rowLabel);
     }
@@ -249,9 +244,7 @@ export function validateRecipientRows(
   }
 
   if (nonEmptyRowCount > maxRecipients) {
-    errors.push(
-      `Batch size exceeds the current limit of ${maxRecipients} recipients`,
-    );
+    errors.push(`Batch size exceeds the current limit of ${maxRecipients} recipients`);
   }
 
   if (seenNativeNetworkPrefixes.size > 1) {

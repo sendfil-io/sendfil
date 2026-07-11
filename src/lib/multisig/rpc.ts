@@ -1,23 +1,16 @@
-import {
-  CoinType,
-  Protocol,
-  newFromString,
-} from '@glif/filecoin-address';
+import { CoinType, Protocol, newFromString } from '@glif/filecoin-address';
 import { callRpc } from '../DataProvider/rpc';
 import type { FilecoinMessage } from '../DataProvider/types';
 import type { SendFilNetworkKey } from '../networks';
-import { normalizeToEvmAddress } from '../../utils/addressEncoder';
-import { toF4 } from '../../utils/toF4';
+import { validateNoEvmContractRecipients } from '../../utils/contractRecipientGuard';
 import type {
   MultisigActorState,
   MultisigPendingProposal,
   MultisigVestingSchedule,
   NativeMultisigAddress,
 } from './types';
-import {
-  computeProposalHash,
-  paramsBase64ToBytes,
-} from './actorParams';
+import { computeProposalHash, paramsBase64ToBytes } from './actorParams';
+import { validateDecodedBatchFeePolicy, verifyPendingSendFilProposal } from './proposalVerifier';
 
 export interface LotusCid {
   '/': string;
@@ -72,6 +65,18 @@ export interface MultisigRpc {
     message: FilecoinMessage,
     networkKey: SendFilNetworkKey,
   ) => Promise<FilecoinMessage>;
+  getEvmCode?: (
+    address: `0x${string}`,
+    networkKey: SendFilNetworkKey,
+  ) => Promise<`0x${string}` | undefined>;
+}
+
+export function parseEvmCodeResult(value: unknown): `0x${string}` {
+  if (typeof value !== 'string' || !/^0x(?:[0-9a-fA-F]{2})*$/.test(value)) {
+    throw new Error('eth_getCode returned malformed bytecode.');
+  }
+
+  return value as `0x${string}`;
 }
 
 export const lotusMultisigRpc: MultisigRpc = {
@@ -86,9 +91,7 @@ export const lotusMultisigRpc: MultisigRpc = {
   getBalance: async (address, networkKey) =>
     BigInt(await callRpc<string>('Filecoin.WalletBalance', [address], networkKey)),
   getAvailableBalance: async (address, networkKey) =>
-    BigInt(
-      await callRpc<string>('Filecoin.MsigGetAvailableBalance', [address, []], networkKey),
-    ),
+    BigInt(await callRpc<string>('Filecoin.MsigGetAvailableBalance', [address, []], networkKey)),
   getVestingSchedule: async (address, networkKey) => {
     const raw = await callRpc<unknown>(
       'Filecoin.MsigGetVestingSchedule',
@@ -99,11 +102,7 @@ export const lotusMultisigRpc: MultisigRpc = {
     return normalizeVestingSchedule(raw);
   },
   getPending: (address, networkKey) =>
-    callRpc<LotusPendingTransaction[]>(
-      'Filecoin.MsigGetPending',
-      [address, []],
-      networkKey,
-    ),
+    callRpc<LotusPendingTransaction[]>('Filecoin.MsigGetPending', [address, []], networkKey),
   getNetworkVersion: (networkKey) =>
     callRpc<number>('Filecoin.StateNetworkVersion', [[]], networkKey),
   getActorCodeCids: (networkVersion, networkKey) =>
@@ -113,7 +112,13 @@ export const lotusMultisigRpc: MultisigRpc = {
       networkKey,
     ),
   estimateGas: (message, networkKey) =>
-    callRpc<FilecoinMessage>('Filecoin.GasEstimateMessageGas', [message, undefined, []], networkKey),
+    callRpc<FilecoinMessage>(
+      'Filecoin.GasEstimateMessageGas',
+      [message, undefined, []],
+      networkKey,
+    ),
+  getEvmCode: async (address, networkKey) =>
+    parseEvmCodeResult(await callRpc<unknown>('eth_getCode', [address, 'latest'], networkKey)),
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -128,10 +133,15 @@ function asNumber(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
-function asStringArray(value: unknown): string[] {
-  return Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === 'string')
-    : [];
+function asStringArray(value: unknown): string[] | undefined {
+  if (
+    !Array.isArray(value) ||
+    value.some((item) => typeof item !== 'string' || item.trim().length === 0)
+  ) {
+    return undefined;
+  }
+
+  return [...value];
 }
 
 function cidValue(value: LotusCid | string | undefined): string | undefined {
@@ -147,10 +157,8 @@ function normalizeVestingSchedule(raw: unknown): MultisigVestingSchedule | undef
     return undefined;
   }
 
-  const initialBalance =
-    asString(raw.InitialBalance) ?? asString(raw.initialBalance);
-  const lockedBalance =
-    asString(raw.LockedBalance) ?? asString(raw.lockedBalance);
+  const initialBalance = asString(raw.InitialBalance) ?? asString(raw.initialBalance);
+  const lockedBalance = asString(raw.LockedBalance) ?? asString(raw.lockedBalance);
 
   return {
     initialBalanceAttoFil: initialBalance ? BigInt(initialBalance) : undefined,
@@ -169,33 +177,15 @@ function getDecodedState(state: unknown): Record<string, unknown> {
   return isRecord(nested) ? nested : state;
 }
 
-function parsePendingCountFromState(state: Record<string, unknown>): number {
-  const pending = state.PendingTxns ?? state.pendingTxns;
-
-  if (Array.isArray(pending)) {
-    return pending.length;
-  }
-
-  if (isRecord(pending)) {
-    return Object.keys(pending).length;
-  }
-
-  return 0;
-}
-
 export function isNativeMultisigAddressForNetwork(
   address: string,
   networkKey: SendFilNetworkKey,
 ): address is NativeMultisigAddress {
   try {
     const parsed = newFromString(address.trim());
-    const expectedCoinType =
-      networkKey === 'mainnet' ? CoinType.MAIN : CoinType.TEST;
+    const expectedCoinType = networkKey === 'mainnet' ? CoinType.MAIN : CoinType.TEST;
 
-    return (
-      parsed.protocol() === Protocol.ACTOR &&
-      parsed.coinType() === expectedCoinType
-    );
+    return parsed.protocol() === Protocol.ACTOR && parsed.coinType() === expectedCoinType;
   } catch {
     return false;
   }
@@ -264,14 +254,13 @@ export async function loadMultisigActorState({
   rpc?: MultisigRpc;
 }): Promise<MultisigActorState> {
   const multisigAddress = validateNativeMultisigAddress(address, networkKey);
-  const [actor, actorState, balance, availableBalance, networkVersion] =
-    await Promise.all([
-      rpc.getActor(multisigAddress, networkKey),
-      rpc.readState(multisigAddress, networkKey),
-      rpc.getBalance(multisigAddress, networkKey),
-      rpc.getAvailableBalance(multisigAddress, networkKey),
-      rpc.getNetworkVersion(networkKey),
-    ]);
+  const [actor, actorState, balance, availableBalance, networkVersion] = await Promise.all([
+    rpc.getActor(multisigAddress, networkKey),
+    rpc.readState(multisigAddress, networkKey),
+    rpc.getBalance(multisigAddress, networkKey),
+    rpc.getAvailableBalance(multisigAddress, networkKey),
+    rpc.getNetworkVersion(networkKey),
+  ]);
   const actorCodeCids = await rpc.getActorCodeCids(networkVersion, networkKey);
   const decodedState = getDecodedState(actorState.State);
   const signers = asStringArray(decodedState.Signers ?? decodedState.signers);
@@ -281,8 +270,21 @@ export async function loadMultisigActorState({
     asNumber(decodedState.Threshold) ??
     0;
 
-  if (!isMultisigActorCode(actor, actorCodeCids) && signers.length === 0) {
+  if (!isMultisigActorCode(actor, actorCodeCids)) {
     throw new Error('The selected actor does not appear to be a Filecoin native multisig.');
+  }
+
+  if (
+    !signers ||
+    signers.length === 0 ||
+    !Number.isSafeInteger(threshold) ||
+    threshold < 1 ||
+    threshold > signers.length ||
+    balance < 0n ||
+    availableBalance < 0n ||
+    availableBalance > balance
+  ) {
+    throw new Error('The selected multisig actor state is malformed.');
   }
 
   const [idAddress, robustAddress, vesting, signerIdLookups, connectedSignerIdAddress] =
@@ -290,16 +292,14 @@ export async function loadMultisigActorState({
       rpc.lookupID(multisigAddress, networkKey).catch(() => undefined),
       rpc.lookupRobustAddress(multisigAddress, networkKey).catch(() => multisigAddress),
       rpc.getVestingSchedule(multisigAddress, networkKey).catch(() => undefined),
-      Promise.all(
-        signers.map((signer) => rpc.lookupID(signer, networkKey).catch(() => signer)),
-      ),
+      Promise.all(signers.map((signer) => rpc.lookupID(signer, networkKey).catch(() => signer))),
       connectedSignerAddress
         ? rpc.lookupID(connectedSignerAddress, networkKey).catch(() => undefined)
         : Promise.resolve(undefined),
     ]);
   const connectedSignerCanApprove = Boolean(
     connectedSignerIdAddress &&
-      signerIdLookups.some((signerId) => signerId === connectedSignerIdAddress),
+    signerIdLookups.some((signerId) => signerId === connectedSignerIdAddress),
   );
 
   return {
@@ -317,32 +317,25 @@ export async function loadMultisigActorState({
     signerIdAddresses: signerIdLookups,
     connectedSignerIdAddress,
     connectedSignerCanApprove,
-    pendingProposalCount: parsePendingCountFromState(decodedState),
     startEpoch: vesting?.startEpoch ?? asNumber(decodedState.StartEpoch),
     unlockDuration: vesting?.unlockDuration ?? asNumber(decodedState.UnlockDuration),
   };
 }
 
-function isKnownSendFilTarget(
-  to: string,
-  network: Pick<
-    import('../networks').SendFilNetworkConfig,
-    'multicall3Address' | 'thinBatchAddress' | 'nativePrefix'
-  >,
-): boolean {
-  const normalizedTo =
-    normalizeToEvmAddress(to)?.toLowerCase() ?? to.toLowerCase();
-  const knownTargets = [
-    network.multicall3Address,
-    network.thinBatchAddress,
-  ]
-    .filter((address): address is `0x${string}` => Boolean(address))
-    .flatMap((address) => [
-      address.toLowerCase(),
-      toF4(address, network.nativePrefix).toLowerCase(),
-    ]);
+function parsePendingValue(value: unknown): bigint | undefined {
+  if (typeof value !== 'string' || !/^-?\d+$/.test(value)) {
+    return undefined;
+  }
 
-  return knownTargets.includes(normalizedTo);
+  try {
+    return BigInt(value);
+  } catch {
+    return undefined;
+  }
+}
+
+function parsePendingId(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
 }
 
 export async function loadMultisigPendingProposals({
@@ -362,67 +355,158 @@ export async function loadMultisigPendingProposals({
     (connectedSignerAddress
       ? await rpc.lookupID(connectedSignerAddress, multisig.networkKey).catch(() => undefined)
       : undefined);
+  const evmCodeRequests = new Map<`0x${string}`, Promise<`0x${string}` | undefined>>();
+  const getEvmCode = rpc.getEvmCode;
+  const contractCodeClient = getEvmCode
+    ? {
+        getCode: ({ address }: { address: `0x${string}` }) => {
+          const existing = evmCodeRequests.get(address);
+
+          if (existing) {
+            return existing;
+          }
+
+          const request = getEvmCode(address, multisig.networkKey);
+          evmCodeRequests.set(address, request);
+          return request;
+        },
+      }
+    : undefined;
 
   return Promise.all(
     pending.map(async (proposal, index) => {
-      const approvals = asStringArray(proposal.Approved ?? proposal.Approvals);
+      const parsedApprovals = asStringArray(proposal.Approved ?? proposal.Approvals);
+      const approvals = parsedApprovals ?? [];
       const approvalIdAddresses = await Promise.all(
         approvals.map((approval) =>
           rpc.lookupID(approval, multisig.networkKey).catch(() => approval),
         ),
       );
-      const proposer = proposal.Proposer ?? approvals[0] ?? '';
+      const proposer = asString(proposal.Proposer) ?? approvals[0] ?? '';
       const proposerIdAddress = proposer
-        ? await rpc.lookupID(proposer, multisig.networkKey).catch(() => proposer)
+        ? await rpc.lookupID(proposer, multisig.networkKey).catch(() => undefined)
         : undefined;
-      const paramsBase64 = proposal.Params ?? '';
-      const paramsBytes = paramsBase64 ? paramsBase64ToBytes(paramsBase64) : new Uint8Array();
-      const isSendFilCompatible =
-        proposal.Method === 3_844_450_837 &&
-        isKnownSendFilTarget(proposal.To, network);
+      const proposalId = parsePendingId(proposal.ID ?? proposal.TxnID);
+      const to = asString(proposal.To) ?? '';
+      const valueAttoFil = parsePendingValue(proposal.Value);
+      const method = asNumber(proposal.Method);
+      const paramsBase64 = asString(proposal.Params) ?? '';
+      let paramsBytes = new Uint8Array();
+      let proposalMetadataError: string | undefined;
+
+      if (proposalId === undefined) {
+        proposalMetadataError = 'Proposal ID is missing or invalid.';
+      } else if (!to) {
+        proposalMetadataError = 'Proposal target is missing or invalid.';
+      } else if (valueAttoFil === undefined || valueAttoFil < 0n) {
+        proposalMetadataError = 'Proposal value is missing or invalid.';
+      } else if (method === undefined || !Number.isSafeInteger(method) || method < 0) {
+        proposalMetadataError = 'Proposal method is missing or invalid.';
+      }
+
+      if (!proposalMetadataError) {
+        try {
+          paramsBytes = new Uint8Array(paramsBase64ToBytes(paramsBase64));
+        } catch {
+          proposalMetadataError = 'Proposal params are not valid base64.';
+        }
+      }
+
+      const compatibilityMetadataError =
+        proposalMetadataError ??
+        (!parsedApprovals ? 'Proposal approvals are missing or invalid.' : undefined);
+      const verification = compatibilityMetadataError
+        ? { compatible: false as const, reason: compatibilityMetadataError }
+        : verifyPendingSendFilProposal({
+            to,
+            valueAttoFil: valueAttoFil!,
+            method: method!,
+            paramsBytes,
+            network,
+          });
+      const contractRecipientErrors = verification.compatible
+        ? await validateNoEvmContractRecipients(
+            verification.decodedBatch.payments.map((payment) => ({
+              address: payment.recipient,
+            })),
+            contractCodeClient,
+          )
+        : [];
+      const feePolicyError = verification.compatible
+        ? validateDecodedBatchFeePolicy(verification.decodedBatch, network)
+        : undefined;
       const connectedSignerHasApproved = Boolean(
         connectedSignerIdAddress &&
-          approvalIdAddresses.some((approvalId) => approvalId === connectedSignerIdAddress),
+        approvalIdAddresses.some((approvalId) => approvalId === connectedSignerIdAddress),
       );
-      const proposalHash =
-        isSendFilCompatible && proposerIdAddress
-          ? computeProposalHash({
-              requesterIdAddress: proposerIdAddress,
-              to: proposal.To,
-              valueAttoFil: BigInt(proposal.Value),
-              method: proposal.Method,
-              params: paramsBytes,
-            })
-          : undefined;
+      let compatibilityReason = verification.compatible
+        ? (feePolicyError ?? contractRecipientErrors[0])
+        : verification.reason;
+      let proposalHash: Uint8Array | undefined;
+
+      if (!proposalMetadataError && proposerIdAddress) {
+        try {
+          proposalHash = computeProposalHash({
+            requesterIdAddress: proposerIdAddress,
+            to,
+            valueAttoFil: valueAttoFil!,
+            method: method!,
+            params: paramsBytes,
+          });
+        } catch {
+          if (verification.compatible) {
+            compatibilityReason = 'Could not compute the proposal safety hash.';
+          }
+        }
+      } else if (verification.compatible && !proposerIdAddress) {
+        compatibilityReason = 'Could not resolve the proposal requester to an ID address.';
+      }
+
+      if (
+        verification.compatible &&
+        !feePolicyError &&
+        contractRecipientErrors.length === 0 &&
+        !proposalHash
+      ) {
+        if (!proposerIdAddress) {
+          compatibilityReason = 'Could not resolve the proposal requester to an ID address.';
+        } else {
+          compatibilityReason = 'Could not compute the proposal safety hash.';
+        }
+      }
+
+      const isSendFilCompatible =
+        verification.compatible &&
+        !feePolicyError &&
+        contractRecipientErrors.length === 0 &&
+        Boolean(proposalHash);
 
       return {
-        id: proposal.ID ?? proposal.TxnID ?? index,
+        id: proposalId ?? index,
         proposer,
         proposerIdAddress,
-        to: proposal.To,
-        valueAttoFil: BigInt(proposal.Value),
-        method: proposal.Method,
+        to,
+        valueAttoFil: valueAttoFil ?? 0n,
+        method: method ?? 0,
         paramsBase64,
         paramsBytes,
         approvals,
         approvalIdAddresses,
         connectedSignerHasApproved,
         isSendFilCompatible,
-        compatibilityReason: isSendFilCompatible
-          ? undefined
-          : 'Only SendFIL proposals targeting this network are enabled here.',
+        compatibilityReason,
+        decodedBatch: verification.compatible ? verification.decodedBatch : undefined,
         proposalHash,
         canApprove: Boolean(
           isSendFilCompatible &&
-            proposalHash &&
-            multisig.connectedSignerCanApprove &&
-            !connectedSignerHasApproved,
+          proposalHash &&
+          multisig.connectedSignerCanApprove &&
+          !connectedSignerHasApproved,
         ),
         canCancel: Boolean(
-          isSendFilCompatible &&
-            proposalHash &&
-            connectedSignerIdAddress &&
-            proposerIdAddress === connectedSignerIdAddress,
+          proposalHash &&
+          connectedSignerIdAddress &&
+          proposerIdAddress === connectedSignerIdAddress,
         ),
       };
     }),

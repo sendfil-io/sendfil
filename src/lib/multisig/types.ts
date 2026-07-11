@@ -1,9 +1,5 @@
 import type { FilecoinMessage } from '../DataProvider/types';
-import type {
-  NetworkPrefix,
-  SendFilNetworkConfig,
-  SendFilNetworkKey,
-} from '../networks';
+import type { NetworkPrefix, SendFilNetworkConfig, SendFilNetworkKey } from '../networks';
 import type {
   BatchExecutionRecipient,
   BatchGasEstimate,
@@ -36,7 +32,6 @@ export interface MultisigActorState {
   signerIdAddresses: string[];
   connectedSignerIdAddress?: string;
   connectedSignerCanApprove: boolean;
-  pendingProposalCount: number;
   startEpoch?: number;
   unlockDuration?: number;
 }
@@ -46,6 +41,21 @@ export interface MultisigVestingSchedule {
   startEpoch?: number;
   unlockDuration?: number;
   lockedBalanceAttoFil?: bigint;
+}
+
+export interface DecodedMultisigProposalPayment {
+  index: number;
+  kind: 'EVM' | 'FILECOIN';
+  recipient: string;
+  amountAttoFil: string;
+}
+
+export interface DecodedMultisigProposalBatch {
+  executionMethod: 'STANDARD' | 'THINBATCH';
+  errorMode: 'ATOMIC' | 'PARTIAL';
+  recipientCount: number;
+  totalValueAttoFil: string;
+  payments: DecodedMultisigProposalPayment[];
 }
 
 export interface MultisigPendingProposal {
@@ -62,6 +72,7 @@ export interface MultisigPendingProposal {
   connectedSignerHasApproved: boolean;
   isSendFilCompatible: boolean;
   compatibilityReason?: string;
+  decodedBatch?: DecodedMultisigProposalBatch;
   proposalHash?: Uint8Array;
   canApprove: boolean;
   canCancel: boolean;
@@ -97,4 +108,3 @@ export interface PreparedMultisigProposal {
   proposalMethod: number;
   proposalParamsBytes: Uint8Array;
 }
-

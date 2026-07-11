@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CoinType, newSecp256k1Address } from '@glif/filecoin-address';
 import { getNetworkConfig } from '../../lib/networks';
 import { calculateFeeRows, getFeeLabel } from '../fee';
+import { toF4 } from '../toF4';
 
 const MAINNET_FEE_A = '0x1111111111111111111111111111111111111111';
 const MAINNET_FEE_B = '0x2222222222222222222222222222222222222222';
@@ -85,5 +86,41 @@ describe('calculateFeeRows', () => {
     expect(() =>
       calculateFeeRows([{ address: MAINNET_FEE_A, amount: 1 }], getNetworkConfig('mainnet')),
     ).toThrow('One recipient is already used by SendFIL fees. Remove it to continue.');
+    expect(() =>
+      calculateFeeRows(
+        [{ address: toF4(MAINNET_FEE_A, 'f'), amount: 1 }],
+        getNetworkConfig('mainnet'),
+      ),
+    ).toThrow('One recipient is already used by SendFIL fees. Remove it to continue.');
+  });
+
+  it('computes microFIL-truncated fees with integer arithmetic', () => {
+    vi.stubEnv('VITE_FEE_ADDR_A_MAINNET', MAINNET_FEE_A);
+    vi.stubEnv('VITE_FEE_ADDR_B_MAINNET', MAINNET_FEE_B);
+    vi.stubEnv('VITE_FEE_PERCENT_MAINNET', '1');
+    vi.stubEnv('VITE_FEE_SPLIT_MAINNET', '0.5');
+
+    expect(
+      calculateFeeRows(
+        [{ address: '0x3333333333333333333333333333333333333333', amount: 0.0006 }],
+        getNetworkConfig('mainnet'),
+      ),
+    ).toEqual([
+      { address: '0x3333333333333333333333333333333333333333', amount: 0.0006 },
+      { address: MAINNET_FEE_A, amount: 0.000003 },
+      { address: MAINNET_FEE_B, amount: 0.000003 },
+    ]);
+  });
+
+  it('omits fee rows that truncate to zero', () => {
+    vi.stubEnv('VITE_FEE_ADDR_A_MAINNET', MAINNET_FEE_A);
+    vi.stubEnv('VITE_FEE_ADDR_B_MAINNET', MAINNET_FEE_B);
+
+    const recipient = {
+      address: '0x3333333333333333333333333333333333333333',
+      amount: 0.0001,
+    };
+
+    expect(calculateFeeRows([recipient], getNetworkConfig('mainnet'))).toEqual([recipient]);
   });
 });

@@ -13,7 +13,11 @@ import { useBalance, usePublicClient } from 'wagmi';
 import { formatUnits } from 'viem';
 import { validateNoEvmContractRecipients } from './utils/contractRecipientGuard';
 import { calculateFeeRows, getFeeLabel } from './utils/fee';
-import { validateRecipientRows, type RecipientValidationResult } from './utils/recipientValidation';
+import {
+  DEFAULT_MAX_RECIPIENTS,
+  validateRecipientRows,
+  type RecipientValidationResult,
+} from './utils/recipientValidation';
 import {
   DEFAULT_BATCH_CONFIGURATION,
   getErrorHandlingLabel,
@@ -66,6 +70,17 @@ interface ConfigurationChoice {
 interface UnavailableCapabilityNotice {
   title: string;
   description: string;
+}
+
+interface MultisigReviewContext {
+  address?: string;
+  label: string;
+  chainId: number;
+  networkLabel: string;
+  signerAddress?: string;
+  threshold?: number;
+  signerCount?: number;
+  spendableBalanceFil: number;
 }
 
 type InputMode = 'manual' | 'csv';
@@ -254,6 +269,7 @@ function ConfigurationChoiceGroup({
   options,
   onSelect,
   variant = 'cards',
+  disabled = false,
 }: {
   title: string;
   description?: string;
@@ -261,6 +277,7 @@ function ConfigurationChoiceGroup({
   options: ConfigurationChoice[];
   onSelect: (value: string) => void;
   variant?: 'cards' | 'segmented';
+  disabled?: boolean;
 }) {
   return (
     <div>
@@ -279,9 +296,10 @@ function ConfigurationChoiceGroup({
                 key={`${title}-${option.value}`}
                 type="button"
                 onClick={() => onSelect(option.value)}
+                disabled={disabled}
                 data-testid={option.testId}
                 aria-pressed={isSelected}
-                className={`min-h-[44px] flex-1 rounded-2xl border px-3 py-2.5 text-center text-sm font-semibold transition-colors ${
+                className={`min-h-[44px] flex-1 rounded-2xl border px-3 py-2.5 text-center text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
                   isSelected
                     ? `border-[#1f69ff] bg-white text-[#124ac4] ${choiceCardSelectedShadow}`
                     : 'border-slate-200 bg-white text-slate-800 hover:border-slate-300 hover:bg-slate-50'
@@ -302,9 +320,10 @@ function ConfigurationChoiceGroup({
                 key={`${title}-${option.value}`}
                 type="button"
                 onClick={() => onSelect(option.value)}
+                disabled={disabled}
                 data-testid={option.testId}
                 aria-pressed={isSelected}
-                className={`rounded-2xl border px-4 py-3 text-left transition-colors ${
+                className={`rounded-2xl border px-4 py-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
                   isSelected
                     ? `border-[#1f69ff] bg-[#eef4ff] ${choiceCardSelectedShadow}`
                     : 'border-slate-200 bg-slate-50 hover:border-slate-300 hover:bg-white'
@@ -384,6 +403,8 @@ export default function App() {
   const [nativeFilecoinProvider, setNativeFilecoinProvider] = React.useState<
     NativeFilecoinWalletProvider | undefined
   >();
+  const [isNativeWalletTransitionInFlight, setIsNativeWalletTransitionInFlight] =
+    React.useState(false);
   const [nativeWalletConnectionError, setNativeWalletConnectionError] = React.useState<
     string | undefined
   >();
@@ -478,14 +499,17 @@ export default function App() {
   const [csvWarnings, setCsvWarnings] = React.useState<string[]>([]);
 
   const [isReviewModalOpen, setIsReviewModalOpen] = React.useState(false);
+  const [multisigReviewContext, setMultisigReviewContext] = React.useState<MultisigReviewContext>();
   const [gasEstimate, setGasEstimate] = React.useState<GasEstimate | undefined>(undefined);
   const [isEstimatingGas, setIsEstimatingGas] = React.useState(false);
   const [gasEstimationError, setGasEstimationError] = React.useState<
     BatchExecutionError | undefined
   >(undefined);
   const [isCheckingContractRecipients, setIsCheckingContractRecipients] = React.useState(false);
+  const [isStartingMultisigProposal, setIsStartingMultisigProposal] = React.useState(false);
   const [contractRecipientErrors, setContractRecipientErrors] = React.useState<string[]>([]);
   const contractRecipientCheckSequence = React.useRef(0);
+  const gasEstimationSequence = React.useRef(0);
   const [batchConfiguration, setBatchConfiguration] = React.useState<BatchConfiguration>(
     DEFAULT_BATCH_CONFIGURATION,
   );
@@ -509,13 +533,29 @@ export default function App() {
   const defaultMultisigNetwork = React.useMemo(() => getDefaultNetworkConfig(), []);
   const multisigNetwork = activeNativeSender?.network ?? connectedNetwork ?? defaultMultisigNetwork;
   const configurationNetwork = connectedNetwork ?? defaultMultisigNetwork;
+  const maxUserRecipients =
+    batchConfiguration.executionMethod === 'THINBATCH' && configurationNetwork.feePolicy.enabled
+      ? DEFAULT_MAX_RECIPIENTS - 2
+      : DEFAULT_MAX_RECIPIENTS;
   const multisigs = useMultisigs({
     sender: activeNativeSender,
     provider: nativeFilecoinProvider,
     network: multisigNetwork,
   });
+  const refreshSelectedMultisig = multisigs.refreshSelected;
+  const isMultisigFundingRequested = batchConfiguration.senderWalletType === 'MULTI_SIG';
   const selectedMultisig =
-    batchConfiguration.senderWalletType === 'MULTI_SIG' ? multisigs.selectedMultisig : undefined;
+    isMultisigFundingRequested &&
+    !multisigs.isLoadingSelected &&
+    multisigs.selectedAddress !== undefined &&
+    multisigs.selectedMultisig?.address === multisigs.selectedAddress &&
+    multisigs.selectedMultisig.networkKey === multisigNetwork.key
+      ? multisigs.selectedMultisig
+      : undefined;
+  const selectedMultisigLabel = selectedMultisig
+    ? multisigs.savedMultisigs.find((item) => item.address === selectedMultisig.address)?.label
+    : undefined;
+
   const nativeBatchExecution = useExecuteNativeBatch({
     sender: activeNativeSender,
     provider: nativeFilecoinProvider,
@@ -526,11 +566,11 @@ export default function App() {
     multisig: selectedMultisig,
     network: multisigNetwork,
   });
-  const activeBatchExecution = activeNativeSender
-    ? selectedMultisig
-      ? multisigBatchExecution
-      : nativeBatchExecution
-    : evmBatchExecution;
+  const activeBatchExecution = isMultisigFundingRequested
+    ? multisigBatchExecution
+    : activeNativeSender
+      ? nativeBatchExecution
+      : evmBatchExecution;
   const {
     estimateBatch,
     executeBatch,
@@ -539,6 +579,56 @@ export default function App() {
     error: transactionError,
     reset: resetExecution,
   } = activeBatchExecution;
+  const isMultisigBatchExecutionInFlight =
+    isMultisigFundingRequested &&
+    (executionState === 'building' || executionState === 'signing' || executionState === 'pending');
+  const isMultisigBatchOutcomeUncertain = Boolean(
+    isMultisigFundingRequested &&
+    executionState === 'failed' &&
+    transactionHash &&
+    transactionError?.recoverable === false,
+  );
+  const isMultisigBatchExecutionLocked =
+    isStartingMultisigProposal ||
+    isMultisigBatchExecutionInFlight ||
+    isMultisigBatchOutcomeUncertain;
+  const isMultisigInteractionLocked =
+    isMultisigBatchExecutionLocked || isNativeWalletTransitionInFlight;
+  const multisigBatchExecutionLockRef = React.useRef(isMultisigBatchExecutionLocked);
+  const multisigSubmissionEpoch = React.useRef(0);
+  const nativeWalletTransitionRef = React.useRef(false);
+  multisigBatchExecutionLockRef.current = isMultisigBatchExecutionLocked;
+  const lastRefreshedProposalCid = React.useRef<string | undefined>(undefined);
+  const submittedMultisigIdentity = React.useRef<
+    | {
+        address: string;
+        networkKey: typeof multisigNetwork.key;
+      }
+    | undefined
+  >(undefined);
+
+  React.useEffect(() => {
+    if (
+      isMultisigFundingRequested &&
+      executionState === 'confirmed' &&
+      !isReviewModalOpen &&
+      transactionHash &&
+      submittedMultisigIdentity.current?.address === multisigs.selectedAddress &&
+      submittedMultisigIdentity.current?.networkKey === multisigNetwork.key &&
+      lastRefreshedProposalCid.current !== transactionHash
+    ) {
+      lastRefreshedProposalCid.current = transactionHash;
+      void refreshSelectedMultisig();
+    }
+  }, [
+    executionState,
+    isMultisigFundingRequested,
+    isReviewModalOpen,
+    multisigNetwork.key,
+    multisigs.selectedAddress,
+    refreshSelectedMultisig,
+    transactionHash,
+  ]);
 
   const handleCSVUpload = (result: CSVUploadResult) => {
     setCsvData(result.recipients);
@@ -558,9 +648,28 @@ export default function App() {
       provider: NativeFilecoinWalletProvider,
       networkKey: NativeFilecoinConnectedSender['networkKey'],
     ) => {
+      if (multisigBatchExecutionLockRef.current || nativeWalletTransitionRef.current) {
+        return;
+      }
+
+      const submissionEpochAtStart = multisigSubmissionEpoch.current;
+      nativeWalletTransitionRef.current = true;
+      setIsNativeWalletTransitionInFlight(true);
+
       try {
         setNativeWalletConnectionError(undefined);
         const account = await provider.connect({ networkKey });
+
+        if (
+          multisigBatchExecutionLockRef.current ||
+          multisigSubmissionEpoch.current !== submissionEpochAtStart
+        ) {
+          setNativeWalletConnectionError(
+            'The wallet changed while a multisig proposal was being submitted. SendFIL preserved the submitted proposal status; reconnect after inspecting it.',
+          );
+          return;
+        }
+
         const senderResult = createNativeFilecoinConnectedSender({
           address: account.address,
           provider: provider.metadata,
@@ -581,21 +690,51 @@ export default function App() {
 
         setNativeWalletConnectionError(message);
         throw error;
+      } finally {
+        nativeWalletTransitionRef.current = false;
+        setIsNativeWalletTransitionInFlight(false);
       }
     },
     [resetExecution],
   );
 
   const handleNativeWalletDisconnect = React.useCallback(async () => {
-    setNativeWalletConnectionError(undefined);
-    resetExecution();
-
-    if (nativeFilecoinProvider) {
-      await nativeFilecoinProvider.disconnect();
+    if (multisigBatchExecutionLockRef.current || nativeWalletTransitionRef.current) {
+      return;
     }
 
-    setNativeFilecoinProvider(undefined);
-    setNativeFilecoinSender(undefined);
+    const submissionEpochAtStart = multisigSubmissionEpoch.current;
+    nativeWalletTransitionRef.current = true;
+    setIsNativeWalletTransitionInFlight(true);
+    setNativeWalletConnectionError(undefined);
+
+    try {
+      if (nativeFilecoinProvider) {
+        await nativeFilecoinProvider.disconnect();
+      }
+
+      if (
+        multisigBatchExecutionLockRef.current ||
+        multisigSubmissionEpoch.current !== submissionEpochAtStart
+      ) {
+        setNativeWalletConnectionError(
+          'The wallet disconnected while a multisig proposal was being submitted. SendFIL preserved the submitted proposal status; reconnect after inspecting it.',
+        );
+        return;
+      }
+
+      resetExecution();
+      setNativeFilecoinProvider(undefined);
+      setNativeFilecoinSender(undefined);
+    } catch (error) {
+      setNativeWalletConnectionError(
+        error instanceof Error ? error.message : 'Failed to disconnect native Filecoin wallet.',
+      );
+      throw error;
+    } finally {
+      nativeWalletTransitionRef.current = false;
+      setIsNativeWalletTransitionInFlight(false);
+    }
   }, [nativeFilecoinProvider, resetExecution]);
 
   const openUnavailableCapabilityNotice = (title: string, description: string) => {
@@ -681,9 +820,10 @@ export default function App() {
       validateRecipientRows(manualRecipients, {
         source: 'manual',
         expectedNetworkPrefix,
+        maxRecipients: maxUserRecipients,
         requireAtLeastOneRecipient: false,
       }),
-    [expectedNetworkPrefix, manualRecipients],
+    [expectedNetworkPrefix, manualRecipients, maxUserRecipients],
   );
 
   const csvRecipients = React.useMemo(
@@ -702,10 +842,11 @@ export default function App() {
         ? validateRecipientRows(csvRecipients, {
             source: 'csv',
             expectedNetworkPrefix,
+            maxRecipients: maxUserRecipients,
             requireAtLeastOneRecipient: true,
           })
         : createEmptyRecipientValidationResult(),
-    [csvData.length, csvRecipients, expectedNetworkPrefix],
+    [csvData.length, csvRecipients, expectedNetworkPrefix, maxUserRecipients],
   );
 
   const hasEnteredData =
@@ -732,20 +873,21 @@ export default function App() {
             `ThinBatch is unavailable on ${connectedNetwork.chainName}. Switch back to Standard for this batch.`,
           ]
         : [];
-  const multisigFundingErrors =
-    batchConfiguration.senderWalletType === 'MULTI_SIG'
-      ? !activeNativeSender
-        ? ['Connect a native Filecoin f1/t1 signer before using multisig funding.']
-        : multisigs.selectedError
-          ? [multisigs.selectedError]
-          : !multisigs.selectedAddress
-            ? ['Add or select an f2/t2 multisig before proposing this batch.']
+  const multisigFundingErrors = isMultisigFundingRequested
+    ? !activeNativeSender
+      ? ['Connect a native Filecoin f1/t1 signer before using multisig funding.']
+      : multisigs.selectedError
+        ? [multisigs.selectedError]
+        : !multisigs.selectedAddress
+          ? ['Add or select an f2/t2 multisig before proposing this batch.']
+          : multisigs.isLoadingSelected
+            ? ['Selected multisig state is still loading.']
             : !selectedMultisig
-              ? ['Selected multisig state is still loading.']
+              ? ['Selected multisig state is not current. Refresh it before proposing.']
               : !selectedMultisig.connectedSignerCanApprove
                 ? ['The connected native signer is not a signer on the selected multisig.']
                 : []
-      : [];
+    : [];
   const displayedMultisigFundingErrors = hasEnteredData ? multisigFundingErrors : [];
 
   const manualDisplayErrors = React.useMemo(
@@ -905,16 +1047,16 @@ export default function App() {
       : nativeBalanceAttoFil !== undefined
         ? attoFilBigIntToFil(nativeBalanceAttoFil)
         : 0;
-  const multisigFundingSelected =
-    batchConfiguration.senderWalletType === 'MULTI_SIG' && Boolean(selectedMultisig);
   const multisigSpendableBalance =
     selectedMultisig !== undefined
       ? attoFilBigIntToFil(selectedMultisig.availableBalanceAttoFil)
       : 0;
   const signerGasBalance =
     nativeBalanceAttoFil !== undefined ? attoFilBigIntToFil(nativeBalanceAttoFil) : 0;
-  const walletBalance = multisigFundingSelected
-    ? multisigSpendableBalance
+  const reviewMultisigSpendableBalance =
+    multisigReviewContext?.spendableBalanceFil ?? multisigSpendableBalance;
+  const walletBalance = isMultisigFundingRequested
+    ? reviewMultisigSpendableBalance
     : singleSignerWalletBalance;
   const nativeBalanceLabel =
     nativeBalanceAttoFil !== undefined
@@ -925,8 +1067,9 @@ export default function App() {
           ? 'Balance loading'
           : undefined;
   const estimatedNetworkFee = gasEstimate?.estimatedFeeInFil || 0;
-  const insufficientBalance = multisigFundingSelected
-    ? multisigSpendableBalance < recipientTotal + feeTotal || signerGasBalance < estimatedNetworkFee
+  const insufficientBalance = isMultisigFundingRequested
+    ? reviewMultisigSpendableBalance < recipientTotal + feeTotal ||
+      signerGasBalance < estimatedNetworkFee
     : walletBalance < recipientTotal + feeTotal + estimatedNetworkFee;
 
   const manualRowErrors = React.useMemo(
@@ -947,8 +1090,13 @@ export default function App() {
     [manualRecipients],
   );
 
-  const reviewDisabled =
-    !isConnected || !canUseLiveSendPath || isNetworkMismatch || !hasReviewableRows;
+  const reviewDisabled = isMultisigBatchExecutionLocked
+    ? false
+    : isNativeWalletTransitionInFlight ||
+      !isConnected ||
+      !canUseLiveSendPath ||
+      isNetworkMismatch ||
+      !hasReviewableRows;
   const transactionState: TransactionState =
     executionState === 'idle'
       ? 'review'
@@ -957,6 +1105,18 @@ export default function App() {
         : executionState;
 
   const reviewHint = React.useMemo(() => {
+    if (isMultisigBatchExecutionInFlight) {
+      return 'A multisig proposal is in progress. Reopen it to view confirmation status.';
+    }
+
+    if (isMultisigBatchOutcomeUncertain) {
+      return 'The submitted proposal needs manual inspection before another batch can be sent.';
+    }
+
+    if (isNativeWalletTransitionInFlight) {
+      return 'Wait for the native wallet connection or network update to finish.';
+    }
+
     if (!isConnected) {
       return 'Connect a wallet to review transaction';
     }
@@ -999,20 +1159,54 @@ export default function App() {
     inputMode,
     canUseLiveSendPath,
     isConnected,
+    isNativeWalletTransitionInFlight,
+    isMultisigBatchExecutionInFlight,
+    isMultisigBatchOutcomeUncertain,
     isNetworkMismatch,
     liveSendPathUnavailableReason,
     manualIncompleteRowCount,
   ]);
 
   const handleReview = async () => {
+    if (isMultisigBatchExecutionLocked) {
+      setIsReviewModalOpen(true);
+      return;
+    }
+
+    if (isNativeWalletTransitionInFlight) {
+      return;
+    }
+
     if (
       !isConnected ||
       !canUseLiveSendPath ||
       !address ||
+      isNativeWalletTransitionInFlight ||
       isNetworkMismatch ||
       !hasReviewableRows
     ) {
       return;
+    }
+
+    const estimationId = gasEstimationSequence.current + 1;
+    gasEstimationSequence.current = estimationId;
+    setIsEstimatingGas(false);
+
+    if (isMultisigFundingRequested) {
+      setMultisigReviewContext({
+        address: selectedMultisig?.address ?? multisigs.selectedAddress,
+        label: selectedMultisigLabel ?? 'Selected multisig',
+        chainId: multisigNetwork.chainId,
+        networkLabel: multisigNetwork.walletLabel,
+        signerAddress: activeNativeSender?.address,
+        threshold: selectedMultisig?.threshold,
+        signerCount: selectedMultisig?.signers.length,
+        spendableBalanceFil: selectedMultisig
+          ? attoFilBigIntToFil(selectedMultisig.availableBalanceAttoFil)
+          : 0,
+      });
+    } else {
+      setMultisigReviewContext(undefined);
     }
 
     if (inputMode === 'manual') {
@@ -1046,45 +1240,88 @@ export default function App() {
       return;
     }
 
+    setIsEstimatingGas(true);
+
+    if (isMultisigFundingRequested) {
+      const refreshedMultisig = await refreshSelectedMultisig();
+
+      if (gasEstimationSequence.current !== estimationId) {
+        return;
+      }
+
+      if (
+        !refreshedMultisig ||
+        refreshedMultisig.address !== multisigs.selectedAddress ||
+        refreshedMultisig.networkKey !== multisigNetwork.key ||
+        !refreshedMultisig.connectedSignerCanApprove
+      ) {
+        setIsEstimatingGas(false);
+        return;
+      }
+
+      setMultisigReviewContext({
+        address: refreshedMultisig.address,
+        label: selectedMultisigLabel ?? 'Selected multisig',
+        chainId: multisigNetwork.chainId,
+        networkLabel: multisigNetwork.walletLabel,
+        signerAddress: activeNativeSender?.address,
+        threshold: refreshedMultisig.threshold,
+        signerCount: refreshedMultisig.signers.length,
+        spendableBalanceFil: attoFilBigIntToFil(refreshedMultisig.availableBalanceAttoFil),
+      });
+    }
+
     const contractErrors = await checkEvmContractRecipients();
 
+    if (gasEstimationSequence.current !== estimationId) {
+      return;
+    }
+
     if (contractErrors.length > 0) {
+      setIsEstimatingGas(false);
       return;
     }
 
     if (E2E_SKIP_GAS_ESTIMATION && !batchExecutionAdapter) {
-      setGasEstimate(createFallbackReviewGasEstimate(feeComputation.recipients.length));
+      if (gasEstimationSequence.current === estimationId) {
+        setGasEstimate(createFallbackReviewGasEstimate(feeComputation.recipients.length));
+        setIsEstimatingGas(false);
+      }
       return;
     }
 
     if (validRecipients.length > 0) {
-      setIsEstimatingGas(true);
-
       try {
         const estimate = await estimateBatch(
           feeComputation.recipients,
           selectedErrorMode,
           selectedExecutionMethod,
         );
-        setGasEstimate(toReviewGasEstimate(estimate));
+        if (gasEstimationSequence.current === estimationId) {
+          setGasEstimate(toReviewGasEstimate(estimate));
+        }
       } catch (error) {
-        setGasEstimationError(
-          error instanceof BatchExecutionError
-            ? error
-            : new BatchExecutionError({
-                category: 'UNKNOWN',
-                title: 'Batch preflight failed',
-                message: 'SendFIL could not estimate this batch with the current inputs.',
-                errorMode: selectedErrorMode,
-                stage: 'preflight',
-                recoverable: true,
-                hint: 'Review the batch inputs and retry the estimate.',
-                details: error instanceof Error ? error.message : 'Unknown error',
-                cause: error,
-              }),
-        );
+        if (gasEstimationSequence.current === estimationId) {
+          setGasEstimationError(
+            error instanceof BatchExecutionError
+              ? error
+              : new BatchExecutionError({
+                  category: 'UNKNOWN',
+                  title: 'Batch preflight failed',
+                  message: 'SendFIL could not estimate this batch with the current inputs.',
+                  errorMode: selectedErrorMode,
+                  stage: 'preflight',
+                  recoverable: true,
+                  hint: 'Review the batch inputs and retry the estimate.',
+                  details: error instanceof Error ? error.message : 'Unknown error',
+                  cause: error,
+                }),
+          );
+        }
       } finally {
-        setIsEstimatingGas(false);
+        if (gasEstimationSequence.current === estimationId) {
+          setIsEstimatingGas(false);
+        }
       }
     }
   };
@@ -1094,7 +1331,27 @@ export default function App() {
       return;
     }
 
+    gasEstimationSequence.current += 1;
+    contractRecipientCheckSequence.current += 1;
+    setIsEstimatingGas(false);
+    setIsCheckingContractRecipients(false);
     setIsReviewModalOpen(false);
+
+    if (!isMultisigBatchExecutionLocked) {
+      setMultisigReviewContext(undefined);
+    }
+
+    if (
+      isMultisigFundingRequested &&
+      transactionState === 'confirmed' &&
+      transactionHash &&
+      submittedMultisigIdentity.current?.address === multisigs.selectedAddress &&
+      submittedMultisigIdentity.current?.networkKey === multisigNetwork.key &&
+      lastRefreshedProposalCid.current !== transactionHash
+    ) {
+      lastRefreshedProposalCid.current = transactionHash;
+      void refreshSelectedMultisig();
+    }
 
     if (transactionState !== 'pending') {
       resetExecution();
@@ -1107,9 +1364,15 @@ export default function App() {
       !canUseLiveSendPath ||
       !address ||
       isNetworkMismatch ||
+      (isMultisigFundingRequested && !selectedMultisig) ||
       activeBlockingValidationErrors.length > 0
     ) {
       return;
+    }
+
+    if (isMultisigFundingRequested) {
+      multisigSubmissionEpoch.current += 1;
+      setIsStartingMultisigProposal(true);
     }
 
     try {
@@ -1119,9 +1382,19 @@ export default function App() {
         return;
       }
 
+      submittedMultisigIdentity.current =
+        isMultisigFundingRequested && selectedMultisig
+          ? {
+              address: selectedMultisig.address,
+              networkKey: selectedMultisig.networkKey,
+            }
+          : undefined;
+
       await executeBatch(feeComputation.recipients, selectedErrorMode, selectedExecutionMethod);
     } catch {
       // useExecuteBatch stores the failure state used by the modal
+    } finally {
+      setIsStartingMultisigProposal(false);
     }
   };
 
@@ -1193,6 +1466,7 @@ f1cj...,3.3`;
           </div>
 
           <CustomConnectButton
+            disabled={isMultisigInteractionLocked}
             nativeFilecoin={{
               providers: nativeFilecoinProviders,
               connectedSender: activeNativeSender,
@@ -1208,6 +1482,7 @@ f1cj...,3.3`;
             <ConfigurationChoiceGroup
               title="Sender type"
               variant="segmented"
+              disabled={isMultisigInteractionLocked}
               selectedValue={batchConfiguration.senderWalletType}
               onSelect={(value) => handleSenderWalletTypeSelect(value as SenderWalletType)}
               options={[
@@ -1227,6 +1502,7 @@ f1cj...,3.3`;
             {batchConfiguration.senderWalletType === 'MULTI_SIG' && (
               <MultisigFundingPanel
                 enabled={Boolean(activeNativeSender)}
+                isExternallyLocked={isMultisigInteractionLocked}
                 network={multisigNetwork}
                 connectedSigner={activeNativeSender}
                 savedMultisigs={multisigs.savedMultisigs}
@@ -1235,6 +1511,7 @@ f1cj...,3.3`;
                 pendingProposals={multisigs.pendingProposals}
                 isLoadingSelected={multisigs.isLoadingSelected}
                 selectedError={multisigs.selectedError}
+                proposalActionState={multisigs.proposalActionState}
                 onSelect={(multisigAddress) => {
                   multisigs.selectMultisig(multisigAddress);
                 }}
@@ -1243,6 +1520,7 @@ f1cj...,3.3`;
                 onCreate={multisigs.createMultisig}
                 onApprove={multisigs.approveProposal}
                 onCancel={multisigs.cancelProposal}
+                onRefresh={refreshSelectedMultisig}
               />
             )}
           </div>
@@ -1343,6 +1621,7 @@ f1cj...,3.3`;
                 <div className="mt-5 grid gap-5 xl:grid-cols-2">
                   <ConfigurationChoiceGroup
                     title="Transaction method"
+                    disabled={isMultisigInteractionLocked}
                     description="Choose how SendFIL executes the batch transaction."
                     selectedValue={batchConfiguration.executionMethod}
                     onSelect={(value) => handleExecutionMethodSelect(value as ExecutionMethod)}
@@ -1367,6 +1646,7 @@ f1cj...,3.3`;
                   <div className="xl:border-l xl:border-slate-200 xl:pl-5">
                     <ConfigurationChoiceGroup
                       title="Error handling"
+                      disabled={isMultisigInteractionLocked}
                       description="Choose what happens when a payment within a batch transaction fails."
                       selectedValue={batchConfiguration.errorHandling}
                       onSelect={(value) =>
@@ -1376,8 +1656,7 @@ f1cj...,3.3`;
                         {
                           value: 'PARTIAL',
                           label: 'Partial',
-                          helper:
-                            'Best-effort: successful payments can continue if one fails.',
+                          helper: 'Best-effort: successful payments can continue if one fails.',
                           testId: 'error-handling-partial',
                         },
                         {
@@ -1645,13 +1924,19 @@ f1cj...,3.3`;
                         : `bg-[#1f69ff] text-white hover:bg-[#1857d4] ${choiceCardSelectedShadow}`
                     }`}
                   >
-                    {!isConnected
-                      ? 'Connect Wallet to Review'
-                      : isNetworkMismatch
-                        ? 'Switch Network to Review'
-                        : !canUseLiveSendPath
-                          ? 'Sender Not Available'
-                          : `Review Batch${draftRecipientCount > 0 ? ` (${draftRecipientCount})` : ''}`}
+                    {isMultisigBatchExecutionInFlight
+                      ? 'View Pending Proposal'
+                      : isMultisigBatchOutcomeUncertain
+                        ? 'Inspect Submitted Proposal'
+                        : isNativeWalletTransitionInFlight
+                          ? 'Wallet Update In Progress'
+                          : !isConnected
+                            ? 'Connect Wallet to Review'
+                            : isNetworkMismatch
+                              ? 'Switch Network to Review'
+                              : !canUseLiveSendPath
+                                ? 'Sender Not Available'
+                                : `Review Batch${draftRecipientCount > 0 ? ` (${draftRecipientCount})` : ''}`}
                   </button>
                 </div>
               </div>
@@ -1679,19 +1964,57 @@ f1cj...,3.3`;
         gasEstimationError={gasEstimationError}
         walletBalance={walletBalance}
         insufficientBalance={insufficientBalance}
-        fundingMode={multisigFundingSelected ? 'native-multisig' : 'single-signer'}
+        fundingMode={isMultisigFundingRequested ? 'native-multisig' : 'single-signer'}
         fundingSourceLabel={
-          multisigFundingSelected && selectedMultisig
-            ? `Multisig ${selectedMultisig.address}`
+          isMultisigFundingRequested
+            ? (multisigReviewContext?.label ?? selectedMultisigLabel ?? 'Selected multisig')
             : 'Wallet'
         }
-        signerGasBalance={multisigFundingSelected ? signerGasBalance : undefined}
+        fundingSourceAddress={
+          isMultisigFundingRequested
+            ? (multisigReviewContext?.address ?? multisigs.selectedAddress)
+            : undefined
+        }
+        connectedSignerAddress={
+          isMultisigFundingRequested
+            ? (multisigReviewContext?.signerAddress ?? activeNativeSender?.address)
+            : undefined
+        }
+        multisigThreshold={
+          isMultisigFundingRequested
+            ? (multisigReviewContext?.threshold ?? selectedMultisig?.threshold)
+            : undefined
+        }
+        multisigSignerCount={
+          isMultisigFundingRequested
+            ? (multisigReviewContext?.signerCount ?? selectedMultisig?.signers.length)
+            : undefined
+        }
+        multisigProposalOutcome={
+          isMultisigFundingRequested &&
+          multisigBatchExecution.proposalOutcome &&
+          multisigBatchExecution.proposalOutcome.kind !== 'applied-failure'
+            ? {
+                kind: multisigBatchExecution.proposalOutcome.kind,
+                transactionId: multisigBatchExecution.proposalOutcome.txnId,
+              }
+            : undefined
+        }
+        signerGasBalance={isMultisigFundingRequested ? signerGasBalance : undefined}
         transactionState={transactionState}
         transactionHash={transactionHash}
         transactionError={transactionError}
         batchConfiguration={batchConfiguration}
-        chainId={chainId}
-        networkLabel={connectedNetwork?.walletLabel ?? 'Unsupported network'}
+        chainId={
+          isMultisigFundingRequested
+            ? (multisigReviewContext?.chainId ?? multisigNetwork.chainId)
+            : chainId
+        }
+        networkLabel={
+          isMultisigFundingRequested
+            ? (multisigReviewContext?.networkLabel ?? multisigNetwork.walletLabel)
+            : (connectedNetwork?.walletLabel ?? 'Unsupported network')
+        }
         feeLabel={feeLabel}
       />
 

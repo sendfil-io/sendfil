@@ -1,7 +1,6 @@
 import type { FilecoinMessage } from '../DataProvider/types';
 import type { NativeFilecoinConnectedSender } from '../senders';
 import {
-  buildBatchGasEstimate,
   type BatchExecutionRecipient,
   type BatchGasEstimate,
   type PreparedBatchExecution,
@@ -10,20 +9,13 @@ import type { ErrorMode } from '../transaction/multicall';
 import type { ExecutionMethod } from '../batchConfiguration';
 import { getNonce as getNativeNonce } from '../DataProvider';
 import type { SendFilNetworkConfig, SendFilNetworkKey } from '../networks';
-import type {
-  MultisigActorState,
-  MultisigPendingProposal,
-} from './types';
+import type { MultisigActorState, MultisigPendingProposal } from './types';
 import {
   buildCreateMultisigMessage,
   buildMultisigProposalMessage,
   buildProposalActionMessage,
 } from './proposalBuilder';
-import {
-  getCurrentMultisigActorCodeCid,
-  lotusMultisigRpc,
-  type MultisigRpc,
-} from './rpc';
+import { getCurrentMultisigActorCodeCid, lotusMultisigRpc, type MultisigRpc } from './rpc';
 
 export interface MultisigPreflightRpc {
   getNonce?: (address: string, networkKey: SendFilNetworkKey) => Promise<number>;
@@ -65,10 +57,16 @@ export interface PreparedMultisigActionPreflight {
 }
 
 function buildGasEstimate(message: FilecoinMessage): BatchGasEstimate {
-  return buildBatchGasEstimate(
-    BigInt(message.GasLimit),
-    BigInt(message.GasFeeCap),
-  );
+  const gasLimit = BigInt(message.GasLimit);
+  const gasFeeCap = BigInt(message.GasFeeCap);
+  const gasPremium = BigInt(message.GasPremium);
+
+  return {
+    gasLimit,
+    gasFeeCap,
+    gasPremium,
+    estimatedFee: gasLimit * gasFeeCap,
+  };
 }
 
 function estimateGasWithFields(estimatedMessage: FilecoinMessage): {

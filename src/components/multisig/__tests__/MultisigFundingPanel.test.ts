@@ -12,7 +12,6 @@ const multisig: MultisigActorState = {
   signerIdAddresses: ['t01001', 't01002', 't01003'],
   connectedSignerIdAddress: 't01002',
   connectedSignerCanApprove: true,
-  pendingProposalCount: 1,
 };
 
 const proposal: MultisigPendingProposal = {

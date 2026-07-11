@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   MULTISIG_STORAGE_KEY,
   readSavedMultisigs,
+  readSavedMultisigsResult,
   removeSavedMultisig,
+  removeSavedMultisigResult,
   saveMultisig,
+  saveMultisigResult,
 } from '../storage';
 
 class MemoryStorage implements Storage {
@@ -31,6 +34,28 @@ class MemoryStorage implements Storage {
 
   setItem(key: string, value: string): void {
     this.values.set(key, value);
+  }
+}
+
+class FailingStorage extends MemoryStorage {
+  constructor(private readonly failure: 'read' | 'write') {
+    super();
+  }
+
+  override getItem(key: string): string | null {
+    if (this.failure === 'read') {
+      throw new DOMException('Storage access denied', 'SecurityError');
+    }
+
+    return super.getItem(key);
+  }
+
+  override setItem(key: string, value: string): void {
+    if (this.failure === 'write') {
+      throw new DOMException('Storage quota exceeded', 'QuotaExceededError');
+    }
+
+    super.setItem(key, value);
   }
 }
 
@@ -82,5 +107,118 @@ describe('multisig local storage', () => {
     expect(readSavedMultisigs('mainnet', storage)).toHaveLength(1);
     expect(readSavedMultisigs('calibration', storage)).toHaveLength(0);
   });
-});
 
+  it('discards null, malformed, wrong-network, and duplicate stored entries', () => {
+    const storage = new MemoryStorage();
+    const timestamp = new Date().toISOString();
+    const valid = {
+      address: 't2validmultisig',
+      networkKey: 'calibration',
+      label: 'Valid',
+      addedAt: timestamp,
+      updatedAt: timestamp,
+    };
+
+    storage.setItem(
+      MULTISIG_STORAGE_KEY,
+      JSON.stringify({
+        mainnet: [null, valid],
+        calibration: [
+          null,
+          valid,
+          valid,
+          { ...valid, address: 'f2wrongnetwork' },
+          { ...valid, addedAt: null },
+          'not-an-object',
+        ],
+      }),
+    );
+
+    expect(readSavedMultisigs('mainnet', storage)).toEqual([]);
+    expect(readSavedMultisigs('calibration', storage)).toEqual([valid]);
+  });
+
+  it('recovers from invalid JSON without throwing', () => {
+    const storage = new MemoryStorage();
+    storage.setItem(MULTISIG_STORAGE_KEY, '{not-json');
+
+    expect(() => readSavedMultisigs('mainnet', storage)).not.toThrow();
+    expect(readSavedMultisigs('mainnet', storage)).toEqual([]);
+  });
+
+  it('rejects invalid records before writing them', () => {
+    const storage = new MemoryStorage();
+    const result = saveMultisigResult(
+      {
+        address: 'f2wrongnetwork' as `t2${string}`,
+        networkKey: 'calibration',
+      },
+      storage,
+    );
+
+    expect(result).toMatchObject({
+      multisigs: [],
+      persisted: false,
+      error: expect.stringContaining('invalid local storage data'),
+    });
+    expect(storage.getItem(MULTISIG_STORAGE_KEY)).toBeNull();
+  });
+
+  it('returns useful failures instead of throwing when storage cannot be read', () => {
+    const storage = new FailingStorage('read');
+
+    expect(() => readSavedMultisigs('calibration', storage)).not.toThrow();
+    expect(readSavedMultisigsResult('calibration', storage)).toMatchObject({
+      multisigs: [],
+      persisted: false,
+      error: expect.stringContaining('could not be read'),
+    });
+    expect(
+      saveMultisigResult(
+        {
+          address: 't2unpersisted' as `t2${string}`,
+          networkKey: 'calibration',
+        },
+        storage,
+      ),
+    ).toMatchObject({
+      multisigs: [],
+      persisted: false,
+      error: expect.any(String),
+    });
+  });
+
+  it('preserves the last persisted list when storage writes fail', () => {
+    const storage = new FailingStorage('write');
+
+    expect(() =>
+      saveMultisig(
+        {
+          address: 't2unpersisted' as `t2${string}`,
+          networkKey: 'calibration',
+        },
+        storage,
+      ),
+    ).not.toThrow();
+    expect(
+      saveMultisigResult(
+        {
+          address: 't2unpersisted' as `t2${string}`,
+          networkKey: 'calibration',
+        },
+        storage,
+      ),
+    ).toMatchObject({
+      multisigs: [],
+      persisted: false,
+      error: expect.stringContaining('could not be saved'),
+    });
+    expect(
+      removeSavedMultisigResult('calibration', 't2unpersisted' as `t2${string}`, storage),
+    ).toMatchObject({
+      multisigs: [],
+      persisted: false,
+      error: expect.stringContaining('could not be removed'),
+    });
+  });
+});

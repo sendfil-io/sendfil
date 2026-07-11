@@ -46,16 +46,22 @@ describe('multisig create validation', () => {
       validateCreateMultisigValues({ ...baseValues, signers: ['t1not-valid'] }, 't'),
     ).toThrow('t1');
     expect(() =>
-      validateCreateMultisigValues({
-        ...baseValues,
-        signers: ['t410fuc7qegj5j6r3iojsum3vodqa5aj2t4pry2bs3fy'],
-      }, 't'),
+      validateCreateMultisigValues(
+        {
+          ...baseValues,
+          signers: ['t410fuc7qegj5j6r3iojsum3vodqa5aj2t4pry2bs3fy'],
+        },
+        't',
+      ),
     ).toThrow('t1');
     expect(() =>
-      validateCreateMultisigValues({
-        ...baseValues,
-        signers: [SIGNER_T1, SIGNER_T1],
-      }, 't'),
+      validateCreateMultisigValues(
+        {
+          ...baseValues,
+          signers: [SIGNER_T1, SIGNER_T1],
+        },
+        't',
+      ),
     ).toThrow('Duplicate multisig signers');
   });
 
