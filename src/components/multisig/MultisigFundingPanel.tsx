@@ -856,6 +856,18 @@ export function MultisigFundingPanel({
             <div className="mt-2 divide-y divide-slate-100 border-y border-slate-100">
               {savedMultisigs.map((multisig) => {
                 const isSelected = selectedAddress === multisig.address;
+                const isSelectedBalanceLoading =
+                  isSelected && (isLoadingSelected || isRefreshing);
+                const selectedBalanceLabel = isSelected
+                  ? isSelectedBalanceLoading
+                    ? '…'
+                    : currentSelectedMultisig
+                      ? formatFilFromAtto(currentSelectedMultisig.balanceAttoFil)
+                      : '—'
+                  : undefined;
+                const selectedBalanceId = selectedBalanceLabel
+                  ? `saved-multisig-balance-${multisig.address}`
+                  : undefined;
 
                 return (
                   <div key={multisig.address} className="flex items-center gap-2 py-2">
@@ -865,6 +877,7 @@ export function MultisigFundingPanel({
                       disabled={isSavedSelectionDisabled(multisig.address)}
                       aria-pressed={isSelected}
                       aria-label={`Select multisig ${multisig.label || multisig.address}`}
+                      aria-describedby={selectedBalanceId}
                       className="min-w-0 flex-1 text-left disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       <span
@@ -874,8 +887,33 @@ export function MultisigFundingPanel({
                       >
                         {multisig.label || truncateAddress(multisig.address)}
                       </span>
-                      <span className="block truncate font-mono text-xs text-slate-500">
-                        {multisig.address}
+                      <span className="flex min-w-0 items-center justify-between gap-2">
+                        <span className="min-w-0 truncate font-mono text-xs text-slate-500">
+                          {multisig.address}
+                        </span>
+                        {selectedBalanceLabel && (
+                          <span
+                            id={selectedBalanceId}
+                            className="shrink-0 whitespace-nowrap text-xs font-semibold tabular-nums text-slate-700"
+                            data-testid={`saved-multisig-balance-${multisig.address}`}
+                            aria-label={
+                              isSelectedBalanceLoading
+                                ? `Loading balance for multisig ${multisig.address}`
+                                : currentSelectedMultisig
+                                  ? `Balance for multisig ${multisig.address}: ${selectedBalanceLabel}`
+                                  : `Balance unavailable for multisig ${multisig.address}`
+                            }
+                            title={
+                              currentSelectedMultisig
+                                ? 'Current multisig balance'
+                                : isSelectedBalanceLoading
+                                  ? 'Loading current multisig balance'
+                                  : 'Current multisig balance unavailable'
+                            }
+                          >
+                            {selectedBalanceLabel}
+                          </span>
+                        )}
                       </span>
                     </button>
                     <button

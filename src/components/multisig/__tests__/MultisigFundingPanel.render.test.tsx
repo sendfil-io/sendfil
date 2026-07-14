@@ -168,6 +168,114 @@ describe('MultisigFundingPanel interactions', () => {
     return { props, proposal };
   }
 
+  it('shows the selected saved multisig current FIL balance in its compact row', () => {
+    renderPanel({
+      selectedMultisig: {
+        ...createActor(),
+        balanceAttoFil: 5n * 10n ** 17n,
+      },
+    });
+
+    const balance = container.querySelector(
+      `[data-testid="saved-multisig-balance-${ADDRESS}"]`,
+    ) as HTMLSpanElement;
+    const selectButton = container.querySelector(
+      'button[aria-label="Select multisig Treasury"]',
+    ) as HTMLButtonElement;
+
+    expect(balance.textContent).toBe('0.5 FIL');
+    expect(balance.getAttribute('aria-label')).toBe(
+      `Balance for multisig ${ADDRESS}: 0.5 FIL`,
+    );
+    expect(balance.getAttribute('title')).toBe('Current multisig balance');
+    expect(selectButton.getAttribute('aria-describedby')).toBe(balance.id);
+  });
+
+  it('hides the previous saved-row balance while a refresh is in flight', async () => {
+    const refresh = createDeferred<unknown>();
+    const onRefresh = vi.fn(() => refresh.promise);
+    renderPanel({ onRefresh });
+
+    const refreshButton = container.querySelector(
+      `button[aria-label="Refresh multisig ${ADDRESS}"]`,
+    ) as HTMLButtonElement;
+
+    await act(async () => {
+      refreshButton.click();
+      await Promise.resolve();
+    });
+
+    const loadingBalance = container.querySelector(
+      `[data-testid="saved-multisig-balance-${ADDRESS}"]`,
+    ) as HTMLSpanElement;
+    expect(loadingBalance.textContent).toBe('…');
+    expect(loadingBalance.getAttribute('aria-label')).toBe(
+      `Loading balance for multisig ${ADDRESS}`,
+    );
+    expect(onRefresh).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      refresh.resolve(undefined);
+      await refresh.promise;
+    });
+
+    expect(
+      container.querySelector(`[data-testid="saved-multisig-balance-${ADDRESS}"]`)
+        ?.textContent,
+    ).toBe('2 FIL');
+  });
+
+  it('keeps saved-row balance loading and failure states compact and actor-bound', () => {
+    const savedMultisigs = [
+      {
+        address: ADDRESS,
+        networkKey: 'calibration' as const,
+        label: 'Treasury',
+        addedAt: '2026-07-10T00:00:00.000Z',
+        updatedAt: '2026-07-10T00:00:00.000Z',
+      },
+      {
+        address: OTHER_ADDRESS,
+        networkKey: 'calibration' as const,
+        label: 'Backup',
+        addedAt: '2026-07-10T00:00:00.000Z',
+        updatedAt: '2026-07-10T00:00:00.000Z',
+      },
+    ];
+
+    renderPanel({
+      savedMultisigs,
+      selectedMultisig: undefined,
+      isLoadingSelected: true,
+    });
+
+    const loadingBalance = container.querySelector(
+      `[data-testid="saved-multisig-balance-${ADDRESS}"]`,
+    ) as HTMLSpanElement;
+    expect(loadingBalance.textContent).toBe('…');
+    expect(loadingBalance.getAttribute('aria-label')).toBe(
+      `Loading balance for multisig ${ADDRESS}`,
+    );
+    expect(
+      container.querySelector(`[data-testid="saved-multisig-balance-${OTHER_ADDRESS}"]`),
+    ).toBeNull();
+
+    renderPanel({
+      savedMultisigs,
+      selectedMultisig: undefined,
+      isLoadingSelected: false,
+      selectedError: 'Temporary RPC read failure.',
+    });
+
+    const unavailableBalance = container.querySelector(
+      `[data-testid="saved-multisig-balance-${ADDRESS}"]`,
+    ) as HTMLSpanElement;
+    expect(unavailableBalance.textContent).toBe('—');
+    expect(unavailableBalance.getAttribute('aria-label')).toBe(
+      `Balance unavailable for multisig ${ADDRESS}`,
+    );
+  });
+
   it('single-flights proposal actions and links the submitted message', async () => {
     const approval = createDeferred<string>();
     const onApprove = vi.fn(() => approval.promise);

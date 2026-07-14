@@ -104,7 +104,7 @@ function isTransientStateAvailabilityError(method: string, message: string): boo
     /no state tree exists for (?:the )?root/i.test(message) ||
     /failed to load message\b/i.test(message) ||
     ((method === 'Filecoin.StateLookupID' || method === 'Filecoin.StateReadState') &&
-      /actor not found/i.test(message))
+      /(?:actor not found|failed to lookup the id address)\b/i.test(message))
   );
 }
 

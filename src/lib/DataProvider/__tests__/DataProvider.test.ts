@@ -540,6 +540,37 @@ describe('DataProvider', () => {
     expect(fallbackRequests).toBe(0);
   });
 
+  it('retries a stale load-balanced ID lookup once on the same endpoint', async () => {
+    let primaryRequests = 0;
+    let fallbackRequests = 0;
+
+    server.use(
+      http.post(PRIMARY, ({ request }) => {
+        primaryRequests += 1;
+
+        if (primaryRequests === 1) {
+          return jsonRpcError(
+            request,
+            1,
+            'RPC error (-32603): Failed to lookup the id address f2new',
+          );
+        }
+
+        return jsonRpcResult(request, 'f03810106');
+      }),
+      http.post(FALLBACK, ({ request }) => {
+        fallbackRequests += 1;
+        return jsonRpcResult(request, 'f09999999');
+      }),
+    );
+
+    await expect(
+      callRpc('Filecoin.StateLookupID', ['f2new', []], 'mainnet'),
+    ).resolves.toBe('f03810106');
+    expect(primaryRequests).toBe(2);
+    expect(fallbackRequests).toBe(0);
+  });
+
   it('never applies the stale-state same-endpoint retry to MpoolPush', async () => {
     let primaryRequests = 0;
     let fallbackRequests = 0;
