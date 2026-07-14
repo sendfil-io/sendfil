@@ -474,26 +474,36 @@ export function MultisigFundingPanel({
 
         {currentCreateAction?.status === 'uncertain' && (
           <div
-            className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+            className="min-w-0 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
             role="alert"
           >
-            <p>
-              {currentCreateAction.warning ??
-                'SendFIL could not determine the result of the submitted multisig creation.'}
+            <p className="font-medium">
+              Multisig creation was submitted, but SendFIL could not confirm its result yet.
+            </p>
+            <p className="mt-1 text-xs leading-5">
+              Do not create another multisig until this message is reconciled.
             </p>
             <p className="mt-1 text-xs">
               Submitted from {truncateAddress(currentCreateAction.signerAddress)} on{' '}
               {currentCreateAction.networkLabel}.
             </p>
             {currentCreateAction.cid && (
-              <a
-                href={getFilfoxMessageUrl(currentCreateAction.cid, currentCreateAction.chainId)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-1 inline-block font-semibold underline underline-offset-2"
-              >
-                Inspect submitted create on Filfox ↗
-              </a>
+              <>
+                <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-amber-700">
+                  Submitted CID
+                </p>
+                <code className="mt-1 block break-all rounded-lg bg-white/60 px-2 py-1 font-mono text-xs">
+                  {currentCreateAction.cid}
+                </code>
+                <a
+                  href={getFilfoxMessageUrl(currentCreateAction.cid, currentCreateAction.chainId)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-1 inline-block font-semibold underline underline-offset-2"
+                >
+                  Inspect submitted create on Filfox ↗
+                </a>
+              </>
             )}
             <button
               type="button"
@@ -503,22 +513,31 @@ export function MultisigFundingPanel({
             >
               {isRecheckingCreate ? 'Rechecking create...' : 'Recheck create result'}
             </button>
+            {currentCreateAction.warning && (
+              <details className="mt-2 min-w-0 border-t border-amber-200/80 pt-2 text-xs">
+                <summary className="cursor-pointer font-semibold text-amber-800">
+                  Technical details
+                </summary>
+                <p className="mt-2 break-all rounded-lg bg-white/60 px-2 py-1.5 font-mono text-[11px] leading-4">
+                  {currentCreateAction.warning}
+                </p>
+              </details>
+            )}
           </div>
         )}
 
         {unresolvedCreateRecovery && (
           <div
-            className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+            className="min-w-0 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
             role="alert"
             data-testid="unresolved-create-recovery"
           >
-            <p>
-              {unresolvedCreateRecovery.warning ??
-                'A submitted multisig creation still needs reconciliation.'}
+            <p className="font-medium">
+              Multisig creation was submitted, but SendFIL could not confirm its result yet.
             </p>
-            <p className="mt-1 text-xs">
-              Reconnect the recorded signer on {unresolvedCreateRecovery.networkLabel} before
-              rechecking or retrying this creation.
+            <p className="mt-1 text-xs leading-5">
+              Do not create another multisig. Reconnect the recorded signer on{' '}
+              {unresolvedCreateRecovery.networkLabel} to recheck this message.
             </p>
             <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-amber-700">
               Recorded signer
@@ -547,6 +566,16 @@ export function MultisigFundingPanel({
                 </a>
               </>
             )}
+            {unresolvedCreateRecovery.warning && (
+              <details className="mt-2 min-w-0 border-t border-amber-200/80 pt-2 text-xs">
+                <summary className="cursor-pointer font-semibold text-amber-800">
+                  Technical details
+                </summary>
+                <p className="mt-2 break-all rounded-lg bg-white/60 px-2 py-1.5 font-mono text-[11px] leading-4">
+                  {unresolvedCreateRecovery.warning}
+                </p>
+              </details>
+            )}
           </div>
         )}
 
@@ -568,7 +597,7 @@ export function MultisigFundingPanel({
                 {currentCreateAction.status === 'preparing'
                   ? `Checking balance and preparing multisig creation on ${currentCreateAction.networkLabel}.`
                   : currentCreateAction.status === 'signing'
-                    ? `Multisig creation is ready on ${currentCreateAction.networkLabel}. Confirm it in your wallet.`
+                    ? 'Approve multisig creation in your connected wallet.'
                     : currentCreateAction.status === 'submitting'
                       ? `The multisig creation is signed and being submitted on ${currentCreateAction.networkLabel}.`
                       : currentCreateAction.status === 'pending'
@@ -643,14 +672,22 @@ export function MultisigFundingPanel({
               {proposalActionState.multisigAddress}
             </code>
             {proposalActionState.cid && (
-              <a
-                href={getFilfoxMessageUrl(proposalActionState.cid, proposalActionState.chainId)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-1 inline-block font-semibold underline underline-offset-2"
-              >
-                Inspect submitted action on Filfox ↗
-              </a>
+              <>
+                <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-amber-700">
+                  Submitted CID
+                </p>
+                <code className="mt-1 block break-all rounded-lg bg-white/60 px-2 py-1 font-mono text-xs">
+                  {proposalActionState.cid}
+                </code>
+                <a
+                  href={getFilfoxMessageUrl(proposalActionState.cid, proposalActionState.chainId)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-1 inline-block font-semibold underline underline-offset-2"
+                >
+                  Inspect submitted action on Filfox ↗
+                </a>
+              </>
             )}
             {selectedAddress !== proposalActionState.multisigAddress && (
               <button
@@ -661,6 +698,16 @@ export function MultisigFundingPanel({
               >
                 Select recorded actor
               </button>
+            )}
+            {proposalActionState.error && (
+              <details className="mt-2 min-w-0 border-t border-amber-200/80 pt-2 text-xs">
+                <summary className="cursor-pointer font-semibold text-amber-800">
+                  Technical details
+                </summary>
+                <p className="mt-2 break-all rounded-lg bg-white/60 px-2 py-1.5 font-mono text-[11px] leading-4">
+                  {proposalActionState.error}
+                </p>
+              </details>
             )}
           </div>
         )}
@@ -686,26 +733,36 @@ export function MultisigFundingPanel({
 
         {currentProposalAction && currentProposalAction.status === 'uncertain' && (
           <div
-            className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+            className="min-w-0 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
             role="alert"
           >
-            <p>
-              {currentProposalAction.error ??
-                `SendFIL could not confirm the multisig ${currentProposalAction.action}.`}
+            <p className="font-medium">
+              SendFIL could not confirm the multisig {currentProposalAction.action} yet.
             </p>
             <p className="mt-1 text-xs">
               Submitted from {truncateAddress(currentProposalAction.signerAddress)} on{' '}
               {currentProposalAction.networkLabel}.
             </p>
             {currentProposalAction.cid && (
-              <a
-                href={getFilfoxMessageUrl(currentProposalAction.cid, currentProposalAction.chainId)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-1 inline-block font-semibold underline underline-offset-2"
-              >
-                Inspect submitted action on Filfox ↗
-              </a>
+              <>
+                <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-amber-700">
+                  Submitted CID
+                </p>
+                <code className="mt-1 block break-all rounded-lg bg-white/60 px-2 py-1 font-mono text-xs">
+                  {currentProposalAction.cid}
+                </code>
+                <a
+                  href={getFilfoxMessageUrl(
+                    currentProposalAction.cid,
+                    currentProposalAction.chainId,
+                  )}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-1 inline-block font-semibold underline underline-offset-2"
+                >
+                  Inspect submitted action on Filfox ↗
+                </a>
+              </>
             )}
             <button
               type="button"
@@ -717,6 +774,16 @@ export function MultisigFundingPanel({
             >
               {isRecheckingProposal ? 'Rechecking action...' : 'Recheck action result'}
             </button>
+            {currentProposalAction.error && (
+              <details className="mt-2 min-w-0 border-t border-amber-200/80 pt-2 text-xs">
+                <summary className="cursor-pointer font-semibold text-amber-800">
+                  Technical details
+                </summary>
+                <p className="mt-2 break-all rounded-lg bg-white/60 px-2 py-1.5 font-mono text-[11px] leading-4">
+                  {currentProposalAction.error}
+                </p>
+              </details>
+            )}
           </div>
         )}
 
@@ -832,13 +899,25 @@ export function MultisigFundingPanel({
         )}
 
         {selectedAddress && (
-          <div className="border-y border-slate-100 py-3">
+          <div
+            className="min-w-0 rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-3"
+            data-testid="selected-multisig-details"
+          >
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-slate-950">
-                  {selectedSavedMultisig?.label || truncateAddress(selectedAddress)}
+                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                  Selected multisig details
                 </p>
-                <p className="mt-1 truncate font-mono text-xs text-slate-500">{selectedAddress}</p>
+                {!selectedSavedMultisig && (
+                  <>
+                    <p className="mt-1 truncate text-sm font-semibold text-slate-950">
+                      {truncateAddress(selectedAddress)}
+                    </p>
+                    <p className="mt-1 break-all font-mono text-xs text-slate-500">
+                      {selectedAddress}
+                    </p>
+                  </>
+                )}
               </div>
               <button
                 type="button"
@@ -856,9 +935,25 @@ export function MultisigFundingPanel({
                 Loading multisig state...
               </p>
             ) : selectedError ? (
-              <p className="mt-3 text-sm text-red-700" role="alert">
-                {selectedError}
-              </p>
+              <div
+                className="mt-3 min-w-0 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900"
+                role="alert"
+              >
+                <p className="text-sm font-medium">
+                  SendFIL could not load this multisig's current details.
+                </p>
+                <p className="mt-1 text-xs leading-5">
+                  The selected address is unchanged. Select Refresh to try again.
+                </p>
+                <details className="mt-2 min-w-0 border-t border-amber-200/80 pt-2 text-xs">
+                  <summary className="cursor-pointer font-semibold text-amber-800">
+                    Technical details
+                  </summary>
+                  <p className="mt-2 break-all rounded-lg bg-white/60 px-2 py-1.5 font-mono text-[11px] leading-4">
+                    {selectedError}
+                  </p>
+                </details>
+              </div>
             ) : currentSelectedMultisig ? (
               <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
                 <div>
@@ -1270,7 +1365,7 @@ export function MultisigFundingPanel({
                 {currentCreateAction?.status === 'pending'
                   ? 'Awaiting confirmation...'
                   : currentCreateAction?.status === 'signing'
-                    ? 'Confirm in wallet...'
+                    ? 'Approve in wallet…'
                     : isCreating
                       ? 'Creating...'
                       : hasIdentityBoundUncertainCreate

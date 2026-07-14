@@ -559,6 +559,10 @@ export default function App() {
   const isMultisigFundingRequested = batchConfiguration.senderWalletType === 'MULTI_SIG';
   const isUsingNativeFundingPath =
     Boolean(activeNativeSender) || isMultisigFundingRequested;
+  const unresolvedCreateAction =
+    multisigs.createActionState?.status === 'uncertain'
+      ? multisigs.createActionState
+      : undefined;
   const unresolvedProposalAction =
     multisigs.proposalActionState?.status === 'uncertain'
       ? multisigs.proposalActionState
@@ -1326,17 +1330,26 @@ export default function App() {
     ((isMultisigBatchExecutionLocked || isNativeSingleSigBatchExecutionLocked) &&
       (!isNativeSubmissionRecoveryRequired ||
         isNativeSubmissionRecoveryContextReady));
+  const canOpenCreateRecovery = Boolean(
+    unresolvedCreateAction &&
+      !isMultisigFundingRequested &&
+      activeNativeSender?.address === unresolvedCreateAction.signerAddress &&
+      activeNativeSender.networkKey === unresolvedCreateAction.networkKey &&
+      !isNativeRecoveryNavigationLocked,
+  );
   const reviewDisabled =
-    (isUsingNativeFundingPath &&
-      (isMultisigCreateActionInFlight || isMultisigProposalActionInFlight)) ||
-      isNativeWalletTransitionInFlight ||
-      (canInspectLockedNativeBatch
-        ? false
-        : (isUsingNativeFundingPath && isNativeIdentityActionLocked) ||
-          !isConnected ||
-          !canUseLiveSendPath ||
-          isNetworkMismatch ||
-          !hasReviewableRows);
+    canOpenCreateRecovery
+      ? false
+      : (isUsingNativeFundingPath &&
+          (isMultisigCreateActionInFlight || isMultisigProposalActionInFlight)) ||
+        isNativeWalletTransitionInFlight ||
+        (canInspectLockedNativeBatch
+          ? false
+          : (isUsingNativeFundingPath && isNativeIdentityActionLocked) ||
+            !isConnected ||
+            !canUseLiveSendPath ||
+            isNetworkMismatch ||
+            !hasReviewableRows);
   const transactionState: TransactionState =
     executionState === 'idle'
       ? 'review'
@@ -2491,7 +2504,11 @@ f1cj...,3.3`;
 
                   <button
                     type="button"
-                    onClick={handleReview}
+                    onClick={
+                      canOpenCreateRecovery
+                        ? () => handleSenderWalletTypeSelect('MULTI_SIG')
+                        : handleReview
+                    }
                     disabled={reviewDisabled}
                     data-testid="review-batch-button"
                     className={`min-w-[220px] rounded-full px-6 py-3 text-sm font-semibold transition-colors ${
@@ -2500,39 +2517,46 @@ f1cj...,3.3`;
                         : `bg-[#1f69ff] text-white hover:bg-[#1857d4] ${choiceCardSelectedShadow}`
                     }`}
                   >
-                    {hasInspectableNativeSubmissionOutcome &&
-                    nativeSubmissionSnapshot
+                    {canOpenCreateRecovery
+                      ? 'Open Multisig to Recheck'
+                      : hasInspectableNativeSubmissionOutcome && nativeSubmissionSnapshot
                       ? nativeSubmissionSnapshot.kind === 'multisig-proposal'
                         ? 'View Proposal Outcome'
                         : 'View Transaction Outcome'
                       : isUsingNativeFundingPath &&
-                    isNativeSubmissionRecoveryRequired &&
-                    !isNativeSubmissionRecoveryContextReady
-                      ? lockedNativeSubmissionSnapshot?.kind === 'multisig-proposal'
-                        ? 'Restore Submitted Proposal'
-                        : 'Restore Submitted Transaction'
-                      : isMultisigBatchExecutionInFlight
-                        ? 'View Pending Proposal'
-                      : isMultisigBatchOutcomeUncertain
-                        ? 'Inspect Submitted Proposal'
-                        : isNativeSingleSigBatchExecutionInFlight
+                          isNativeSubmissionRecoveryRequired &&
+                          !isNativeSubmissionRecoveryContextReady
+                        ? lockedNativeSubmissionSnapshot?.kind === 'multisig-proposal'
+                          ? 'Restore Submitted Proposal'
+                          : 'Restore Submitted Transaction'
+                        : isMultisigBatchExecutionInFlight
+                          ? 'View Pending Proposal'
+                          : isMultisigBatchOutcomeUncertain
+                            ? 'Inspect Submitted Proposal'
+                            : isNativeSingleSigBatchExecutionInFlight
                           ? 'View Pending Transaction'
                           : isNativeSingleSigBatchOutcomeUncertain ||
                               nativeBatchExecution.isOperationLocked
                             ? 'Inspect Submitted Transaction'
-                        : isMultisigCreateActionInFlight
-                          ? 'Multisig Create In Progress'
-                          : isMultisigProposalActionInFlight
-                            ? 'Multisig Action In Progress'
-                        : isNativeWalletTransitionInFlight
-                          ? 'Wallet Update In Progress'
-                          : !isConnected
-                            ? 'Connect Wallet to Review'
-                            : isNetworkMismatch
-                              ? 'Switch Network to Review'
-                              : !canUseLiveSendPath
-                                ? 'Sender Not Available'
-                                : `Review Batch${draftRecipientCount > 0 ? ` (${draftRecipientCount})` : ''}`}
+                            : isUsingNativeFundingPath &&
+                                multisigs.createActionState?.status === 'uncertain'
+                              ? 'Recheck Creation First'
+                              : isUsingNativeFundingPath &&
+                                  multisigs.proposalActionState?.status === 'uncertain'
+                                ? 'Recheck Multisig Action First'
+                                : isMultisigCreateActionInFlight
+                                  ? 'Multisig Create In Progress'
+                                  : isMultisigProposalActionInFlight
+                                    ? 'Multisig Action In Progress'
+                                    : isNativeWalletTransitionInFlight
+                                      ? 'Wallet Update In Progress'
+                                      : !isConnected
+                                        ? 'Connect Wallet to Review'
+                                        : isNetworkMismatch
+                                          ? 'Switch Network to Review'
+                                          : !canUseLiveSendPath
+                                            ? 'Sender Not Available'
+                                            : `Review Batch${draftRecipientCount > 0 ? ` (${draftRecipientCount})` : ''}`}
                   </button>
                 </div>
               </div>

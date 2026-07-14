@@ -30,6 +30,8 @@ const MULTISIG_T2 = newActorAddress(
   Uint8Array.from({ length: 16 }, (_, index) => index + 1),
   CoinType.TEST,
 ).toString();
+const MULTISIG_F0 = 'f01000';
+const MULTISIG_T0 = 't01000';
 const MULTISIG_CODE =
   'bafk2bzacechrsbw65ojbktr63swju5g7275fl3lxminrz7damr4me6wq6fjxm';
 const MANIFEST_CID = 'bafy2bzaceb22zyxdtqlmveumv7qibp6ncrwmfuskzldj2qiudmvn7bfeeaur6';
@@ -38,12 +40,6 @@ const TEST_MANIFEST_BASE64 =
 
 function createRpc(): MultisigRpc {
   return {
-    getActor: vi.fn(async () => ({
-      Code: { '/': MULTISIG_CODE },
-      Head: { '/': 'bafyhead' },
-      Nonce: 0,
-      Balance: '0',
-    })),
     readState: vi.fn(async (address: string) =>
       address === 'f00' || address === 't00'
         ? {
@@ -52,6 +48,7 @@ function createRpc(): MultisigRpc {
           }
         : {
             Balance: '3000',
+            Code: { '/': MULTISIG_CODE },
             State: {
               Signers: ['t01001'],
               NumApprovalsThreshold: 1,
@@ -59,9 +56,17 @@ function createRpc(): MultisigRpc {
             },
           },
     ),
-    lookupID: vi.fn(async (address: string) => (address === SIGNER_T1 ? 't01001' : address)),
-    lookupRobustAddress: vi.fn(async () => MULTISIG_T2),
-    getBalance: vi.fn(async () => 3000n),
+    lookupID: vi.fn(async (address: string) => {
+      if (address === MULTISIG_F2) {
+        return MULTISIG_F0;
+      }
+
+      if (address === MULTISIG_T2) {
+        return MULTISIG_T0;
+      }
+
+      return address === SIGNER_T1 ? 't01001' : address;
+    }),
     getAvailableBalance: vi.fn(async () => 2000n),
     getVestingSchedule: vi.fn(async () => ({
       lockedBalanceAttoFil: 1000n,
@@ -114,15 +119,66 @@ describe('multisig RPC helpers', () => {
     expect(state.connectedSignerCanApprove).toBe(true);
     expect(state.availableBalanceAttoFil).toBe(2000n);
     expect(state.lockedBalanceAttoFil).toBe(1000n);
+    expect(state.idAddress).toBe(MULTISIG_T0);
+    expect(state.robustAddress).toBe(MULTISIG_T2);
+    expect(rpc.readState).toHaveBeenCalledWith(MULTISIG_T0, 'calibration');
+    expect(rpc.getAvailableBalance).toHaveBeenCalledWith(MULTISIG_T0, 'calibration');
+    expect(rpc.getVestingSchedule).toHaveBeenCalledWith(MULTISIG_T0, 'calibration');
   });
 
-  it('rejects a non-multisig CodeCID even when decoded state exposes signers', async () => {
+  it('loads a new multisig through its ID address when robust actor reads fail', async () => {
     const rpc = createRpc();
-    vi.mocked(rpc.getActor).mockResolvedValueOnce({
+    vi.mocked(rpc.readState).mockImplementation(async (address: string) => {
+      if (address === 't00') {
+        return {
+          Balance: '0',
+          State: { BuiltinActors: { '/': MANIFEST_CID } },
+        };
+      }
+
+      if (address === MULTISIG_T2) {
+        throw new Error(
+          `Failed to load actor with addr=${MULTISIG_T2}, state_cid=bafyactorstate`,
+        );
+      }
+
+      return {
+        Balance: '3000',
+        Code: { '/': MULTISIG_CODE },
+        State: {
+          Signers: ['t01001'],
+          NumApprovalsThreshold: 1,
+        },
+      };
+    });
+
+    await expect(
+      loadMultisigActorState({
+        address: MULTISIG_T2,
+        connectedSignerAddress: SIGNER_T1,
+        networkKey: 'calibration',
+        rpc,
+      }),
+    ).resolves.toMatchObject({
+      address: MULTISIG_T2,
+      robustAddress: MULTISIG_T2,
+      idAddress: MULTISIG_T0,
+      balanceAttoFil: 3000n,
+      availableBalanceAttoFil: 2000n,
+    });
+
+    expect(rpc.readState).not.toHaveBeenCalledWith(MULTISIG_T2, 'calibration');
+  });
+
+  it('rejects a non-multisig StateReadState CodeCID even when state exposes signers', async () => {
+    const rpc = createRpc();
+    vi.mocked(rpc.readState).mockResolvedValueOnce({
+      Balance: '3000',
       Code: { '/': 'bafynotmultisig' },
-      Head: { '/': 'bafyhead' },
-      Nonce: 0,
-      Balance: '0',
+      State: {
+        Signers: ['t01001'],
+        NumApprovalsThreshold: 1,
+      },
     });
 
     await expect(
@@ -133,6 +189,25 @@ describe('multisig RPC helpers', () => {
         rpc,
       }),
     ).rejects.toThrow('does not appear to be a Filecoin native multisig');
+  });
+
+  it.each([
+    ['wrong-network', MULTISIG_F0],
+    ['malformed', null],
+  ])('rejects a %s actor ID before reading multisig state', async (_label, actorId) => {
+    const rpc = createRpc();
+    vi.mocked(rpc.lookupID).mockResolvedValueOnce(actorId as string);
+
+    await expect(
+      loadMultisigActorState({
+        address: MULTISIG_T2,
+        connectedSignerAddress: SIGNER_T1,
+        networkKey: 'calibration',
+        rpc,
+      }),
+    ).rejects.toThrow('invalid t0 ID address');
+
+    expect(rpc.getAvailableBalance).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -148,6 +223,7 @@ describe('multisig RPC helpers', () => {
     const rpc = createRpc();
     vi.mocked(rpc.readState).mockResolvedValueOnce({
       Balance: '3000',
+      Code: { '/': MULTISIG_CODE },
       State: state,
     });
 
@@ -174,6 +250,30 @@ describe('multisig RPC helpers', () => {
       }),
     ).rejects.toThrow('actor state is malformed');
   });
+
+  it.each(['-1', 'not-an-attofil-value'])(
+    'rejects a malformed StateReadState balance of %s',
+    async (balance) => {
+      const rpc = createRpc();
+      vi.mocked(rpc.readState).mockResolvedValueOnce({
+        Balance: balance,
+        Code: { '/': MULTISIG_CODE },
+        State: {
+          Signers: ['t01001'],
+          NumApprovalsThreshold: 1,
+        },
+      });
+
+      await expect(
+        loadMultisigActorState({
+          address: MULTISIG_T2,
+          connectedSignerAddress: SIGNER_T1,
+          networkKey: 'calibration',
+          rpc,
+        }),
+      ).rejects.toThrow('actor state is malformed');
+    },
+  );
 
   it('enables approval only for fully decoded canonical SendFIL proposals', async () => {
     const rpc = createRpc();
@@ -228,6 +328,7 @@ describe('multisig RPC helpers', () => {
     });
     expect(proposals[1]?.isSendFilCompatible).toBe(false);
     expect(proposals[1]?.canApprove).toBe(false);
+    expect(rpc.getPending).toHaveBeenCalledWith(MULTISIG_T0, 'calibration');
   });
 
   it('isolates malformed delegated proposals without hiding safe siblings', async () => {

@@ -7,6 +7,7 @@ import type {
   TransactionStatus,
 } from './types';
 import type { SendFilNetworkKey } from '../networks';
+import { RpcProviderError } from './RpcProviderError';
 
 /** Filecoin.WalletBalance */
 export const getBalance = (address: string, networkKey?: SendFilNetworkKey) =>
@@ -120,6 +121,14 @@ function parseExactSearchResult(
   };
 }
 
+function isRetryableRpcReadFailure(error: unknown): boolean {
+  if (!(error instanceof RpcProviderError)) {
+    return false;
+  }
+
+  return error.retryable || Boolean(error.attempts?.some((attempt) => attempt.retryable));
+}
+
 /** Helper: Check transaction status by CID */
 export const getTransactionStatus = async (
   cidString: string,
@@ -172,10 +181,12 @@ export const getTransactionStatus = async (
       status: 'pending',
     };
   } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+
     return {
       cid: cidString,
-      status: 'failed',
-      error: error instanceof Error ? error.message : 'Unknown error',
+      status: isRetryableRpcReadFailure(error) ? 'pending' : 'failed',
+      error: message,
     };
   }
 };
@@ -187,21 +198,29 @@ export const pollTransactionStatus = async (
   intervalMs: number = 5000,
   networkKey?: SendFilNetworkKey,
 ): Promise<TransactionStatus> => {
+  let lastPendingError: string | undefined;
+
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const status = await getTransactionStatus(cidString, networkKey);
-    
+
     if (status.status !== 'pending') {
       return status;
     }
-    
+
+    if (status.error) {
+      lastPendingError = status.error;
+    }
+
     if (attempt < maxAttempts - 1) {
       await new Promise(resolve => setTimeout(resolve, intervalMs));
     }
   }
-  
+
   return {
     cid: cidString,
     status: 'failed',
-    error: 'Transaction timeout - still pending after maximum wait time',
+    error: lastPendingError
+      ? `Transaction confirmation remained unavailable after ${maxAttempts} attempts. Last RPC error: ${lastPendingError}`
+      : 'Transaction timeout - still pending after maximum wait time',
   };
 }; 

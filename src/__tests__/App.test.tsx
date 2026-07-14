@@ -745,7 +745,17 @@ describe('App confirm flow', () => {
       root.render(<App />);
     });
 
-    click(getElementByTestId(container, 'sender-wallet-multi-sig'));
+    const openRecoveryButton = getElementByTestId(
+      container,
+      'review-batch-button',
+    ) as HTMLButtonElement;
+    expect(openRecoveryButton.disabled).toBe(false);
+    expect(openRecoveryButton.textContent).toContain('Open Multisig to Recheck');
+    click(openRecoveryButton);
+
+    expect(
+      getElementByTestId(container, 'sender-wallet-multi-sig').getAttribute('aria-pressed'),
+    ).toBe('true');
 
     const recheckButton = getButton(container, 'Recheck create result');
     expect(recheckButton.disabled).toBe(false);
@@ -756,6 +766,9 @@ describe('App confirm flow', () => {
     expect(
       (getElementByTestId(container, 'review-batch-button') as HTMLButtonElement).disabled,
     ).toBe(true);
+    expect(getElementByTestId(container, 'review-batch-button').textContent).toContain(
+      'Recheck Creation First',
+    );
 
     click(getElementByTestId(container, 'multisig-mode-create'));
     expect(getButton(container, 'Inspect submitted create').disabled).toBe(true);

@@ -413,6 +413,9 @@ native Filecoin RPC transport
 ### Acceptance criteria
 
 - Transport failures, timeouts, retryable HTTP statuses, malformed responses, and JSON-RPC `-32601` method-unavailable errors may try one distinct fallback endpoint.
+- Known load-balanced state-availability failures receive one same-endpoint retry before fallback,
+  but only for an explicit read-method allowlist; native submission methods are never retried this
+  way.
 - Other JSON-RPC application errors and non-retryable HTTP client errors are returned without calling the fallback.
 - A combined failure retains method, network, endpoint role, and both endpoint diagnoses, including the primary JSON-RPC code when present.
 - HTTP status, JSON-RPC envelope, result presence, and response ID are validated before a result is accepted.
@@ -425,6 +428,7 @@ native Filecoin RPC transport
   - deterministic actor-error preservation
   - primary method-unavailable plus fallback transport diagnostics
   - malformed response, HTTP status, and response-ID validation
+  - stale state-backend same-endpoint retry without write-method retry
 
 ### Status
 
@@ -465,6 +469,8 @@ native signing, submission, confirmation
   because the exact message may already have been added before the error was returned.
 - Native batch, multisig Create, Propose, Approve, and Cancel consumers poll the local CID after an
   ambiguous push response.
+- Retryable confirmation-read failures remain pending within the bounded polling window instead of
+  terminating the poll as an on-chain failure; exhaustion still preserves the exact-CID lock.
 - A missing receipt or an inconsistent success response never becomes a confirmed operation.
 - Confirmation searches set `allowReplaced=false`, require the returned message CID to equal the
   requested CID, and validate the receipt's exit code, return bytes, gas, and events-root shape
@@ -634,6 +640,11 @@ native multisig creation, actor identity, submit outcome
 
 - The current multisig actor CodeCID is resolved from `StateReadState(f00/t00).State.BuiltinActors`, then `ChainReadObj`, rather than from a pinned value or the provider-specific `StateActorCodeCIDs` method.
 - Manifest base64, DAG-CBOR list-pair framing, actor names, and CID links are decoded canonically and fail closed on malformed, duplicate, missing, or trailing data.
+- A validated robust `f2/t2` address is resolved to a network-correct `f0/t0` ID before actor reads;
+  state, available balance, vesting, and pending proposals use that ID while the robust address
+  remains the display and transaction-target identity.
+- Multisig identity is checked against the CodeCID returned by `StateReadState`, avoiding a
+  provider-dependent `StateGetActor` lookup for newly created actors.
 - The connected signer must be included in the signer list and its balance must exceed the initial deposit before remote preflight begins.
 - The creator balance is re-read after gas estimation and immediately before signing; it must cover the initial deposit plus estimated creation gas.
 - A confirmed InitActor return is decoded and its network-correct robust multisig address is saved locally.

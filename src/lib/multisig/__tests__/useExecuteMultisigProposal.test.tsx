@@ -44,6 +44,7 @@ const MULTISIG_T2 = newActorAddress(
   Uint8Array.from({ length: 20 }, (_, index) => index + 1),
   CoinType.TEST,
 ).toString() as `t2${string}`;
+const MULTISIG_T0 = 't01002';
 const MULTISIG_CODE =
   'bafk2bzacechrsbw65ojbktr63swju5g7275fl3lxminrz7damr4me6wq6fjxm';
 const MANIFEST_CID = 'bafy2bzaceb22zyxdtqlmveumv7qibp6ncrwmfuskzldj2qiudmvn7bfeeaur6';
@@ -106,6 +107,7 @@ function getStoredProposal(
 function getMultisig(overrides: Partial<MultisigActorState> = {}): MultisigActorState {
   return {
     address: MULTISIG_T2,
+    idAddress: MULTISIG_T0,
     networkKey: 'calibration',
     balanceAttoFil: 10n ** 21n,
     availableBalanceAttoFil: 10n ** 21n,
@@ -137,12 +139,6 @@ function getRpc(availableBalance = 10n ** 21n): MultisigPreflightRpc {
       };
     }),
     multisig: {
-      getActor: vi.fn(async () => ({
-        Code: { '/': MULTISIG_CODE },
-        Head: { '/': 'bafyhead' },
-        Nonce: 0,
-        Balance: availableBalance.toString(),
-      })),
       readState: vi.fn(async (address: string) =>
         address === 'f00' || address === 't00'
           ? {
@@ -151,15 +147,16 @@ function getRpc(availableBalance = 10n ** 21n): MultisigPreflightRpc {
             }
           : {
               Balance: availableBalance.toString(),
+              Code: { '/': MULTISIG_CODE },
               State: {
                 Signers: [SIGNER_T1],
                 NumApprovalsThreshold: 1,
               },
             },
       ),
-      lookupID: vi.fn(async (address: string) => (address === SIGNER_T1 ? 't01001' : 't01002')),
-      lookupRobustAddress: vi.fn(async () => MULTISIG_T2),
-      getBalance: vi.fn(async () => availableBalance),
+      lookupID: vi.fn(async (address: string) =>
+        address === SIGNER_T1 ? 't01001' : MULTISIG_T0,
+      ),
       getAvailableBalance: vi.fn(async () => availableBalance),
       getVestingSchedule: vi.fn(async () => undefined),
       getPending: vi.fn(),
@@ -289,7 +286,7 @@ describe('useExecuteMultisigProposal', () => {
       await expect(latestHook?.executeBatch(recipients, 'ATOMIC')).resolves.toBe(CID);
     });
 
-    expect(rpc.multisig?.getAvailableBalance).toHaveBeenCalledWith(MULTISIG_T2, 'calibration');
+    expect(rpc.multisig?.getAvailableBalance).toHaveBeenCalledWith(MULTISIG_T0, 'calibration');
     expect(provider.getBalance).toHaveBeenCalledWith({
       address: SIGNER_T1,
       networkKey: 'calibration',
@@ -694,6 +691,7 @@ describe('useExecuteMultisigProposal', () => {
 
     vi.mocked(rpc.multisig.readState).mockResolvedValueOnce({
       Balance: (10n ** 21n).toString(),
+      Code: { '/': MULTISIG_CODE },
       State: {
         Signers: [RECIPIENT_T1],
         NumApprovalsThreshold: 1,

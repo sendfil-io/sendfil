@@ -702,6 +702,12 @@ export function useExecuteMultisigProposal({
             networkKey: multisig.networkKey,
             rpc: rpc?.multisig ?? lotusMultisigRpc,
           });
+          const currentMultisigIdAddress = currentMultisig.idAddress;
+
+          assertReady(
+            currentMultisigIdAddress,
+            'The selected multisig did not resolve to a Filecoin actor ID address.',
+          );
 
           if (!currentMultisig.connectedSignerCanApprove) {
             throw new BatchExecutionError({
@@ -721,7 +727,7 @@ export function useExecuteMultisigProposal({
 
           const [availableBalance, signerBalance] = await Promise.all([
             (rpc?.multisig ?? lotusMultisigRpc).getAvailableBalance(
-              currentMultisig.address,
+              currentMultisigIdAddress,
               currentMultisig.networkKey,
             ),
             nativeProvider.getBalance({

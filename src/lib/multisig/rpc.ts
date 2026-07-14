@@ -21,13 +21,6 @@ export interface LotusCid {
   '/': string;
 }
 
-export interface LotusActor {
-  Code: LotusCid;
-  Head: LotusCid;
-  Nonce: number;
-  Balance: string;
-}
-
 export interface LotusActorState {
   Balance: string;
   Code?: LotusCid;
@@ -47,11 +40,8 @@ export interface LotusPendingTransaction {
 }
 
 export interface MultisigRpc {
-  getActor: (address: string, networkKey: SendFilNetworkKey) => Promise<LotusActor>;
   readState: (address: string, networkKey: SendFilNetworkKey) => Promise<LotusActorState>;
   lookupID: (address: string, networkKey: SendFilNetworkKey) => Promise<string>;
-  lookupRobustAddress: (address: string, networkKey: SendFilNetworkKey) => Promise<string>;
-  getBalance: (address: string, networkKey: SendFilNetworkKey) => Promise<bigint>;
   getAvailableBalance: (address: string, networkKey: SendFilNetworkKey) => Promise<bigint>;
   getVestingSchedule: (
     address: string,
@@ -81,16 +71,10 @@ export function parseEvmCodeResult(value: unknown): `0x${string}` {
 }
 
 export const lotusMultisigRpc: MultisigRpc = {
-  getActor: (address, networkKey) =>
-    callRpc<LotusActor>('Filecoin.StateGetActor', [address, []], networkKey),
   readState: (address, networkKey) =>
     callRpc<LotusActorState>('Filecoin.StateReadState', [address, []], networkKey),
   lookupID: (address, networkKey) =>
     callRpc<string>('Filecoin.StateLookupID', [address, []], networkKey),
-  lookupRobustAddress: (address, networkKey) =>
-    callRpc<string>('Filecoin.StateLookupRobustAddress', [address, []], networkKey),
-  getBalance: async (address, networkKey) =>
-    BigInt(await callRpc<string>('Filecoin.WalletBalance', [address], networkKey)),
   getAvailableBalance: async (address, networkKey) =>
     BigInt(await callRpc<string>('Filecoin.MsigGetAvailableBalance', [address, []], networkKey)),
   getVestingSchedule: async (address, networkKey) => {
@@ -137,6 +121,18 @@ function asStringArray(value: unknown): string[] | undefined {
   }
 
   return [...value];
+}
+
+function asNonNegativeBigInt(value: unknown): bigint | undefined {
+  if (typeof value !== 'string' || !/^\d+$/.test(value)) {
+    return undefined;
+  }
+
+  try {
+    return BigInt(value);
+  } catch {
+    return undefined;
+  }
 }
 
 function cidValue(value: LotusCid | string | undefined): string | undefined {
@@ -200,10 +196,38 @@ export function validateNativeMultisigAddress(
   return trimmed as NativeMultisigAddress;
 }
 
-function isMultisigActorCode(actor: LotusActor, multisigCodeCid: string): boolean {
-  const actorCode = cidValue(actor.Code);
+function isMultisigActorCode(
+  actorCodeCid: LotusCid | string | undefined,
+  multisigCodeCid: string,
+): boolean {
+  const actorCode = cidValue(actorCodeCid);
 
   return Boolean(actorCode && actorCode === multisigCodeCid);
+}
+
+function validateNativeActorIdAddress(
+  address: unknown,
+  networkKey: SendFilNetworkKey,
+): string {
+  const expectedCoinType = networkKey === 'mainnet' ? CoinType.MAIN : CoinType.TEST;
+
+  try {
+    if (typeof address !== 'string') {
+      throw new Error('Actor ID address is not a string');
+    }
+
+    const trimmed = address.trim();
+    const parsed = newFromString(trimmed);
+
+    if (parsed.protocol() !== Protocol.ID || parsed.coinType() !== expectedCoinType) {
+      throw new Error('Wrong actor ID protocol or network');
+    }
+
+    return parsed.toString();
+  } catch {
+    const expected = networkKey === 'mainnet' ? 'f0' : 't0';
+    throw new Error(`Lotus returned an invalid ${expected} ID address for the selected multisig.`);
+  }
 }
 
 export async function getCurrentMultisigActorCodeCid(
@@ -229,13 +253,16 @@ export async function loadMultisigActorState({
   rpc?: MultisigRpc;
 }): Promise<MultisigActorState> {
   const multisigAddress = validateNativeMultisigAddress(address, networkKey);
-  const [actor, actorState, balance, availableBalance, multisigCodeCid] = await Promise.all([
-    rpc.getActor(multisigAddress, networkKey),
-    rpc.readState(multisigAddress, networkKey),
-    rpc.getBalance(multisigAddress, networkKey),
-    rpc.getAvailableBalance(multisigAddress, networkKey),
+  const idAddress = validateNativeActorIdAddress(
+    await rpc.lookupID(multisigAddress, networkKey),
+    networkKey,
+  );
+  const [actorState, availableBalance, multisigCodeCid] = await Promise.all([
+    rpc.readState(idAddress, networkKey),
+    rpc.getAvailableBalance(idAddress, networkKey),
     getCurrentMultisigActorCodeCid(networkKey, rpc),
   ]);
+  const balance = asNonNegativeBigInt(actorState.Balance);
   const decodedState = getDecodedState(actorState.State);
   const signers = asStringArray(decodedState.Signers ?? decodedState.signers);
   const threshold =
@@ -244,7 +271,7 @@ export async function loadMultisigActorState({
     asNumber(decodedState.Threshold) ??
     0;
 
-  if (!isMultisigActorCode(actor, multisigCodeCid)) {
+  if (!isMultisigActorCode(actorState.Code, multisigCodeCid)) {
     throw new Error('The selected actor does not appear to be a Filecoin native multisig.');
   }
 
@@ -254,23 +281,20 @@ export async function loadMultisigActorState({
     !Number.isSafeInteger(threshold) ||
     threshold < 1 ||
     threshold > signers.length ||
-    balance < 0n ||
+    balance === undefined ||
     availableBalance < 0n ||
     availableBalance > balance
   ) {
     throw new Error('The selected multisig actor state is malformed.');
   }
 
-  const [idAddress, robustAddress, vesting, signerIdLookups, connectedSignerIdAddress] =
-    await Promise.all([
-      rpc.lookupID(multisigAddress, networkKey).catch(() => undefined),
-      rpc.lookupRobustAddress(multisigAddress, networkKey).catch(() => multisigAddress),
-      rpc.getVestingSchedule(multisigAddress, networkKey).catch(() => undefined),
-      Promise.all(signers.map((signer) => rpc.lookupID(signer, networkKey).catch(() => signer))),
-      connectedSignerAddress
-        ? rpc.lookupID(connectedSignerAddress, networkKey).catch(() => undefined)
-        : Promise.resolve(undefined),
-    ]);
+  const [vesting, signerIdLookups, connectedSignerIdAddress] = await Promise.all([
+    rpc.getVestingSchedule(idAddress, networkKey).catch(() => undefined),
+    Promise.all(signers.map((signer) => rpc.lookupID(signer, networkKey).catch(() => signer))),
+    connectedSignerAddress
+      ? rpc.lookupID(connectedSignerAddress, networkKey).catch(() => undefined)
+      : Promise.resolve(undefined),
+  ]);
   const connectedSignerCanApprove = Boolean(
     connectedSignerIdAddress &&
     signerIdLookups.some((signerId) => signerId === connectedSignerIdAddress),
@@ -280,9 +304,7 @@ export async function loadMultisigActorState({
     address: multisigAddress,
     networkKey,
     idAddress,
-    robustAddress: isNativeMultisigAddressForNetwork(robustAddress, networkKey)
-      ? robustAddress
-      : multisigAddress,
+    robustAddress: multisigAddress,
     balanceAttoFil: balance,
     availableBalanceAttoFil: availableBalance,
     lockedBalanceAttoFil: vesting?.lockedBalanceAttoFil,
@@ -323,7 +345,13 @@ export async function loadMultisigPendingProposals({
   connectedSignerAddress?: string;
   rpc?: MultisigRpc;
 }): Promise<MultisigPendingProposal[]> {
-  const pending = await rpc.getPending(multisig.address, multisig.networkKey);
+  const idAddress = multisig.idAddress
+    ? validateNativeActorIdAddress(multisig.idAddress, multisig.networkKey)
+    : validateNativeActorIdAddress(
+        await rpc.lookupID(multisig.address, multisig.networkKey),
+        multisig.networkKey,
+      );
+  const pending = await rpc.getPending(idAddress, multisig.networkKey);
   const connectedSignerIdAddress =
     multisig.connectedSignerIdAddress ??
     (connectedSignerAddress

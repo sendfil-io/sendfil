@@ -221,6 +221,87 @@ describe('DataProvider', () => {
     ]);
   });
 
+  it('keeps polling after a retryable confirmation-read failure', async () => {
+    vi.stubEnv('VITE_LOTUS_RPC_FALLBACK_MAINNET', `${PRIMARY}/`);
+    let primaryRequests = 0;
+
+    server.use(
+      http.post(PRIMARY, async ({ request }) => {
+        primaryRequests += 1;
+
+        if (primaryRequests === 1) {
+          return HttpResponse.text('temporarily unavailable', { status: 503 });
+        }
+
+        const body = (await request.json()) as { id: string | number };
+        return HttpResponse.json({
+          jsonrpc: '2.0',
+          id: body.id,
+          result: {
+            Message: { '/': 'bafy-requested' },
+            Receipt: { ExitCode: 0, Return: '', GasUsed: 100 },
+            ReturnDec: null,
+            TipSet: { '/': 'bafy-tipset' },
+            Height: 123,
+          },
+        });
+      }),
+    );
+
+    await expect(
+      DataProvider.pollTransactionStatus('bafy-requested', 2, 0),
+    ).resolves.toMatchObject({
+      cid: 'bafy-requested',
+      status: 'confirmed',
+      receipt: { ExitCode: 0 },
+    });
+    expect(primaryRequests).toBe(2);
+  });
+
+  it('stops polling on a deterministic confirmation-read rejection', async () => {
+    let primaryRequests = 0;
+
+    server.use(
+      http.post(PRIMARY, ({ request }) => {
+        primaryRequests += 1;
+        return jsonRpcError(request, 1, 'invalid message CID');
+      }),
+    );
+
+    await expect(
+      DataProvider.pollTransactionStatus('bafy-invalid', 3, 0),
+    ).resolves.toMatchObject({
+      cid: 'bafy-invalid',
+      status: 'failed',
+      error: expect.stringContaining('invalid message CID'),
+    });
+    expect(primaryRequests).toBe(1);
+  });
+
+  it('returns an uncertain terminal result after retryable confirmation reads exhaust the poll', async () => {
+    vi.stubEnv('VITE_LOTUS_RPC_FALLBACK_MAINNET', `${PRIMARY}/`);
+    let primaryRequests = 0;
+
+    server.use(
+      http.post(PRIMARY, () => {
+        primaryRequests += 1;
+        return HttpResponse.text('temporarily unavailable', { status: 503 });
+      }),
+    );
+
+    const status = await DataProvider.pollTransactionStatus('bafy-unavailable', 2, 0);
+
+    expect(status).toMatchObject({
+      cid: 'bafy-unavailable',
+      status: 'failed',
+      error: expect.stringContaining(
+        'Transaction confirmation remained unavailable after 2 attempts',
+      ),
+    });
+    expect(status.receipt).toBeUndefined();
+    expect(primaryRequests).toBe(2);
+  });
+
   it('never treats a replacement CID receipt as proof for the requested CID', async () => {
     server.use(
       http.post(PRIMARY, async ({ request }) => {
@@ -418,6 +499,70 @@ describe('DataProvider', () => {
       retryable: false,
     });
     expect(error.message).toContain('actor not found');
+    expect(fallbackRequests).toBe(0);
+  });
+
+  it('retries a stale load-balanced state read once on the same endpoint', async () => {
+    let primaryRequests = 0;
+    let fallbackRequests = 0;
+
+    server.use(
+      http.post(PRIMARY, ({ request }) => {
+        primaryRequests += 1;
+
+        if (primaryRequests === 1) {
+          return jsonRpcError(
+            request,
+            1,
+            'RPC error (-32603): Failed to load actor with addr=f2new, state_cid=bafy-stale',
+          );
+        }
+
+        return jsonRpcResult(request, {
+          Balance: '500000000000000000',
+          Code: { '/': 'bafk-multisig' },
+          State: { Signers: ['f0100', 'f0101'], NumApprovalsThreshold: 2 },
+        });
+      }),
+      http.post(FALLBACK, ({ request }) => {
+        fallbackRequests += 1;
+        return jsonRpcResult(request, { shouldNotBeUsed: true });
+      }),
+    );
+
+    await expect(
+      callRpc('Filecoin.StateReadState', ['f2new', []], 'mainnet'),
+    ).resolves.toMatchObject({
+      Balance: '500000000000000000',
+      Code: { '/': 'bafk-multisig' },
+    });
+    expect(primaryRequests).toBe(2);
+    expect(fallbackRequests).toBe(0);
+  });
+
+  it('never applies the stale-state same-endpoint retry to MpoolPush', async () => {
+    let primaryRequests = 0;
+    let fallbackRequests = 0;
+
+    server.use(
+      http.post(PRIMARY, ({ request }) => {
+        primaryRequests += 1;
+        return jsonRpcError(
+          request,
+          1,
+          'RPC error (-32603): Failed to load actor with addr=f2new, state_cid=bafy-stale',
+        );
+      }),
+      http.post(FALLBACK, ({ request }) => {
+        fallbackRequests += 1;
+        return jsonRpcResult(request, { '/': 'bafy-should-not-submit' });
+      }),
+    );
+
+    await expect(
+      callRpc('Filecoin.MpoolPush', [{ Message: {}, Signature: {} }], 'mainnet'),
+    ).rejects.toThrow('Failed to load actor');
+    expect(primaryRequests).toBe(1);
     expect(fallbackRequests).toBe(0);
   });
 

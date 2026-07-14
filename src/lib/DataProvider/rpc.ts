@@ -75,6 +75,39 @@ function isMethodNotFound(code: number): boolean {
   return code === -32601;
 }
 
+const LOAD_BALANCED_STATE_READ_METHODS = new Set([
+  'Filecoin.StateGetActor',
+  'Filecoin.StateLookupID',
+  'Filecoin.StateLookupRobustAddress',
+  'Filecoin.StateReadState',
+  'Filecoin.StateSearchMsg',
+  'Filecoin.MsigGetAvailableBalance',
+  'Filecoin.MsigGetPending',
+  'Filecoin.MsigGetVestingSchedule',
+]);
+
+/**
+ * Public Lotus gateways may route consecutive requests to backends at different
+ * chain heads. These messages identify a backend that cannot serve state it
+ * claims to know about; they are not actor-level validation failures.
+ *
+ * Keep this deliberately narrow and read-only. In particular, a write such as
+ * MpoolPush must never be retried because its response was ambiguous.
+ */
+function isTransientStateAvailabilityError(method: string, message: string): boolean {
+  if (!LOAD_BALANCED_STATE_READ_METHODS.has(method)) {
+    return false;
+  }
+
+  return (
+    /failed to load actor\b.*\bstate_cid=/i.test(message) ||
+    /no state tree exists for (?:the )?root/i.test(message) ||
+    /failed to load message\b/i.test(message) ||
+    ((method === 'Filecoin.StateLookupID' || method === 'Filecoin.StateReadState') &&
+      /actor not found/i.test(message))
+  );
+}
+
 function createAttemptError({
   detail,
   method,
@@ -247,6 +280,10 @@ async function callEndpoint<T>({
       ? ''
       : `HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ''}; `;
     const detail = `${httpDetail}JSON-RPC ${jsonRpcError.code}: ${jsonRpcError.message}`;
+    const isTransientStateFailure = isTransientStateAvailabilityError(
+      method,
+      jsonRpcError.message,
+    );
     throw createAttemptError({
       detail,
       method,
@@ -255,6 +292,7 @@ async function callEndpoint<T>({
       kind: 'json-rpc',
       retryable:
         isMethodNotFound(jsonRpcError.code) ||
+        isTransientStateFailure ||
         (!response.ok && isRetryableHttpStatus(response.status)),
       code: jsonRpcError.code,
       data: jsonRpcError.data,
@@ -315,7 +353,7 @@ function combineAttemptErrors(
   const firstCodedError = attempts.find((error) => error.code !== undefined);
 
   return new RpcProviderError(
-    `Lotus RPC ${method} failed on ${networkKey} after ${attempts.length} endpoints: ${details}`,
+    `Lotus RPC ${method} failed on ${networkKey} after ${attempts.length} attempts: ${details}`,
     {
       code: firstCodedError?.code,
       data: firstCodedError?.data,
@@ -355,40 +393,56 @@ export async function callRpc<T = unknown>(
     endpoints.push({ url: fallback, endpointRole: 'fallback' });
   }
 
-  const id = requestId++;
   const errors: RpcProviderError[] = [];
 
-  for (const endpoint of endpoints) {
-    try {
-      return await callEndpoint<T>({
-        ...endpoint,
-        method,
-        params,
-        networkKey,
-        timeout,
-        id,
-      });
-    } catch (error) {
-      const rpcError =
-        error instanceof RpcProviderError
-          ? error
-          : createAttemptError({
-              detail: `unexpected error: ${getErrorMessage(error)}`,
-              method,
-              networkKey,
-              endpointRole: endpoint.endpointRole,
-              kind: 'transport',
-              retryable: false,
-              originalError: error,
-            });
-      errors.push(rpcError);
+  endpointLoop: for (let endpointIndex = 0; endpointIndex < endpoints.length; endpointIndex += 1) {
+    const endpoint = endpoints[endpointIndex]!;
 
-      const hasAnotherEndpoint = errors.length < endpoints.length;
-      if (!rpcError.retryable || !hasAnotherEndpoint) {
-        break;
+    for (let sameEndpointAttempt = 0; sameEndpointAttempt < 2; sameEndpointAttempt += 1) {
+      try {
+        return await callEndpoint<T>({
+          ...endpoint,
+          method,
+          params,
+          networkKey,
+          timeout,
+          id: requestId++,
+        });
+      } catch (error) {
+        const rpcError =
+          error instanceof RpcProviderError
+            ? error
+            : createAttemptError({
+                detail: `unexpected error: ${getErrorMessage(error)}`,
+                method,
+                networkKey,
+                endpointRole: endpoint.endpointRole,
+                kind: 'transport',
+                retryable: false,
+                originalError: error,
+              });
+        errors.push(rpcError);
+
+        const shouldRetrySameEndpoint =
+          sameEndpointAttempt === 0 &&
+          rpcError.kind === 'json-rpc' &&
+          isTransientStateAvailabilityError(method, rpcError.detail);
+
+        if (shouldRetrySameEndpoint) {
+          console.warn(
+            `[DataProvider] ${rpcError.message}; retrying the read against the same load-balanced endpoint.`,
+          );
+          continue;
+        }
+
+        const hasAnotherEndpoint = endpointIndex < endpoints.length - 1;
+        if (rpcError.retryable && hasAnotherEndpoint) {
+          console.warn(`[DataProvider] ${rpcError.message}; trying fallback endpoint.`);
+          continue endpointLoop;
+        }
+
+        break endpointLoop;
       }
-
-      console.warn(`[DataProvider] ${rpcError.message}; trying fallback endpoint.`);
     }
   }
 

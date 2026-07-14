@@ -58,16 +58,8 @@ function createManifestRpc() {
   }));
   const readObject = vi.fn(async () => ONE_ENTRY_MANIFEST_BASE64);
   const multisigRpc: MultisigRpc = {
-    getActor: vi.fn(async () => ({
-      Code: { '/': MULTISIG_CODE_CID },
-      Head: { '/': MANIFEST_CID },
-      Nonce: 0,
-      Balance: '0',
-    })),
     readState,
     lookupID: vi.fn(async (address: string) => address),
-    lookupRobustAddress: vi.fn(async (address: string) => address),
-    getBalance: vi.fn(async () => 0n),
     getAvailableBalance: vi.fn(async () => 0n),
     getVestingSchedule: vi.fn(async () => undefined),
     getPending: vi.fn(async () => []),

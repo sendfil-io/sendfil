@@ -402,6 +402,12 @@ describe('MultisigFundingPanel interactions', () => {
     expect(container.querySelector('a[href]')?.getAttribute('href')).toContain(
       'bafyuncertainapproval',
     );
+    expect(
+      Array.from(container.querySelectorAll('code')).some(
+        (element) => element.textContent === 'bafyuncertainapproval',
+      ),
+    ).toBe(true);
+    expect(container.querySelector('details')?.open).toBe(false);
 
     const recheck = Array.from(container.querySelectorAll('button')).find(
       (button) => button.textContent?.trim() === 'Recheck action result',
@@ -457,6 +463,12 @@ describe('MultisigFundingPanel interactions', () => {
     expect(alert?.textContent).toContain(ADDRESS);
     expect(alert?.textContent).toContain('Calibration Testnet');
     expect(alert?.querySelector('a[href]')?.getAttribute('href')).toContain('bafywrongselection');
+    expect(
+      Array.from(alert?.querySelectorAll('code') ?? []).some(
+        (element) => element.textContent === 'bafywrongselection',
+      ),
+    ).toBe(true);
+    expect(alert?.querySelector('details')?.open).toBe(false);
     expect(
       (
         container.querySelector(
@@ -693,6 +705,38 @@ describe('MultisigFundingPanel interactions', () => {
     expect(container.textContent).toContain(
       'Each signer needs a small FIL balance later to pay gas when submitting an approval.',
     );
+  });
+
+  it('asks for multisig approval in the connected wallet while signing', async () => {
+    renderPanel();
+
+    await act(async () => {
+      (
+        container.querySelector('[data-testid="multisig-mode-create"]') as HTMLButtonElement
+      ).click();
+      await Promise.resolve();
+    });
+
+    renderPanel({
+      createActionState: {
+        status: 'signing',
+        signerAddress: SIGNER_ADDRESS,
+        networkKey: 'calibration',
+        chainId: 314159,
+        networkLabel: 'Calibration Testnet',
+      },
+      isCreateActionInFlight: true,
+    });
+
+    expect(container.textContent).toContain(
+      'Approve multisig creation in your connected wallet.',
+    );
+    expect(
+      Array.from(container.querySelectorAll('button')).find(
+        (button) => button.textContent?.trim() === 'Approve in wallet…',
+      ),
+    ).toBeDefined();
+    expect(container.textContent).not.toContain('Multisig creation is ready on');
   });
 
   it('adds safe context to a generic create fetch failure', async () => {
@@ -977,6 +1021,80 @@ describe('MultisigFundingPanel interactions', () => {
     ).toBe(true);
   });
 
+  it('keeps uncertain-create recovery concise while preserving wrapped technical evidence', () => {
+    const warning =
+      'SendFIL could not confirm the result: Lotus RPC Filecoin.StateSearchMsg failed after two endpoints with a long transport diagnostic.';
+    renderPanel({
+      createActionState: {
+        status: 'uncertain',
+        cid: 'bafycreatewarningwithalongexactcid',
+        signerAddress: SIGNER_ADDRESS,
+        networkKey: 'calibration',
+        chainId: 314159,
+        networkLabel: 'Calibration Testnet',
+        warning,
+      },
+      isCreateRetryBlocked: true,
+    });
+
+    const alert = container.querySelector('[role="alert"]') as HTMLDivElement;
+    const technicalDetails = alert.querySelector('details') as HTMLDetailsElement;
+    const technicalCopy = technicalDetails.querySelector('p') as HTMLParagraphElement;
+
+    expect(alert.firstElementChild?.textContent).toBe(
+      'Multisig creation was submitted, but SendFIL could not confirm its result yet.',
+    );
+    expect(alert.textContent).toContain(
+      'Do not create another multisig until this message is reconciled.',
+    );
+    expect(alert.querySelector('code')?.textContent).toBe('bafycreatewarningwithalongexactcid');
+    expect(alert.querySelector('a[href]')?.getAttribute('href')).toContain(
+      'https://calibration.filfox.info/en/message/bafycreatewarningwithalongexactcid',
+    );
+    expect(technicalDetails.open).toBe(false);
+    expect(technicalDetails.querySelector('summary')?.textContent?.trim()).toBe(
+      'Technical details',
+    );
+    expect(technicalCopy.textContent).toBe(warning);
+    expect(technicalCopy.className).toContain('break-all');
+    expect(container.textContent).toContain('Recheck create result');
+  });
+
+  it('separates a temporary selected-details read failure from the saved actor identity', () => {
+    const selectedError =
+      'Lotus RPC Filecoin.StateReadState failed: RPC error (-32603) with addr=t2selected and state_cid=bafyverylongstatecid.';
+    renderPanel({
+      selectedMultisig: undefined,
+      pendingProposals: [],
+      selectedError,
+    });
+
+    const detailsSection = container.querySelector(
+      '[data-testid="selected-multisig-details"]',
+    ) as HTMLDivElement;
+    const alert = detailsSection.querySelector('[role="alert"]') as HTMLDivElement;
+    const technicalDetails = alert.querySelector('details') as HTMLDetailsElement;
+    const technicalCopy = technicalDetails.querySelector('p') as HTMLParagraphElement;
+
+    expect(detailsSection.textContent).toContain('Selected multisig details');
+    expect(alert.className).toContain('border-amber-200');
+    expect(alert.textContent).toContain("SendFIL could not load this multisig's current details.");
+    expect(alert.textContent).toContain(
+      'The selected address is unchanged. Select Refresh to try again.',
+    );
+    expect(technicalDetails.open).toBe(false);
+    expect(technicalCopy.textContent).toBe(selectedError);
+    expect(technicalCopy.className).toContain('break-all');
+    expect(
+      Array.from(container.querySelectorAll('span, p, code')).filter(
+        (element) => element.textContent?.trim() === ADDRESS,
+      ),
+    ).toHaveLength(1);
+    expect(
+      container.querySelector(`button[aria-label="Refresh multisig ${ADDRESS}"]`),
+    ).not.toBeNull();
+  });
+
   it.each([
     ['a different signer', WRONG_CONNECTED_SIGNER],
     ['no connected signer', undefined],
@@ -1002,12 +1120,16 @@ describe('MultisigFundingPanel interactions', () => {
 
       const recovery = container.querySelector('[data-testid="unresolved-create-recovery"]');
       expect(recovery?.textContent).toContain('still needs a proof-bearing result');
+      expect(recovery?.firstElementChild?.textContent).toBe(
+        'Multisig creation was submitted, but SendFIL could not confirm its result yet.',
+      );
       expect(recovery?.textContent).toContain(SIGNER_ADDRESS);
       expect(recovery?.textContent).toContain('Calibration Testnet');
       expect(recovery?.textContent).toContain('bafyglobalcreate');
       expect(recovery?.querySelector('a[href]')?.getAttribute('href')).toContain(
         'https://calibration.filfox.info/en/message/bafyglobalcreate',
       );
+      expect(recovery?.querySelector('details')?.open).toBe(false);
       expect(
         Array.from(container.querySelectorAll('button')).find(
           (button) => button.textContent?.trim() === 'Recheck create result',
