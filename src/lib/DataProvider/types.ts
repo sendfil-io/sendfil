@@ -48,7 +48,7 @@ export interface MessageReceipt {
   ExitCode: number;
   Return: string;
   GasUsed: number;
-  EventsRoot?: string;
+  EventsRoot?: { '/': string } | null;
 }
 
 export interface TipSet {

@@ -32,9 +32,16 @@ import { BatchExecutionError } from './lib/transaction/errorHandling';
 import { createMockBatchExecutionAdapter } from './lib/transaction/mockAdapter';
 import { useExecuteBatch } from './lib/transaction/useExecuteBatch';
 import { useExecuteNativeBatch } from './lib/transaction/useExecuteNativeBatch';
-import { useExecuteMultisigProposal, useMultisigs } from './lib/multisig';
+import {
+  useExecuteMultisigProposal,
+  useMultisigs,
+  type CreateMultisigFormValues,
+  type CreateMultisigResult,
+  type MultisigPendingProposal,
+} from './lib/multisig';
 import {
   getDefaultNetworkConfig,
+  getFilfoxMessageUrl,
   getNetworkConfig,
   getSupportedNetworkByChainId,
   getSupportedNetworkListLabel,
@@ -507,6 +514,7 @@ export default function App() {
   >(undefined);
   const [isCheckingContractRecipients, setIsCheckingContractRecipients] = React.useState(false);
   const [isStartingMultisigProposal, setIsStartingMultisigProposal] = React.useState(false);
+  const [isStartingNativeBatch, setIsStartingNativeBatch] = React.useState(false);
   const [contractRecipientErrors, setContractRecipientErrors] = React.useState<string[]>([]);
   const contractRecipientCheckSequence = React.useRef(0);
   const gasEstimationSequence = React.useRef(0);
@@ -543,7 +551,25 @@ export default function App() {
     network: multisigNetwork,
   });
   const refreshSelectedMultisig = multisigs.refreshSelected;
+  const createMultisig = multisigs.createMultisig;
+  const recheckCreateMultisig = multisigs.recheckCreateAction;
+  const recheckMultisigProposalAction = multisigs.recheckProposalAction;
+  const approveMultisigProposal = multisigs.approveProposal;
+  const cancelMultisigProposal = multisigs.cancelProposal;
   const isMultisigFundingRequested = batchConfiguration.senderWalletType === 'MULTI_SIG';
+  const isUsingNativeFundingPath =
+    Boolean(activeNativeSender) || isMultisigFundingRequested;
+  const unresolvedProposalAction =
+    multisigs.proposalActionState?.status === 'uncertain'
+      ? multisigs.proposalActionState
+      : undefined;
+  const isProposalActionRecoveryContextReady = Boolean(
+    unresolvedProposalAction &&
+      isMultisigFundingRequested &&
+      activeNativeSender?.address === unresolvedProposalAction.signerAddress &&
+      activeNativeSender.networkKey === unresolvedProposalAction.networkKey &&
+      multisigs.selectedAddress === unresolvedProposalAction.multisigAddress,
+  );
   const selectedMultisig =
     isMultisigFundingRequested &&
     !multisigs.isLoadingSelected &&
@@ -571,6 +597,41 @@ export default function App() {
     : activeNativeSender
       ? nativeBatchExecution
       : evmBatchExecution;
+  const lockedNativeSubmissionSnapshot = multisigBatchExecution.isOperationLocked
+    ? multisigBatchExecution.submissionSnapshot
+    : nativeBatchExecution.isOperationLocked
+      ? nativeBatchExecution.submissionSnapshot
+      : undefined;
+  const nativeSubmissionSnapshot =
+    lockedNativeSubmissionSnapshot ??
+    (isMultisigFundingRequested
+      ? multisigBatchExecution.submissionSnapshot
+      : activeNativeSender
+        ? nativeBatchExecution.submissionSnapshot
+        : undefined);
+  const nativeSubmissionNetwork = nativeSubmissionSnapshot
+    ? getNetworkConfig(nativeSubmissionSnapshot.networkKey)
+    : undefined;
+  const nativeSubmissionSafetyError =
+    nativeBatchExecution.error?.title ===
+      'Native submission safety storage is unavailable'
+      ? nativeBatchExecution.error.message
+      : multisigBatchExecution.error?.title ===
+          'Native submission safety storage is unavailable'
+        ? multisigBatchExecution.error.message
+        : undefined;
+  const isNativeSubmissionRecoveryRequired = Boolean(lockedNativeSubmissionSnapshot);
+  const isNativeSubmissionContextReady = Boolean(
+    nativeSubmissionSnapshot &&
+      activeNativeSender?.address === nativeSubmissionSnapshot.signerAddress &&
+      activeNativeSender.networkKey === nativeSubmissionSnapshot.networkKey &&
+      (nativeSubmissionSnapshot.kind === 'native-batch'
+        ? !isMultisigFundingRequested
+        : isMultisigFundingRequested &&
+          selectedMultisig?.address === nativeSubmissionSnapshot.multisigAddress),
+  );
+  const isNativeSubmissionRecoveryContextReady =
+    isNativeSubmissionRecoveryRequired && isNativeSubmissionContextReady;
   const {
     estimateBatch,
     executeBatch,
@@ -579,6 +640,28 @@ export default function App() {
     error: transactionError,
     reset: resetExecution,
   } = activeBatchExecution;
+  const isViewingNativeSubmissionSnapshot = Boolean(
+    isUsingNativeFundingPath &&
+      nativeSubmissionSnapshot &&
+      transactionHash === nativeSubmissionSnapshot.cid,
+  );
+  const hasInspectableNativeSubmissionOutcome = Boolean(
+    !isNativeSubmissionRecoveryRequired &&
+      isViewingNativeSubmissionSnapshot &&
+      (executionState === 'confirmed' || executionState === 'failed'),
+  );
+  const reviewBatchConfiguration: BatchConfiguration =
+    isViewingNativeSubmissionSnapshot && nativeSubmissionSnapshot
+      ? {
+          ...batchConfiguration,
+          senderWalletType:
+            nativeSubmissionSnapshot.kind === 'multisig-proposal'
+              ? 'MULTI_SIG'
+              : 'SINGLE_SIG',
+          executionMethod: nativeSubmissionSnapshot.executionMethod,
+          errorHandling: nativeSubmissionSnapshot.errorMode,
+        }
+      : batchConfiguration;
   const isMultisigBatchExecutionInFlight =
     isMultisigFundingRequested &&
     (executionState === 'building' || executionState === 'signing' || executionState === 'pending');
@@ -590,14 +673,66 @@ export default function App() {
   );
   const isMultisigBatchExecutionLocked =
     isStartingMultisigProposal ||
+    multisigBatchExecution.isOperationLocked ||
     isMultisigBatchExecutionInFlight ||
     isMultisigBatchOutcomeUncertain;
-  const isMultisigInteractionLocked =
-    isMultisigBatchExecutionLocked || isNativeWalletTransitionInFlight;
-  const multisigBatchExecutionLockRef = React.useRef(isMultisigBatchExecutionLocked);
-  const multisigSubmissionEpoch = React.useRef(0);
+  const isNativeSingleSigBatchExecutionInFlight =
+    !isMultisigFundingRequested &&
+    Boolean(activeNativeSender) &&
+    (executionState === 'building' || executionState === 'signing' || executionState === 'pending');
+  const isNativeSingleSigBatchOutcomeUncertain = Boolean(
+    !isMultisigFundingRequested &&
+      activeNativeSender &&
+      executionState === 'failed' &&
+      transactionHash &&
+      transactionError?.recoverable === false,
+  );
+  const isNativeSingleSigBatchExecutionLocked =
+    isStartingNativeBatch ||
+    nativeBatchExecution.isOperationLocked ||
+    isNativeSingleSigBatchExecutionInFlight ||
+    isNativeSingleSigBatchOutcomeUncertain;
+  const isMultisigCreateActionInFlight = multisigs.isCreateActionInFlight;
+  const isMultisigProposalActionInFlight = multisigs.isProposalActionInFlight;
+  const isMultisigIdentityActionLocked =
+    isMultisigBatchExecutionLocked ||
+    isMultisigCreateActionInFlight ||
+    isMultisigProposalActionInFlight;
+  const isNativeActiveMutationOrSubmissionLocked =
+    isMultisigIdentityActionLocked ||
+    isNativeSingleSigBatchExecutionLocked ||
+    nativeBatchExecution.isIdentityLocked ||
+    multisigBatchExecution.isIdentityLocked;
+  const isNativeIdentityActionLocked =
+    isNativeActiveMutationOrSubmissionLocked ||
+    multisigs.isCreateRetryBlocked ||
+    multisigs.isProposalRetryBlocked;
+  const isCreateWalletMutationUnsafe =
+    multisigs.createActionState?.status === 'preparing' ||
+    multisigs.createActionState?.status === 'signing' ||
+    multisigs.createActionState?.status === 'submitting';
+  const isProposalActionWalletMutationUnsafe =
+    multisigs.proposalActionState?.status === 'preparing' ||
+    multisigs.proposalActionState?.status === 'signing' ||
+    multisigs.proposalActionState?.status === 'submitting';
+  const isNativeWalletMutationUnsafe =
+    isStartingNativeBatch ||
+    isStartingMultisigProposal ||
+    nativeBatchExecution.isWalletMutationUnsafe ||
+    multisigBatchExecution.isWalletMutationUnsafe ||
+    isCreateWalletMutationUnsafe ||
+    isProposalActionWalletMutationUnsafe;
+  const isNativeRecoveryNavigationLocked =
+    isNativeWalletMutationUnsafe || isNativeWalletTransitionInFlight;
+  const nativeIdentityActionLockRef = React.useRef(isNativeIdentityActionLocked);
+  const nativeWalletMutationUnsafeRef = React.useRef(isNativeWalletMutationUnsafe);
+  const multisigCreateInvocationRef = React.useRef(false);
+  const multisigProposalInvocationRef = React.useRef(false);
+  const nativeBatchInvocationRef = React.useRef(false);
+  const nativeSubmissionEpoch = React.useRef(0);
   const nativeWalletTransitionRef = React.useRef(false);
-  multisigBatchExecutionLockRef.current = isMultisigBatchExecutionLocked;
+  nativeIdentityActionLockRef.current = isNativeIdentityActionLocked;
+  nativeWalletMutationUnsafeRef.current = isNativeWalletMutationUnsafe;
   const lastRefreshedProposalCid = React.useRef<string | undefined>(undefined);
   const submittedMultisigIdentity = React.useRef<
     | {
@@ -648,11 +783,14 @@ export default function App() {
       provider: NativeFilecoinWalletProvider,
       networkKey: NativeFilecoinConnectedSender['networkKey'],
     ) => {
-      if (multisigBatchExecutionLockRef.current || nativeWalletTransitionRef.current) {
+      if (
+        nativeWalletMutationUnsafeRef.current ||
+        nativeWalletTransitionRef.current
+      ) {
         return;
       }
 
-      const submissionEpochAtStart = multisigSubmissionEpoch.current;
+      const submissionEpochAtStart = nativeSubmissionEpoch.current;
       nativeWalletTransitionRef.current = true;
       setIsNativeWalletTransitionInFlight(true);
 
@@ -661,11 +799,11 @@ export default function App() {
         const account = await provider.connect({ networkKey });
 
         if (
-          multisigBatchExecutionLockRef.current ||
-          multisigSubmissionEpoch.current !== submissionEpochAtStart
+          nativeWalletMutationUnsafeRef.current ||
+          nativeSubmissionEpoch.current !== submissionEpochAtStart
         ) {
           setNativeWalletConnectionError(
-            'The wallet changed while a multisig proposal was being submitted. SendFIL preserved the submitted proposal status; reconnect after inspecting it.',
+            'The wallet changed while a native Filecoin action was being submitted. SendFIL preserved its status; reconnect after inspecting it.',
           );
           return;
         }
@@ -699,11 +837,14 @@ export default function App() {
   );
 
   const handleNativeWalletDisconnect = React.useCallback(async () => {
-    if (multisigBatchExecutionLockRef.current || nativeWalletTransitionRef.current) {
+    if (
+      nativeWalletMutationUnsafeRef.current ||
+      nativeWalletTransitionRef.current
+    ) {
       return;
     }
 
-    const submissionEpochAtStart = multisigSubmissionEpoch.current;
+    const submissionEpochAtStart = nativeSubmissionEpoch.current;
     nativeWalletTransitionRef.current = true;
     setIsNativeWalletTransitionInFlight(true);
     setNativeWalletConnectionError(undefined);
@@ -714,11 +855,11 @@ export default function App() {
       }
 
       if (
-        multisigBatchExecutionLockRef.current ||
-        multisigSubmissionEpoch.current !== submissionEpochAtStart
+        nativeWalletMutationUnsafeRef.current ||
+        nativeSubmissionEpoch.current !== submissionEpochAtStart
       ) {
         setNativeWalletConnectionError(
-          'The wallet disconnected while a multisig proposal was being submitted. SendFIL preserved the submitted proposal status; reconnect after inspecting it.',
+          'The wallet disconnected while a native Filecoin action was being submitted. SendFIL preserved its status; reconnect after inspecting it.',
         );
         return;
       }
@@ -737,15 +878,98 @@ export default function App() {
     }
   }, [nativeFilecoinProvider, resetExecution]);
 
+  const handleCreateMultisig = React.useCallback(
+    async (values: CreateMultisigFormValues): Promise<CreateMultisigResult> => {
+      if (
+        nativeIdentityActionLockRef.current ||
+        multisigCreateInvocationRef.current ||
+        multisigProposalInvocationRef.current ||
+        nativeBatchInvocationRef.current ||
+        nativeWalletTransitionRef.current
+      ) {
+        throw new Error('Wait for the current wallet or multisig action to finish.');
+      }
+
+      multisigCreateInvocationRef.current = true;
+      nativeWalletMutationUnsafeRef.current = true;
+      nativeSubmissionEpoch.current += 1;
+
+      try {
+        return await createMultisig(values);
+      } finally {
+        multisigCreateInvocationRef.current = false;
+        nativeWalletMutationUnsafeRef.current = false;
+      }
+    },
+    [createMultisig],
+  );
+
+  const runMultisigProposalAction = React.useCallback(
+    async <T,>(action: () => Promise<T>): Promise<T> => {
+      if (
+        nativeIdentityActionLockRef.current ||
+        multisigCreateInvocationRef.current ||
+        multisigProposalInvocationRef.current ||
+        nativeBatchInvocationRef.current ||
+        nativeWalletTransitionRef.current
+      ) {
+        throw new Error('Wait for the current wallet or multisig action to finish.');
+      }
+
+      multisigProposalInvocationRef.current = true;
+      nativeWalletMutationUnsafeRef.current = true;
+      nativeSubmissionEpoch.current += 1;
+
+      try {
+        return await action();
+      } finally {
+        multisigProposalInvocationRef.current = false;
+        nativeWalletMutationUnsafeRef.current = false;
+      }
+    },
+    [],
+  );
+
+  const handleApproveMultisigProposal = React.useCallback(
+    (
+      proposal: MultisigPendingProposal,
+      acknowledgeDuplicatePayments?: boolean,
+    ) =>
+      runMultisigProposalAction(() =>
+        approveMultisigProposal(proposal, acknowledgeDuplicatePayments),
+      ),
+    [approveMultisigProposal, runMultisigProposalAction],
+  );
+
+  const handleCancelMultisigProposal = React.useCallback(
+    (proposal: MultisigPendingProposal) =>
+      runMultisigProposalAction(() => cancelMultisigProposal(proposal)),
+    [cancelMultisigProposal, runMultisigProposalAction],
+  );
+
   const openUnavailableCapabilityNotice = (title: string, description: string) => {
     setUnavailableCapabilityNotice({ title, description });
   };
 
   const handleSenderWalletTypeSelect = (value: SenderWalletType) => {
+    if (
+      nativeWalletMutationUnsafeRef.current ||
+      nativeWalletTransitionRef.current
+    ) {
+      return;
+    }
+
     setBatchConfiguration((current) => ({ ...current, senderWalletType: value }));
   };
 
   const handleExecutionMethodSelect = (value: ExecutionMethod) => {
+    if (
+      (isUsingNativeFundingPath && nativeIdentityActionLockRef.current) ||
+      nativeWalletTransitionRef.current
+    ) {
+      return;
+    }
+
     if (value === 'STANDARD' && batchConfiguration.errorHandling === 'PARTIAL') {
       openUnavailableCapabilityNotice(
         'Partial requires ThinBatch',
@@ -766,6 +990,13 @@ export default function App() {
   };
 
   const handleErrorHandlingSelect = (value: ErrorHandlingPreference) => {
+    if (
+      (isUsingNativeFundingPath && nativeIdentityActionLockRef.current) ||
+      nativeWalletTransitionRef.current
+    ) {
+      return;
+    }
+
     if (value === 'PARTIAL' && batchConfiguration.executionMethod === 'STANDARD') {
       openUnavailableCapabilityNotice(
         'Partial requires ThinBatch',
@@ -1090,13 +1321,22 @@ export default function App() {
     [manualRecipients],
   );
 
-  const reviewDisabled = isMultisigBatchExecutionLocked
-    ? false
-    : isNativeWalletTransitionInFlight ||
-      !isConnected ||
-      !canUseLiveSendPath ||
-      isNetworkMismatch ||
-      !hasReviewableRows;
+  const canInspectLockedNativeBatch =
+    (hasInspectableNativeSubmissionOutcome && isNativeSubmissionContextReady) ||
+    ((isMultisigBatchExecutionLocked || isNativeSingleSigBatchExecutionLocked) &&
+      (!isNativeSubmissionRecoveryRequired ||
+        isNativeSubmissionRecoveryContextReady));
+  const reviewDisabled =
+    (isUsingNativeFundingPath &&
+      (isMultisigCreateActionInFlight || isMultisigProposalActionInFlight)) ||
+      isNativeWalletTransitionInFlight ||
+      (canInspectLockedNativeBatch
+        ? false
+        : (isUsingNativeFundingPath && isNativeIdentityActionLocked) ||
+          !isConnected ||
+          !canUseLiveSendPath ||
+          isNetworkMismatch ||
+          !hasReviewableRows);
   const transactionState: TransactionState =
     executionState === 'idle'
       ? 'review'
@@ -1105,12 +1345,82 @@ export default function App() {
         : executionState;
 
   const reviewHint = React.useMemo(() => {
+    if (
+      isUsingNativeFundingPath &&
+      lockedNativeSubmissionSnapshot &&
+      !isNativeSubmissionRecoveryContextReady
+    ) {
+      const operation =
+        lockedNativeSubmissionSnapshot.kind === 'multisig-proposal'
+          ? 'multisig proposal'
+          : 'native batch';
+
+      return `Restore the recorded signer${
+        lockedNativeSubmissionSnapshot.kind === 'multisig-proposal'
+          ? ' and multisig'
+          : ''
+      } to recheck the unresolved ${operation} CID.`;
+    }
+
+    if (hasInspectableNativeSubmissionOutcome && nativeSubmissionSnapshot) {
+      const operation =
+        nativeSubmissionSnapshot.kind === 'multisig-proposal'
+          ? 'proposal'
+          : 'native batch';
+
+      return `The submitted ${operation} reached a terminal result. Open it to inspect the exact CID.`;
+    }
+
+    if (isUsingNativeFundingPath && isMultisigCreateActionInFlight) {
+      return 'A multisig creation is in progress. Wait for its result before reviewing a batch.';
+    }
+
+    if (isUsingNativeFundingPath && isMultisigProposalActionInFlight) {
+      return 'A multisig approval or cancellation is in progress. Wait for its result before reviewing a batch.';
+    }
+
+    if (isUsingNativeFundingPath && multisigs.uncertaintyStorageError) {
+      return 'Restore native multisig safety storage before preparing another native submission.';
+    }
+
+    if (
+      isUsingNativeFundingPath &&
+      multisigs.createActionState?.status === 'uncertain'
+    ) {
+      return 'Recheck the unresolved multisig creation before preparing another native submission.';
+    }
+
+    if (
+      isUsingNativeFundingPath &&
+      multisigs.proposalActionState?.status === 'uncertain'
+    ) {
+      return 'Recheck the unresolved multisig approval or cancellation before preparing another native submission.';
+    }
+
+    if (
+      isUsingNativeFundingPath &&
+      (multisigs.isCreateRetryBlocked || multisigs.isProposalRetryBlocked)
+    ) {
+      return 'Resolve the recorded multisig action before preparing another native submission.';
+    }
+
     if (isMultisigBatchExecutionInFlight) {
       return 'A multisig proposal is in progress. Reopen it to view confirmation status.';
     }
 
     if (isMultisigBatchOutcomeUncertain) {
       return 'The submitted proposal needs manual inspection before another batch can be sent.';
+    }
+
+    if (isNativeSingleSigBatchExecutionInFlight) {
+      return 'A native batch is in progress. Reopen it to view confirmation status.';
+    }
+
+    if (
+      isUsingNativeFundingPath &&
+      (isNativeSingleSigBatchOutcomeUncertain || nativeBatchExecution.isOperationLocked)
+    ) {
+      return 'The submitted native batch needs CID reconciliation before another batch can be sent.';
     }
 
     if (isNativeWalletTransitionInFlight) {
@@ -1156,20 +1466,97 @@ export default function App() {
     activeValidationErrors.length,
     activeValidationWarnings.length,
     hasReviewableRows,
+    hasInspectableNativeSubmissionOutcome,
     inputMode,
     canUseLiveSendPath,
     isConnected,
+    isUsingNativeFundingPath,
+    isNativeSubmissionRecoveryContextReady,
+    isMultisigCreateActionInFlight,
+    isMultisigProposalActionInFlight,
+    multisigs.isCreateRetryBlocked,
+    multisigs.isProposalRetryBlocked,
+    multisigs.createActionState?.status,
+    multisigs.proposalActionState?.status,
+    multisigs.uncertaintyStorageError,
     isNativeWalletTransitionInFlight,
     isMultisigBatchExecutionInFlight,
     isMultisigBatchOutcomeUncertain,
+    isNativeSingleSigBatchExecutionInFlight,
+    isNativeSingleSigBatchOutcomeUncertain,
+    nativeBatchExecution.isOperationLocked,
+    lockedNativeSubmissionSnapshot,
+    nativeSubmissionSnapshot,
     isNetworkMismatch,
     liveSendPathUnavailableReason,
     manualIncompleteRowCount,
   ]);
 
+  const handleNativeSubmissionRecheck = React.useCallback(async () => {
+    if (!lockedNativeSubmissionSnapshot || !isNativeSubmissionRecoveryContextReady) {
+      return;
+    }
+
+    try {
+      if (lockedNativeSubmissionSnapshot.kind === 'multisig-proposal') {
+        await multisigBatchExecution.recheck();
+      } else {
+        await nativeBatchExecution.recheck();
+      }
+    } catch (error) {
+      setNativeWalletConnectionError(
+        error instanceof Error
+          ? error.message
+          : 'SendFIL could not recheck the submitted native message.',
+      );
+    }
+  }, [
+    isNativeSubmissionRecoveryContextReady,
+    lockedNativeSubmissionSnapshot,
+    multisigBatchExecution,
+    nativeBatchExecution,
+  ]);
+
   const handleReview = async () => {
-    if (isMultisigBatchExecutionLocked) {
+    if (
+      (isUsingNativeFundingPath &&
+        (isMultisigCreateActionInFlight || isMultisigProposalActionInFlight)) ||
+      multisigCreateInvocationRef.current ||
+      multisigProposalInvocationRef.current ||
+      nativeBatchInvocationRef.current
+    ) {
+      return;
+    }
+
+    if (
+      hasInspectableNativeSubmissionOutcome &&
+      isNativeSubmissionContextReady
+    ) {
       setIsReviewModalOpen(true);
+      return;
+    }
+
+    if (
+    isNativeSubmissionRecoveryRequired &&
+      isUsingNativeFundingPath &&
+      !isNativeSubmissionRecoveryContextReady
+    ) {
+      return;
+    }
+
+    if (isUsingNativeFundingPath && isMultisigBatchExecutionLocked) {
+      setIsReviewModalOpen(true);
+      if (isMultisigBatchOutcomeUncertain) {
+        await handleNativeSubmissionRecheck();
+      }
+      return;
+    }
+
+    if (isUsingNativeFundingPath && isNativeSingleSigBatchExecutionLocked) {
+      setIsReviewModalOpen(true);
+      if (isNativeSingleSigBatchOutcomeUncertain) {
+        await handleNativeSubmissionRecheck();
+      }
       return;
     }
 
@@ -1360,6 +1747,11 @@ export default function App() {
 
   const handleConfirmTransaction = async () => {
     if (
+      (isUsingNativeFundingPath && nativeIdentityActionLockRef.current) ||
+      multisigCreateInvocationRef.current ||
+      multisigProposalInvocationRef.current ||
+      nativeBatchInvocationRef.current ||
+      nativeWalletTransitionRef.current ||
       !isConnected ||
       !canUseLiveSendPath ||
       !address ||
@@ -1370,9 +1762,21 @@ export default function App() {
       return;
     }
 
+    const isNativeSubmission = Boolean(activeNativeSender);
+    const isNativeSingleSigSubmission = Boolean(
+      isNativeSubmission && !isMultisigFundingRequested,
+    );
+
+    if (isNativeSubmission) {
+      nativeBatchInvocationRef.current = true;
+      nativeWalletMutationUnsafeRef.current = true;
+      nativeSubmissionEpoch.current += 1;
+    }
+
     if (isMultisigFundingRequested) {
-      multisigSubmissionEpoch.current += 1;
       setIsStartingMultisigProposal(true);
+    } else if (isNativeSingleSigSubmission) {
+      setIsStartingNativeBatch(true);
     }
 
     try {
@@ -1395,6 +1799,13 @@ export default function App() {
       // useExecuteBatch stores the failure state used by the modal
     } finally {
       setIsStartingMultisigProposal(false);
+      if (isNativeSubmission) {
+        nativeBatchInvocationRef.current = false;
+        nativeWalletMutationUnsafeRef.current = false;
+      }
+      if (isNativeSingleSigSubmission) {
+        setIsStartingNativeBatch(false);
+      }
     }
   };
 
@@ -1466,7 +1877,7 @@ f1cj...,3.3`;
           </div>
 
           <CustomConnectButton
-            disabled={isMultisigInteractionLocked}
+            disabled={isNativeRecoveryNavigationLocked}
             nativeFilecoin={{
               providers: nativeFilecoinProviders,
               connectedSender: activeNativeSender,
@@ -1478,11 +1889,159 @@ f1cj...,3.3`;
             }}
           />
 
+          {lockedNativeSubmissionSnapshot && nativeSubmissionNetwork && (
+            <div
+              className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-950"
+              data-testid="native-submission-recovery"
+              role="status"
+            >
+              <p className="font-semibold">
+                Unresolved{' '}
+                {lockedNativeSubmissionSnapshot.kind === 'multisig-proposal'
+                  ? 'multisig proposal'
+                  : 'native batch'}
+              </p>
+              <p className="mt-1 leading-5">
+                New native submissions are blocked until this exact CID reaches a proven
+                terminal result.
+              </p>
+              <dl className="mt-2 space-y-1">
+                <div>
+                  <dt className="inline font-semibold">Network: </dt>
+                  <dd className="inline">{nativeSubmissionNetwork.walletLabel}</dd>
+                </div>
+                <div>
+                  <dt className="font-semibold">Signer</dt>
+                  <dd className="break-all font-mono">
+                    {lockedNativeSubmissionSnapshot.signerAddress}
+                  </dd>
+                </div>
+                {lockedNativeSubmissionSnapshot.kind === 'multisig-proposal' && (
+                  <div>
+                    <dt className="font-semibold">Multisig</dt>
+                    <dd className="break-all font-mono">
+                      {lockedNativeSubmissionSnapshot.multisigAddress}
+                    </dd>
+                  </div>
+                )}
+                <div>
+                  <dt className="font-semibold">CID</dt>
+                  <dd className="break-all font-mono">
+                    {lockedNativeSubmissionSnapshot.cid}
+                  </dd>
+                </div>
+              </dl>
+              <a
+                href={getFilfoxMessageUrl(
+                  lockedNativeSubmissionSnapshot.cid,
+                  nativeSubmissionNetwork.chainId,
+                )}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-2 inline-block font-semibold underline underline-offset-2"
+              >
+                Inspect exact CID on Filfox ↗
+              </a>
+              {!isNativeSubmissionRecoveryContextReady && (
+                <p className="mt-2 leading-5">
+                  Connect the recorded signer
+                  {lockedNativeSubmissionSnapshot.kind === 'multisig-proposal'
+                    ? ', select Multi-sig, and select the recorded multisig'
+                    : ' and select Single-sig'}{' '}
+                  to recheck it here.
+                </p>
+              )}
+            </div>
+          )}
+
+          {!lockedNativeSubmissionSnapshot && nativeSubmissionSafetyError && (
+            <div
+              className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-xs leading-5 text-red-900"
+              role="alert"
+              data-testid="native-submission-storage-error"
+            >
+              <p className="font-semibold">Native submission safety lock unavailable</p>
+              <p className="mt-1">{nativeSubmissionSafetyError}</p>
+              <p className="mt-1">
+                New native submissions remain blocked. Restore browser storage access and
+                inspect recent wallet messages before retrying.
+              </p>
+            </div>
+          )}
+
+          {multisigs.uncertaintyStorageError && (
+            <div
+              className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-xs leading-5 text-red-900"
+              role="alert"
+              data-testid="native-action-storage-error"
+            >
+              <p className="font-semibold">Multisig action safety lock unavailable</p>
+              <p className="mt-1">{multisigs.uncertaintyStorageError}</p>
+              <p className="mt-1">
+                Native create, approve, cancel, and batch submissions remain blocked until
+                browser storage is restored. EVM wallet sends remain available.
+              </p>
+            </div>
+          )}
+
+          {unresolvedProposalAction && !isProposalActionRecoveryContextReady && (
+            <div
+              className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-950"
+              role="status"
+              data-testid="multisig-action-recovery"
+            >
+              <p className="font-semibold">
+                Unresolved multisig {unresolvedProposalAction.action}
+              </p>
+              <p className="mt-1">
+                Reconnect the recorded signer, select Multi-sig, and select the recorded actor
+                before rechecking this exact message.
+              </p>
+              <dl className="mt-2 space-y-1">
+                <div>
+                  <dt className="inline font-semibold">Network: </dt>
+                  <dd className="inline">{unresolvedProposalAction.networkLabel}</dd>
+                </div>
+                <div>
+                  <dt className="font-semibold">Signer</dt>
+                  <dd className="break-all font-mono">
+                    {unresolvedProposalAction.signerAddress}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="font-semibold">Multisig</dt>
+                  <dd className="break-all font-mono">
+                    {unresolvedProposalAction.multisigAddress}
+                  </dd>
+                </div>
+                {unresolvedProposalAction.cid && (
+                  <div>
+                    <dt className="font-semibold">CID</dt>
+                    <dd className="break-all font-mono">{unresolvedProposalAction.cid}</dd>
+                  </div>
+                )}
+              </dl>
+              {unresolvedProposalAction.cid && (
+                <a
+                  href={getFilfoxMessageUrl(
+                    unresolvedProposalAction.cid,
+                    unresolvedProposalAction.chainId,
+                  )}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-2 inline-block font-semibold underline underline-offset-2"
+                >
+                  Inspect exact action CID on Filfox ↗
+                </a>
+              )}
+            </div>
+          )}
+
           <div className="mt-6 rounded-[28px] border border-slate-200 bg-white px-4 py-4 shadow-[0_16px_40px_-32px_rgba(15,23,42,0.45)]">
             <ConfigurationChoiceGroup
               title="Sender type"
               variant="segmented"
-              disabled={isMultisigInteractionLocked}
+              disabled={isNativeRecoveryNavigationLocked}
               selectedValue={batchConfiguration.senderWalletType}
               onSelect={(value) => handleSenderWalletTypeSelect(value as SenderWalletType)}
               options={[
@@ -1502,7 +2061,10 @@ f1cj...,3.3`;
             {batchConfiguration.senderWalletType === 'MULTI_SIG' && (
               <MultisigFundingPanel
                 enabled={Boolean(activeNativeSender)}
-                isExternallyLocked={isMultisigInteractionLocked}
+                isExternallyLocked={
+                  isNativeActiveMutationOrSubmissionLocked || isNativeWalletTransitionInFlight
+                }
+                isRecoveryNavigationLocked={isNativeRecoveryNavigationLocked}
                 network={multisigNetwork}
                 connectedSigner={activeNativeSender}
                 savedMultisigs={multisigs.savedMultisigs}
@@ -1511,15 +2073,23 @@ f1cj...,3.3`;
                 pendingProposals={multisigs.pendingProposals}
                 isLoadingSelected={multisigs.isLoadingSelected}
                 selectedError={multisigs.selectedError}
+                uncertaintyStorageError={multisigs.uncertaintyStorageError}
+                createActionState={multisigs.createActionState}
+                isCreateActionInFlight={multisigs.isCreateActionInFlight}
+                isCreateRetryBlocked={multisigs.isCreateRetryBlocked}
                 proposalActionState={multisigs.proposalActionState}
+                isProposalActionInFlight={multisigs.isProposalActionInFlight}
+                isProposalRetryBlocked={multisigs.isProposalRetryBlocked}
                 onSelect={(multisigAddress) => {
                   multisigs.selectMultisig(multisigAddress);
                 }}
                 onAdd={multisigs.addMultisig}
                 onRemove={multisigs.removeMultisig}
-                onCreate={multisigs.createMultisig}
-                onApprove={multisigs.approveProposal}
-                onCancel={multisigs.cancelProposal}
+                onCreate={handleCreateMultisig}
+                onRecheckCreate={recheckCreateMultisig}
+                onApprove={handleApproveMultisigProposal}
+                onCancel={handleCancelMultisigProposal}
+                onRecheckProposal={recheckMultisigProposalAction}
                 onRefresh={refreshSelectedMultisig}
               />
             )}
@@ -1621,7 +2191,10 @@ f1cj...,3.3`;
                 <div className="mt-5 grid gap-5 xl:grid-cols-2">
                   <ConfigurationChoiceGroup
                     title="Transaction method"
-                    disabled={isMultisigInteractionLocked}
+                    disabled={
+                      (isUsingNativeFundingPath && isNativeIdentityActionLocked) ||
+                      isNativeWalletTransitionInFlight
+                    }
                     description="Choose how SendFIL executes the batch transaction."
                     selectedValue={batchConfiguration.executionMethod}
                     onSelect={(value) => handleExecutionMethodSelect(value as ExecutionMethod)}
@@ -1646,7 +2219,10 @@ f1cj...,3.3`;
                   <div className="xl:border-l xl:border-slate-200 xl:pl-5">
                     <ConfigurationChoiceGroup
                       title="Error handling"
-                      disabled={isMultisigInteractionLocked}
+                      disabled={
+                        (isUsingNativeFundingPath && isNativeIdentityActionLocked) ||
+                        isNativeWalletTransitionInFlight
+                      }
                       description="Choose what happens when a payment within a batch transaction fails."
                       selectedValue={batchConfiguration.errorHandling}
                       onSelect={(value) =>
@@ -1924,10 +2500,30 @@ f1cj...,3.3`;
                         : `bg-[#1f69ff] text-white hover:bg-[#1857d4] ${choiceCardSelectedShadow}`
                     }`}
                   >
-                    {isMultisigBatchExecutionInFlight
-                      ? 'View Pending Proposal'
+                    {hasInspectableNativeSubmissionOutcome &&
+                    nativeSubmissionSnapshot
+                      ? nativeSubmissionSnapshot.kind === 'multisig-proposal'
+                        ? 'View Proposal Outcome'
+                        : 'View Transaction Outcome'
+                      : isUsingNativeFundingPath &&
+                    isNativeSubmissionRecoveryRequired &&
+                    !isNativeSubmissionRecoveryContextReady
+                      ? lockedNativeSubmissionSnapshot?.kind === 'multisig-proposal'
+                        ? 'Restore Submitted Proposal'
+                        : 'Restore Submitted Transaction'
+                      : isMultisigBatchExecutionInFlight
+                        ? 'View Pending Proposal'
                       : isMultisigBatchOutcomeUncertain
                         ? 'Inspect Submitted Proposal'
+                        : isNativeSingleSigBatchExecutionInFlight
+                          ? 'View Pending Transaction'
+                          : isNativeSingleSigBatchOutcomeUncertain ||
+                              nativeBatchExecution.isOperationLocked
+                            ? 'Inspect Submitted Transaction'
+                        : isMultisigCreateActionInFlight
+                          ? 'Multisig Create In Progress'
+                          : isMultisigProposalActionInFlight
+                            ? 'Multisig Action In Progress'
                         : isNativeWalletTransitionInFlight
                           ? 'Wallet Update In Progress'
                           : !isConnected
@@ -1953,6 +2549,11 @@ f1cj...,3.3`;
         isOpen={isReviewModalOpen}
         onClose={handleCloseReviewModal}
         onConfirm={handleConfirmTransaction}
+        onRecheckTransaction={
+          isNativeSubmissionRecoveryContextReady
+            ? handleNativeSubmissionRecheck
+            : undefined
+        }
         recipients={validRecipients}
         validationErrors={activeValidationErrors}
         validationWarnings={activeValidationWarnings}
@@ -2001,19 +2602,29 @@ f1cj...,3.3`;
             : undefined
         }
         signerGasBalance={isMultisigFundingRequested ? signerGasBalance : undefined}
+        submissionSummary={
+          isUsingNativeFundingPath && nativeSubmissionSnapshot
+            ? {
+                recipientCount: nativeSubmissionSnapshot.recipientCount,
+                totalValueAttoFil: nativeSubmissionSnapshot.totalValueAttoFil,
+              }
+            : undefined
+        }
         transactionState={transactionState}
         transactionHash={transactionHash}
         transactionError={transactionError}
-        batchConfiguration={batchConfiguration}
+        batchConfiguration={reviewBatchConfiguration}
         chainId={
           isMultisigFundingRequested
             ? (multisigReviewContext?.chainId ?? multisigNetwork.chainId)
-            : chainId
+            : (isUsingNativeFundingPath ? nativeSubmissionNetwork?.chainId : undefined) ?? chainId
         }
         networkLabel={
           isMultisigFundingRequested
             ? (multisigReviewContext?.networkLabel ?? multisigNetwork.walletLabel)
-            : (connectedNetwork?.walletLabel ?? 'Unsupported network')
+            : ((isUsingNativeFundingPath ? nativeSubmissionNetwork?.walletLabel : undefined) ??
+              connectedNetwork?.walletLabel ??
+              'Unsupported network')
         }
         feeLabel={feeLabel}
       />

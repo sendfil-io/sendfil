@@ -33,8 +33,6 @@
     "filsnap-adapter": "^3.3.10",
     "iso-filecoin": "^7.4.7",
     "iso-filecoin-wallets": "^1.2.0",
-    "p-retry": "^7.1.1",
-    "p-timeout": "^7.0.1",
     "papaparse": "^5.5.3",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",

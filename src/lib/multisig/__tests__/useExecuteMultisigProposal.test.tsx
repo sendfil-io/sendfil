@@ -3,9 +3,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { JSDOM } from 'jsdom';
 import { createRoot, type Root } from 'react-dom/client';
 import { CoinType, newActorAddress, newSecp256k1Address } from '@glif/filecoin-address';
-import { FILSNAP_FILECOIN_PROVIDER_METADATA } from '../../senders';
+import {
+  FILSNAP_FILECOIN_PROVIDER_METADATA,
+  NativeFilecoinSubmissionUncertainError,
+} from '../../senders';
 import { createNativeFilecoinConnectedSender } from '../../senders/senderModel';
 import type { NativeFilecoinWalletProvider } from '../../senders/types';
+import { createTestLockManager } from '../../senders/__tests__/testLockManager';
+import {
+  getMultisigProposalSubmissionIdentity,
+  readNativeSubmissionRecords,
+  writeNativeSubmissionRecord,
+  type MultisigProposalSubmissionRecord,
+} from '../../senders/nativeSubmissionStorage';
 import type { FilecoinMessage, TransactionStatus } from '../../DataProvider/types';
 import type { SendFilNetworkKey } from '../../networks';
 import { getNetworkConfig } from '../../networks';
@@ -22,6 +32,10 @@ const SIGNER_T1 = newSecp256k1Address(
   Uint8Array.from({ length: 33 }, (_, index) => index + 40),
   CoinType.TEST,
 ).toString();
+const OTHER_SIGNER_T1 = newSecp256k1Address(
+  Uint8Array.from({ length: 33 }, (_, index) => index + 120),
+  CoinType.TEST,
+).toString();
 const RECIPIENT_T1 = newSecp256k1Address(
   Uint8Array.from({ length: 33 }, (_, index) => index + 80),
   CoinType.TEST,
@@ -30,8 +44,12 @@ const MULTISIG_T2 = newActorAddress(
   Uint8Array.from({ length: 20 }, (_, index) => index + 1),
   CoinType.TEST,
 ).toString() as `t2${string}`;
-const MULTISIG_CODE = 'bafk2bzaceamultisigactorcode';
-const CID = 'bafy2bzacedmultisigproposalcid';
+const MULTISIG_CODE =
+  'bafk2bzacechrsbw65ojbktr63swju5g7275fl3lxminrz7damr4me6wq6fjxm';
+const MANIFEST_CID = 'bafy2bzaceb22zyxdtqlmveumv7qibp6ncrwmfuskzldj2qiudmvn7bfeeaur6';
+const MANIFEST_BASE64 =
+  'gYJobXVsdGlzaWfYKlgnAAFVoOQCII8ZBt7rkhVOPtysmnTf1/pV7XdiGxz8YGR4wnrQ8VN2';
+const CID = 'bafy2bzacebpekbxp7qyk4xx5r7es3t77sqcgdq5c7osfow4ayvbyyafwl4sxk';
 const PROPOSE_QUEUED_RETURN = 'hAf0AEA=';
 const PROPOSE_APPLIED_SUCCESS_RETURN = 'hAn1AELerQ==';
 const PROPOSE_APPLIED_FAILURE_RETURN = 'hAr1GCFCAQI=';
@@ -49,9 +67,9 @@ function createDeferred<T>() {
   return { promise, resolve, reject };
 }
 
-function getNativeSender() {
+function getNativeSender(address = SIGNER_T1) {
   const result = createNativeFilecoinConnectedSender({
-    address: SIGNER_T1,
+    address,
     provider: FILSNAP_FILECOIN_PROVIDER_METADATA,
   });
 
@@ -60,6 +78,29 @@ function getNativeSender() {
   }
 
   return result.sender;
+}
+
+function getStoredProposal(
+  signerAddress = SIGNER_T1,
+): MultisigProposalSubmissionRecord {
+  return {
+    kind: 'multisig-proposal',
+    identity: getMultisigProposalSubmissionIdentity({
+      networkKey: 'calibration',
+      signerAddress,
+      multisigAddress: MULTISIG_T2,
+    }),
+    cid: CID,
+    networkKey: 'calibration',
+    signerAddress,
+    providerId: 'filsnap',
+    multisigAddress: MULTISIG_T2,
+    errorMode: 'ATOMIC',
+    executionMethod: 'STANDARD',
+    recipientCount: 1,
+    totalValueAttoFil: '1000000000000000000',
+    createdAt: 1,
+  };
 }
 
 function getMultisig(overrides: Partial<MultisigActorState> = {}): MultisigActorState {
@@ -102,23 +143,27 @@ function getRpc(availableBalance = 10n ** 21n): MultisigPreflightRpc {
         Nonce: 0,
         Balance: availableBalance.toString(),
       })),
-      readState: vi.fn(async () => ({
-        Balance: availableBalance.toString(),
-        State: {
-          Signers: [SIGNER_T1],
-          NumApprovalsThreshold: 1,
-        },
-      })),
+      readState: vi.fn(async (address: string) =>
+        address === 'f00' || address === 't00'
+          ? {
+              Balance: '0',
+              State: { BuiltinActors: { '/': MANIFEST_CID } },
+            }
+          : {
+              Balance: availableBalance.toString(),
+              State: {
+                Signers: [SIGNER_T1],
+                NumApprovalsThreshold: 1,
+              },
+            },
+      ),
       lookupID: vi.fn(async (address: string) => (address === SIGNER_T1 ? 't01001' : 't01002')),
       lookupRobustAddress: vi.fn(async () => MULTISIG_T2),
       getBalance: vi.fn(async () => availableBalance),
       getAvailableBalance: vi.fn(async () => availableBalance),
       getVestingSchedule: vi.fn(async () => undefined),
       getPending: vi.fn(),
-      getNetworkVersion: vi.fn(async () => 25),
-      getActorCodeCids: vi.fn(async () => ({
-        multisig: { '/': MULTISIG_CODE },
-      })),
+      readObject: vi.fn(async () => MANIFEST_BASE64),
       estimateGas: vi.fn(),
     },
   };
@@ -182,6 +227,10 @@ describe('useExecuteMultisigProposal', () => {
     latestHook = undefined;
     dom = new JSDOM('<!doctype html><html><body></body></html>', {
       url: 'http://localhost',
+    });
+    Object.defineProperty(dom.window.navigator, 'locks', {
+      configurable: true,
+      value: createTestLockManager(),
     });
 
     vi.stubGlobal('window', dom.window);
@@ -256,6 +305,7 @@ describe('useExecuteMultisigProposal', () => {
         GasFeeCap: '1000',
         GasPremium: '10',
       }),
+      expect.objectContaining({ onCidComputed: expect.any(Function) }),
     );
     expect(pollMessageStatus).toHaveBeenCalledWith(CID, 60, 5000, 'calibration');
     expect(latestHook?.state).toBe('confirmed');
@@ -421,6 +471,62 @@ describe('useExecuteMultisigProposal', () => {
     await expect(repeated).resolves.toBe(CID);
     expect(provider.signAndSubmitMessage).toHaveBeenCalledTimes(1);
     expect(pollMessageStatus).toHaveBeenCalledTimes(1);
+  });
+
+  it('polls and locks the deterministic CID when the MpoolPush response is lost', async () => {
+    const sender = getNativeSender();
+    const provider = getProvider(10n ** 21n);
+    const confirmation = createDeferred<TransactionStatus>();
+    const pollMessageStatus = vi.fn(() => confirmation.promise);
+    vi.mocked(provider.signAndSubmitMessage!).mockRejectedValue(
+      new NativeFilecoinSubmissionUncertainError({
+        cid: CID,
+        networkKey: 'calibration',
+        cause: new Error('MpoolPush response was lost'),
+      }),
+    );
+
+    await renderHook({
+      sender,
+      provider,
+      multisig: getMultisig(),
+      network: getNetworkConfig('calibration'),
+      rpc: getRpc(),
+      pollMessageStatus,
+    });
+
+    let first!: Promise<string>;
+    await act(async () => {
+      first = latestHook!.executeBatch(recipients, 'ATOMIC');
+      await expect(first).resolves.toBe(CID);
+    });
+
+    expect(latestHook?.state).toBe('pending');
+    expect(latestHook?.txHash).toBe(CID);
+    expect(pollMessageStatus).toHaveBeenCalledWith(CID, 60, 5000, 'calibration');
+
+    const repeated = latestHook!.executeBatch(recipients, 'ATOMIC');
+    expect(repeated).toBe(first);
+    await expect(repeated).resolves.toBe(CID);
+    expect(provider.signAndSubmitMessage).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      confirmation.resolve({
+        cid: CID,
+        status: 'failed',
+        error: 'Transaction timeout - still pending after maximum wait time',
+      });
+      await confirmation.promise;
+      await Promise.resolve();
+    });
+
+    expect(latestHook?.state).toBe('failed');
+    expect(latestHook?.error).toMatchObject({
+      title: 'Multisig proposal confirmation is uncertain',
+      recoverable: false,
+    });
+    expect(latestHook!.executeBatch(recipients, 'ATOMIC')).toBe(first);
+    expect(provider.signAndSubmitMessage).toHaveBeenCalledTimes(1);
   });
 
   it('uses RPC GasPremium for review while retaining GasLimit times GasFeeCap as max fee', async () => {
@@ -611,5 +717,194 @@ describe('useExecuteMultisigProposal', () => {
 
     expect(latestHook?.error?.message).toContain('no longer a signer');
     expect(provider.signAndSubmitMessage).not.toHaveBeenCalled();
+  });
+
+  it('keeps a confirmed proposal with a nonzero outer receipt locked as uncertain', async () => {
+    const sender = getNativeSender();
+    const provider = getProvider(10n ** 21n);
+
+    await renderHook({
+      sender,
+      provider,
+      multisig: getMultisig(),
+      network: getNetworkConfig('calibration'),
+      rpc: getRpc(),
+      pollMessageStatus: vi.fn(async (): Promise<TransactionStatus> => ({
+        cid: CID,
+        status: 'confirmed',
+        receipt: {
+          ExitCode: 7,
+          Return: PROPOSE_APPLIED_SUCCESS_RETURN,
+          GasUsed: 4321,
+        },
+      })),
+    });
+
+    let first!: Promise<string>;
+    await act(async () => {
+      first = latestHook!.executeBatch(recipients, 'ATOMIC');
+      await expect(first).resolves.toBe(CID);
+      await Promise.resolve();
+    });
+
+    expect(latestHook?.state).toBe('failed');
+    expect(latestHook?.error).toMatchObject({
+      title: 'Multisig proposal confirmation is uncertain',
+      recoverable: false,
+    });
+    expect(latestHook?.error?.details).toContain('outer exit code: 7');
+    expect(latestHook!.executeBatch(recipients, 'ATOMIC')).toBe(first);
+    expect(provider.signAndSubmitMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it('persists a proposal CID before MpoolPush can hang and keeps wallet mutation unsafe', async () => {
+    const sender = getNativeSender();
+    const provider = getProvider(10n ** 21n);
+    const push = createDeferred<{ cid: string }>();
+    const confirmation = createDeferred<TransactionStatus>();
+    const storage = dom.window.localStorage;
+
+    vi.mocked(provider.signAndSubmitMessage!).mockImplementation(
+      async (_message, options) => {
+        await options?.onCidComputed?.(CID);
+        return push.promise;
+      },
+    );
+
+    await renderHook({
+      sender,
+      provider,
+      multisig: getMultisig(),
+      network: getNetworkConfig('calibration'),
+      rpc: getRpc(),
+      storage,
+      pollMessageStatus: vi.fn(() => confirmation.promise),
+    });
+
+    let execution!: Promise<string>;
+    await act(async () => {
+      execution = latestHook!.executeBatch(recipients, 'ATOMIC');
+      await vi.waitFor(() => {
+        expect(readNativeSubmissionRecords(storage).records).toEqual([
+          expect.objectContaining({ cid: CID, identity: getStoredProposal().identity }),
+        ]);
+      });
+    });
+
+    expect(latestHook?.isWalletMutationUnsafe).toBe(true);
+    expect(latestHook?.isIdentityLocked).toBe(true);
+
+    await act(async () => {
+      push.resolve({ cid: CID });
+      await expect(execution).resolves.toBe(CID);
+    });
+
+    expect(latestHook?.isWalletMutationUnsafe).toBe(false);
+    expect(latestHook?.isIdentityLocked).toBe(true);
+
+    await act(async () => {
+      confirmation.resolve({
+        cid: CID,
+        status: 'failed',
+        error: 'confirmation is still unavailable',
+      });
+      await confirmation.promise;
+    });
+  });
+
+  it('reconciles an exact durable proposal CID after remount without signing again', async () => {
+    const sender = getNativeSender();
+    const provider = getProvider(10n ** 21n);
+    const storage = dom.window.localStorage;
+    const stored = getStoredProposal();
+    const pollMessageStatus = vi.fn(
+      async () => getConfirmedStatus(PROPOSE_QUEUED_RETURN),
+    );
+
+    expect(writeNativeSubmissionRecord(stored, storage)).toBeUndefined();
+
+    await renderHook({
+      sender,
+      provider,
+      multisig: getMultisig(),
+      network: getNetworkConfig('calibration'),
+      rpc: getRpc(),
+      storage,
+      pollMessageStatus,
+    });
+
+    await act(async () => {
+      await vi.waitFor(() => expect(latestHook?.state).toBe('confirmed'));
+    });
+
+    expect(pollMessageStatus).toHaveBeenCalledWith(CID, 60, 5000, 'calibration');
+    expect(provider.signAndSubmitMessage).not.toHaveBeenCalled();
+    expect(readNativeSubmissionRecords(storage).records).toEqual([]);
+    expect(latestHook?.proposalOutcome).toMatchObject({ kind: 'queued', cid: CID });
+    expect(latestHook?.submissionSnapshot).toMatchObject(stored);
+    expect(latestHook?.isIdentityLocked).toBe(false);
+  });
+
+  it('globally blocks a different signer after proposal remount and exposes recovery context', async () => {
+    const provider = getProvider(10n ** 21n);
+    const storage = dom.window.localStorage;
+    const stored = getStoredProposal();
+    const pollMessageStatus = vi.fn();
+
+    expect(writeNativeSubmissionRecord(stored, storage)).toBeUndefined();
+
+    await renderHook({
+      sender: getNativeSender(OTHER_SIGNER_T1),
+      provider,
+      multisig: getMultisig(),
+      network: getNetworkConfig('calibration'),
+      rpc: getRpc(),
+      storage,
+      pollMessageStatus,
+    });
+
+    expect(latestHook?.isIdentityLocked).toBe(true);
+    expect(latestHook?.submissionSnapshot).toMatchObject(stored);
+    await act(async () => {
+      await expect(latestHook!.executeBatch(recipients, 'ATOMIC')).rejects.toMatchObject({
+        title: 'Another multisig proposal is still unresolved',
+        recoverable: false,
+      });
+    });
+    expect(provider.signAndSubmitMessage).not.toHaveBeenCalled();
+    expect(pollMessageStatus).not.toHaveBeenCalled();
+  });
+
+  it('removes a proposal CID lock after a deterministic pre-push rejection', async () => {
+    const sender = getNativeSender();
+    const provider = getProvider(10n ** 21n);
+    const storage = dom.window.localStorage;
+
+    vi.mocked(provider.signAndSubmitMessage!).mockImplementation(
+      async (_message, options) => {
+        await options?.onCidComputed?.(CID);
+        throw new Error('User rejected the signature request');
+      },
+    );
+
+    await renderHook({
+      sender,
+      provider,
+      multisig: getMultisig(),
+      network: getNetworkConfig('calibration'),
+      rpc: getRpc(),
+      storage,
+      pollMessageStatus: vi.fn(),
+    });
+
+    await act(async () => {
+      await expect(latestHook!.executeBatch(recipients, 'ATOMIC')).rejects.toMatchObject({
+        category: 'USER_REJECTED',
+      });
+    });
+
+    expect(readNativeSubmissionRecords(storage).records).toEqual([]);
+    expect(latestHook?.isIdentityLocked).toBe(false);
+    expect(latestHook?.isWalletMutationUnsafe).toBe(false);
   });
 });

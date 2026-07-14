@@ -1,5 +1,18 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { NativeFilecoinWalletProvider } from '../senders';
+import { isNativeFilecoinSubmissionUncertainError } from '../senders/nativeFilecoinSubmission';
+import {
+  NativeSignerLockError,
+  withNativeSignerLock,
+} from '../senders/nativeSignerLock';
+import {
+  getMultisigProposalSubmissionIdentity,
+  readNativeSubmissionRecords,
+  removeNativeSubmissionRecord,
+  verifyNativeSubmissionStorage,
+  writeNativeSubmissionRecord,
+  type MultisigProposalSubmissionRecord,
+} from '../senders/nativeSubmissionStorage';
 import type { NativeFilecoinConnectedSender } from '../senders/types';
 import type { BatchExecutionRecipient, BatchGasEstimate } from '../transaction/batchExecution';
 import type { ErrorMode } from '../transaction/multicall';
@@ -27,6 +40,7 @@ export interface UseExecuteMultisigProposalOptions {
   pollMessageStatus?: typeof pollTransactionStatus;
   confirmationPollAttempts?: number;
   confirmationPollIntervalMs?: number;
+  storage?: Storage;
 }
 
 export interface UseExecuteMultisigProposalReturn {
@@ -44,6 +58,11 @@ export interface UseExecuteMultisigProposalReturn {
   txHash?: string;
   error?: BatchExecutionError;
   proposalOutcome?: MultisigProposalOutcome;
+  isIdentityLocked: boolean;
+  isOperationLocked: boolean;
+  isWalletMutationUnsafe: boolean;
+  submissionSnapshot?: MultisigProposalSubmissionRecord;
+  recheck: () => Promise<void>;
   reset: () => void;
 }
 
@@ -75,6 +94,16 @@ type SignAndSubmitNativeProvider = NativeFilecoinWalletProvider & {
   signAndSubmitMessage: NonNullable<NativeFilecoinWalletProvider['signAndSubmitMessage']>;
 };
 
+interface ActiveMultisigExecution {
+  identity: string;
+  promise: Promise<string>;
+}
+
+interface MultisigConfirmationContext {
+  networkKey: NativeFilecoinConnectedSender['networkKey'];
+  errorMode: ErrorMode;
+}
+
 function assertReady<T>(value: T | undefined, message: string): asserts value is T {
   if (!value) {
     throw new Error(message);
@@ -102,6 +131,29 @@ function createInsufficientFundsError(message: string, errorMode: ErrorMode): Ba
     stage: 'execution',
     recoverable: true,
     hint: 'Review balances and try again.',
+  });
+}
+
+function createNativeSignerLockExecutionError(
+  cause: NativeSignerLockError,
+  errorMode: ErrorMode,
+): BatchExecutionError {
+  const isBusy = cause.code === 'LOCK_BUSY';
+
+  return new BatchExecutionError({
+    category: 'UNKNOWN',
+    title: isBusy
+      ? 'Another native signing request is active'
+      : 'Native signing is safety-locked',
+    message: cause.message,
+    errorMode,
+    stage: 'execution',
+    recoverable: isBusy,
+    hint: isBusy
+      ? 'Finish or cancel the wallet request in the other SendFIL tab, then try again.'
+      : 'Resolve the exact-CID or browser safety issue before attempting another native signature.',
+    details: cause.message,
+    cause,
   });
 }
 
@@ -228,6 +280,37 @@ function createConfirmationUncertainError(
   });
 }
 
+function createMultisigSubmissionStorageError(
+  message: string,
+  errorMode: ErrorMode,
+): BatchExecutionError {
+  return new BatchExecutionError({
+    category: 'UNKNOWN',
+    title: 'Multisig submission safety storage is unavailable',
+    message,
+    errorMode,
+    stage: 'execution',
+    recoverable: false,
+    hint:
+      'Restore browser storage access before signing. If a CID is already shown, inspect it before changing storage or retrying.',
+  });
+}
+
+function createMultisigExecutionIdentityLockError(
+  errorMode: ErrorMode,
+): BatchExecutionError {
+  return new BatchExecutionError({
+    category: 'UNKNOWN',
+    title: 'Another multisig proposal is still unresolved',
+    message:
+      'A proposal started with a different multisig or signer identity has not reached a proven terminal result.',
+    errorMode,
+    stage: 'execution',
+    recoverable: false,
+    hint: 'Reconnect the original identity and inspect its CID before proposing another batch.',
+  });
+}
+
 export function useExecuteMultisigProposal({
   sender,
   provider,
@@ -237,13 +320,38 @@ export function useExecuteMultisigProposal({
   pollMessageStatus = pollTransactionStatus,
   confirmationPollAttempts = 60,
   confirmationPollIntervalMs = 5000,
+  storage,
 }: UseExecuteMultisigProposalOptions = {}): UseExecuteMultisigProposalReturn {
   const [state, setState] = useState<BatchExecutionState>('idle');
   const [txHash, setTxHash] = useState<string | undefined>();
   const [error, setError] = useState<BatchExecutionError | undefined>();
   const [proposalOutcome, setProposalOutcome] = useState<MultisigProposalOutcome | undefined>();
+  const [submissionSnapshot, setSubmissionSnapshot] =
+    useState<MultisigProposalSubmissionRecord>();
+  const [isWalletMutationUnsafe, setIsWalletMutationUnsafe] = useState(false);
   const executionSequence = useRef(0);
-  const activeExecution = useRef<Promise<string> | undefined>(undefined);
+  const activeExecution = useRef<ActiveMultisigExecution | undefined>(undefined);
+  const confirmationInFlight = useRef(false);
+  const executionIdentity =
+    sender && multisig
+      ? getMultisigProposalSubmissionIdentity({
+          networkKey: sender.networkKey,
+          signerAddress: sender.address,
+          multisigAddress: multisig.address,
+        })
+      : undefined;
+  const storedSubmissions = readNativeSubmissionRecords(storage);
+  const storedSubmission = executionIdentity
+    ? storedSubmissions.records.find(
+        (record): record is MultisigProposalSubmissionRecord =>
+          record.kind === 'multisig-proposal' &&
+          record.identity === executionIdentity,
+      )
+    : undefined;
+  const storedOperationSubmission = storedSubmissions.records.find(
+    (record): record is MultisigProposalSubmissionRecord =>
+      record.kind === 'multisig-proposal',
+  );
 
   const runPreflight = useCallback(
     (
@@ -273,34 +381,49 @@ export function useExecuteMultisigProposal({
   const waitForConfirmation = useCallback(
     async (
       cid: string,
-      preflight: PreparedMultisigProposalPreflight,
+      context: MultisigConfirmationContext,
       executionId: number,
+      identity: string,
+      pollAttempts = confirmationPollAttempts,
+      pollIntervalMs = confirmationPollIntervalMs,
     ): Promise<boolean> => {
+      confirmationInFlight.current = true;
+
       try {
         const status: TransactionStatus = await pollMessageStatus(
           cid,
-          confirmationPollAttempts,
-          confirmationPollIntervalMs,
-          preflight.sender.networkKey,
+          pollAttempts,
+          pollIntervalMs,
+          context.networkKey,
         );
 
         if (executionSequence.current !== executionId) {
           return false;
         }
 
-        if (status.status === 'confirmed') {
+        if (
+          status.status === 'confirmed' &&
+          status.receipt &&
+          status.receipt.ExitCode === 0
+        ) {
           let outcome: MultisigProposalOutcome;
 
           try {
-            if (!status.receipt) {
-              throw new Error('Confirmed proposal is missing its message receipt');
-            }
-
             outcome = decodeProposalOutcome(cid, status.receipt);
           } catch (cause) {
             setState('failed');
             setError(
-              createActorReturnError(cid, status.receipt, preflight.preparedBatch.errorMode, cause),
+              createActorReturnError(cid, status.receipt, context.errorMode, cause),
+            );
+            return false;
+          }
+
+          const storageError = removeNativeSubmissionRecord(identity, cid, storage);
+
+          if (storageError) {
+            setState('failed');
+            setError(
+              createMultisigSubmissionStorageError(storageError, context.errorMode),
             );
             return false;
           }
@@ -309,12 +432,29 @@ export function useExecuteMultisigProposal({
 
           if (outcome.kind === 'applied-failure') {
             setState('failed');
-            setError(createActorFailureError(outcome, preflight.preparedBatch.errorMode));
+            setError(createActorFailureError(outcome, context.errorMode));
             return true;
           }
 
           setState('confirmed');
           return true;
+        }
+
+        if (status.status === 'confirmed') {
+          setState('failed');
+          setError(
+            createConfirmationUncertainError(
+              cid,
+              status.receipt,
+              context.errorMode,
+              new Error(
+                status.receipt
+                  ? `Confirmed proposal carried nonzero outer exit code ${status.receipt.ExitCode}.`
+                  : 'Confirmed proposal is missing its message receipt.',
+              ),
+            ),
+          );
+          return false;
         }
 
         if (!status.receipt || status.receipt.ExitCode === 0) {
@@ -323,7 +463,7 @@ export function useExecuteMultisigProposal({
             createConfirmationUncertainError(
               cid,
               status.receipt,
-              preflight.preparedBatch.errorMode,
+              context.errorMode,
               new Error(status.error ?? 'The proposal has no terminal receipt.'),
             ),
           );
@@ -337,9 +477,19 @@ export function useExecuteMultisigProposal({
           ),
           {
             stage: 'confirmation',
-            errorMode: preflight.preparedBatch.errorMode,
+            errorMode: context.errorMode,
           },
         );
+
+        const storageError = removeNativeSubmissionRecord(identity, cid, storage);
+
+        if (storageError) {
+          setState('failed');
+          setError(
+            createMultisigSubmissionStorageError(storageError, context.errorMode),
+          );
+          return false;
+        }
 
         setState('failed');
         setError(mappedError);
@@ -354,15 +504,103 @@ export function useExecuteMultisigProposal({
           createConfirmationUncertainError(
             cid,
             undefined,
-            preflight.preparedBatch.errorMode,
+            context.errorMode,
             cause,
           ),
         );
         return false;
+      } finally {
+        if (executionSequence.current === executionId) {
+          confirmationInFlight.current = false;
+        }
       }
     },
-    [confirmationPollAttempts, confirmationPollIntervalMs, pollMessageStatus],
+    [
+      confirmationPollAttempts,
+      confirmationPollIntervalMs,
+      pollMessageStatus,
+      storage,
+    ],
   );
+
+  const reconcileStoredSubmission = useCallback(
+    async (
+      record: MultisigProposalSubmissionRecord,
+      pollAttempts = confirmationPollAttempts,
+      pollIntervalMs = confirmationPollIntervalMs,
+    ): Promise<void> => {
+      if (confirmationInFlight.current) {
+        return;
+      }
+
+      const executionId = executionSequence.current + 1;
+      executionSequence.current = executionId;
+      const reconciliationPromise = Promise.resolve(record.cid);
+
+      if (!activeExecution.current) {
+        activeExecution.current = {
+          identity: record.identity,
+          promise: reconciliationPromise,
+        };
+      }
+
+      setTxHash(record.cid);
+      setSubmissionSnapshot(record);
+      setProposalOutcome(undefined);
+      setError(undefined);
+      setState('pending');
+
+      const canReleaseLock = await waitForConfirmation(
+        record.cid,
+        {
+          networkKey: record.networkKey,
+          errorMode: record.errorMode,
+        },
+        executionId,
+        record.identity,
+        pollAttempts,
+        pollIntervalMs,
+      );
+
+      if (
+        canReleaseLock &&
+        activeExecution.current?.identity === record.identity
+      ) {
+        activeExecution.current = undefined;
+      }
+    },
+    [
+      confirmationPollAttempts,
+      confirmationPollIntervalMs,
+      waitForConfirmation,
+    ],
+  );
+
+  useEffect(() => {
+    if (storedSubmissions.error) {
+      setState('failed');
+      setError(
+        createMultisigSubmissionStorageError(
+          storedSubmissions.error,
+          storedSubmission?.errorMode ?? 'ATOMIC',
+        ),
+      );
+      return;
+    }
+
+    if (!executionIdentity) {
+      return;
+    }
+
+    if (storedSubmission && !activeExecution.current) {
+      void reconcileStoredSubmission(storedSubmission);
+    }
+  }, [
+    executionIdentity,
+    reconcileStoredSubmission,
+    storedSubmission,
+    storedSubmissions.error,
+  ]);
 
   const estimateBatch = useCallback(
     async (
@@ -389,12 +627,59 @@ export function useExecuteMultisigProposal({
       errorMode: ErrorMode,
       executionMethod: ExecutionMethod = 'STANDARD',
     ): Promise<string> => {
+      if (!executionIdentity) {
+        return Promise.reject(
+          mapBatchExecutionError(
+            new Error('No native Filecoin multisig identity is selected.'),
+            { stage: 'execution', errorMode },
+          ),
+        );
+      }
+
+      const latestStoredSubmissions = readNativeSubmissionRecords(storage);
+
+      if (latestStoredSubmissions.error) {
+        return Promise.reject(
+          createMultisigSubmissionStorageError(
+            latestStoredSubmissions.error,
+            errorMode,
+          ),
+        );
+      }
+
+      const latestStoredSubmission = latestStoredSubmissions.records.find(
+        (record): record is MultisigProposalSubmissionRecord =>
+          record.kind === 'multisig-proposal' &&
+          record.identity === executionIdentity,
+      );
+
       if (activeExecution.current) {
-        return activeExecution.current;
+        if (activeExecution.current.identity === executionIdentity) {
+          return activeExecution.current.promise;
+        }
+
+        return Promise.reject(
+          createMultisigExecutionIdentityLockError(errorMode),
+        );
+      }
+
+      if (
+        latestStoredSubmission &&
+        latestStoredSubmissions.records.length === 1
+      ) {
+        void reconcileStoredSubmission(latestStoredSubmission);
+        return Promise.resolve(latestStoredSubmission.cid);
+      }
+
+      if (latestStoredSubmissions.records.length > 0) {
+        return Promise.reject(
+          createMultisigExecutionIdentityLockError(errorMode),
+        );
       }
 
       let confirmationStarted = false;
       let execution: Promise<string>;
+      setIsWalletMutationUnsafe(true);
 
       execution = (async (): Promise<string> => {
         const executionId = executionSequence.current + 1;
@@ -460,16 +745,140 @@ export function useExecuteMultisigProposal({
             );
           }
 
-          setState('signing');
-          const { cid } = await nativeProvider.signAndSubmitMessage(preflight.estimatedMessage);
+          const storageVerificationError = verifyNativeSubmissionStorage(storage);
 
-          setTxHash(cid);
-          setState('pending');
+          if (storageVerificationError) {
+            throw createMultisigSubmissionStorageError(
+              storageVerificationError,
+              errorMode,
+            );
+          }
+
+          const preSigningRecords = readNativeSubmissionRecords(storage);
+          if (preSigningRecords.error) {
+            throw createMultisigSubmissionStorageError(
+              preSigningRecords.error,
+              errorMode,
+            );
+          }
+
+          if (preSigningRecords.records.length > 0) {
+            throw createMultisigExecutionIdentityLockError(errorMode);
+          }
+
+          const cid = await withNativeSignerLock(
+            {
+              networkKey: sender.networkKey,
+              signerAddress: sender.address,
+              storage,
+            },
+            async () => {
+              setState('signing');
+              let lockedCid: string;
+              let persistedCid: string | undefined;
+              const createSubmissionRecord = (
+                computedCid: string,
+              ): MultisigProposalSubmissionRecord => ({
+                  kind: 'multisig-proposal',
+                  identity: executionIdentity,
+                  cid: computedCid,
+                  networkKey: sender.networkKey,
+                  signerAddress: sender.address,
+                  providerId: nativeProvider.metadata.id,
+                  multisigAddress: currentMultisig.address,
+                  errorMode,
+                  executionMethod,
+                  recipientCount: preflight!.preparedBatch.recipientCount,
+                  totalValueAttoFil:
+                    preflight!.preparedBatch.totalValueAttoFil.toString(),
+                  createdAt: Date.now(),
+                });
+              const persistComputedCid = (computedCid: string) => {
+                const record = createSubmissionRecord(computedCid);
+                const persistenceError = writeNativeSubmissionRecord(record, storage);
+
+                if (persistenceError) {
+                  throw createMultisigSubmissionStorageError(
+                    persistenceError,
+                    errorMode,
+                  );
+                }
+
+                persistedCid = computedCid;
+                setSubmissionSnapshot(record);
+                setTxHash(computedCid);
+                setState('pending');
+              };
+
+              try {
+                const submission = await nativeProvider.signAndSubmitMessage(
+                  preflight!.estimatedMessage,
+                  { onCidComputed: persistComputedCid },
+                );
+                lockedCid = submission.cid;
+              } catch (cause) {
+                if (!isNativeFilecoinSubmissionUncertainError(cause)) {
+                  if (persistedCid) {
+                    const cleanupError = removeNativeSubmissionRecord(
+                      executionIdentity,
+                      persistedCid,
+                      storage,
+                    );
+
+                    if (cleanupError) {
+                      throw createMultisigSubmissionStorageError(
+                        cleanupError,
+                        errorMode,
+                      );
+                    }
+                  }
+
+                  throw cause;
+                }
+
+                lockedCid = cause.cid;
+              }
+
+              if (!persistedCid) {
+                try {
+                  persistComputedCid(lockedCid);
+                } catch (cause) {
+                  const mappedStorageError =
+                    cause instanceof BatchExecutionError
+                      ? cause
+                      : createMultisigSubmissionStorageError(String(cause), errorMode);
+
+                  persistedCid = lockedCid;
+                  setSubmissionSnapshot(createSubmissionRecord(lockedCid));
+                  setTxHash(lockedCid);
+                  setState('failed');
+                  setError(mappedStorageError);
+                }
+              } else if (persistedCid !== lockedCid) {
+                lockedCid = persistedCid;
+              }
+
+              return lockedCid;
+            },
+          );
+
+          const confirmationContext: MultisigConfirmationContext = {
+            networkKey: sender.networkKey,
+            errorMode,
+          };
 
           confirmationStarted = true;
-          void waitForConfirmation(cid, preflight, executionId).then(
+          void waitForConfirmation(
+            cid,
+            confirmationContext,
+            executionId,
+            executionIdentity,
+          ).then(
             (canReleaseLock) => {
-              if (canReleaseLock && activeExecution.current === execution) {
+              if (
+                canReleaseLock &&
+                activeExecution.current?.promise === execution
+              ) {
                 activeExecution.current = undefined;
               }
             },
@@ -481,7 +890,9 @@ export function useExecuteMultisigProposal({
           return cid;
         } catch (cause) {
           const mappedError =
-            cause instanceof BatchExecutionError
+            cause instanceof NativeSignerLockError
+              ? createNativeSignerLockExecutionError(cause, errorMode)
+              : cause instanceof BatchExecutionError
               ? cause
               : mapBatchExecutionError(cause, {
                   stage: failureStage,
@@ -498,16 +909,24 @@ export function useExecuteMultisigProposal({
         }
       })();
 
-      activeExecution.current = execution;
+      activeExecution.current = {
+        identity: executionIdentity,
+        promise: execution,
+      };
 
       void execution.then(
         () => {
-          if (!confirmationStarted && activeExecution.current === execution) {
+          setIsWalletMutationUnsafe(false);
+          if (
+            !confirmationStarted &&
+            activeExecution.current?.promise === execution
+          ) {
             activeExecution.current = undefined;
           }
         },
         () => {
-          if (activeExecution.current === execution) {
+          setIsWalletMutationUnsafe(false);
+          if (activeExecution.current?.promise === execution) {
             activeExecution.current = undefined;
           }
         },
@@ -515,11 +934,25 @@ export function useExecuteMultisigProposal({
 
       return execution;
     },
-    [multisig, provider, rpc?.multisig, runPreflight, sender, waitForConfirmation],
+    [
+      executionIdentity,
+      multisig,
+      provider,
+      rpc?.multisig,
+      reconcileStoredSubmission,
+      runPreflight,
+      sender,
+      storage,
+      waitForConfirmation,
+    ],
   );
 
   const reset = useCallback(() => {
-    if (activeExecution.current) {
+    if (
+      activeExecution.current ||
+      storedSubmissions.records.length > 0 ||
+      storedSubmissions.error
+    ) {
       return;
     }
 
@@ -528,7 +961,56 @@ export function useExecuteMultisigProposal({
     setTxHash(undefined);
     setError(undefined);
     setProposalOutcome(undefined);
-  }, []);
+    setSubmissionSnapshot(undefined);
+  }, [storedSubmissions.error, storedSubmissions.records.length]);
+
+  const recheck = useCallback(async (): Promise<void> => {
+    if (!executionIdentity) {
+      throw new Error('Reconnect the signer and multisig used for this proposal first.');
+    }
+
+    const current = readNativeSubmissionRecords(storage);
+
+    if (current.error) {
+      setState('failed');
+      setError(createMultisigSubmissionStorageError(current.error, 'ATOMIC'));
+      return;
+    }
+
+    const persistedRecord = current.records.find(
+      (candidate): candidate is MultisigProposalSubmissionRecord =>
+        candidate.kind === 'multisig-proposal' &&
+        candidate.identity === executionIdentity,
+    );
+    const record =
+      persistedRecord ??
+      (submissionSnapshot?.kind === 'multisig-proposal' &&
+      submissionSnapshot.identity === executionIdentity
+        ? submissionSnapshot
+        : undefined);
+
+    if (!record) {
+      throw new Error('There is no pending multisig proposal to recheck for this identity.');
+    }
+
+    await reconcileStoredSubmission(record, 1, 0);
+  }, [
+    executionIdentity,
+    reconcileStoredSubmission,
+    storage,
+    submissionSnapshot,
+  ]);
+
+  const isIdentityLocked = Boolean(
+    activeExecution.current ||
+      storedSubmissions.records.length > 0 ||
+      storedSubmissions.error,
+  );
+  const isOperationLocked = Boolean(
+    storedOperationSubmission ||
+      (activeExecution.current &&
+        activeExecution.current.identity.startsWith('multisig-proposal:')),
+  );
 
   return {
     executeBatch,
@@ -537,6 +1019,11 @@ export function useExecuteMultisigProposal({
     txHash,
     error,
     proposalOutcome,
+    isIdentityLocked,
+    isOperationLocked,
+    isWalletMutationUnsafe,
+    submissionSnapshot: storedOperationSubmission ?? submissionSnapshot,
+    recheck,
     reset,
   };
 }

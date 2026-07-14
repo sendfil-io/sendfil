@@ -11,7 +11,7 @@ import { buildMulticallBatch } from '../../transaction/multicall';
 import { toF4 } from '../../../utils/toF4';
 import type { MultisigRpc } from '../rpc';
 import {
-  getMultisigCodeCid,
+  getCurrentMultisigActorCodeCid,
   loadMultisigActorState,
   loadMultisigPendingProposals,
   parseEvmCodeResult,
@@ -30,7 +30,11 @@ const MULTISIG_T2 = newActorAddress(
   Uint8Array.from({ length: 16 }, (_, index) => index + 1),
   CoinType.TEST,
 ).toString();
-const MULTISIG_CODE = 'bafk2bzaceamultisigactorcode';
+const MULTISIG_CODE =
+  'bafk2bzacechrsbw65ojbktr63swju5g7275fl3lxminrz7damr4me6wq6fjxm';
+const MANIFEST_CID = 'bafy2bzaceb22zyxdtqlmveumv7qibp6ncrwmfuskzldj2qiudmvn7bfeeaur6';
+const TEST_MANIFEST_BASE64 =
+  'gYJobXVsdGlzaWfYKlgnAAFVoOQCII8ZBt7rkhVOPtysmnTf1/pV7XdiGxz8YGR4wnrQ8VN2';
 
 function createRpc(): MultisigRpc {
   return {
@@ -40,14 +44,21 @@ function createRpc(): MultisigRpc {
       Nonce: 0,
       Balance: '0',
     })),
-    readState: vi.fn(async () => ({
-      Balance: '3000',
-      State: {
-        Signers: ['t01001'],
-        NumApprovalsThreshold: 1,
-        PendingTxns: {},
-      },
-    })),
+    readState: vi.fn(async (address: string) =>
+      address === 'f00' || address === 't00'
+        ? {
+            Balance: '0',
+            State: { BuiltinActors: { '/': MANIFEST_CID } },
+          }
+        : {
+            Balance: '3000',
+            State: {
+              Signers: ['t01001'],
+              NumApprovalsThreshold: 1,
+              PendingTxns: {},
+            },
+          },
+    ),
     lookupID: vi.fn(async (address: string) => (address === SIGNER_T1 ? 't01001' : address)),
     lookupRobustAddress: vi.fn(async () => MULTISIG_T2),
     getBalance: vi.fn(async () => 3000n),
@@ -56,10 +67,7 @@ function createRpc(): MultisigRpc {
       lockedBalanceAttoFil: 1000n,
     })),
     getPending: vi.fn(async () => []),
-    getNetworkVersion: vi.fn(async () => 25),
-    getActorCodeCids: vi.fn(async () => ({
-      'fil/25/multisig': { '/': MULTISIG_CODE },
-    })),
+    readObject: vi.fn(async () => TEST_MANIFEST_BASE64),
     estimateGas: vi.fn(),
     getEvmCode: vi.fn(async () => '0x' as const),
   };
@@ -74,13 +82,14 @@ describe('multisig RPC helpers', () => {
     expect(() => validateNativeMultisigAddress('t2abc', 'calibration')).toThrow('t2');
   });
 
-  it('finds the multisig actor code CID from StateActorCodeCIDs output', () => {
-    expect(
-      getMultisigCodeCid({
-        account: { '/': 'bafyaccount' },
-        multisig: { '/': MULTISIG_CODE },
-      }),
-    ).toBe(MULTISIG_CODE);
+  it('resolves the current multisig CodeCID through the System actor manifest', async () => {
+    const rpc = createRpc();
+
+    await expect(getCurrentMultisigActorCodeCid('calibration', rpc)).resolves.toBe(
+      MULTISIG_CODE,
+    );
+    expect(rpc.readState).toHaveBeenCalledWith('t00', 'calibration');
+    expect(rpc.readObject).toHaveBeenCalledWith({ '/': MANIFEST_CID }, 'calibration');
   });
 
   it('rejects malformed eth_getCode payloads instead of treating them as EOAs', () => {

@@ -10,6 +10,11 @@ import type {
   NativeMultisigAddress,
 } from './types';
 import { computeProposalHash, paramsBase64ToBytes } from './actorParams';
+import {
+  decodeMultisigActorCodeCid,
+  getBuiltinActorsManifestCid,
+  getSystemActorAddress,
+} from './actorManifest';
 import { validateDecodedBatchFeePolicy, verifyPendingSendFilProposal } from './proposalVerifier';
 
 export interface LotusCid {
@@ -56,11 +61,7 @@ export interface MultisigRpc {
     address: string,
     networkKey: SendFilNetworkKey,
   ) => Promise<LotusPendingTransaction[]>;
-  getNetworkVersion: (networkKey: SendFilNetworkKey) => Promise<number>;
-  getActorCodeCids: (
-    networkVersion: number,
-    networkKey: SendFilNetworkKey,
-  ) => Promise<Record<string, LotusCid | string>>;
+  readObject: (cid: LotusCid, networkKey: SendFilNetworkKey) => Promise<string>;
   estimateGas: (
     message: FilecoinMessage,
     networkKey: SendFilNetworkKey,
@@ -103,14 +104,8 @@ export const lotusMultisigRpc: MultisigRpc = {
   },
   getPending: (address, networkKey) =>
     callRpc<LotusPendingTransaction[]>('Filecoin.MsigGetPending', [address, []], networkKey),
-  getNetworkVersion: (networkKey) =>
-    callRpc<number>('Filecoin.StateNetworkVersion', [[]], networkKey),
-  getActorCodeCids: (networkVersion, networkKey) =>
-    callRpc<Record<string, LotusCid | string>>(
-      'Filecoin.StateActorCodeCIDs',
-      [networkVersion],
-      networkKey,
-    ),
+  readObject: (cid, networkKey) =>
+    callRpc<string>('Filecoin.ChainReadObj', [cid], networkKey),
   estimateGas: (message, networkKey) =>
     callRpc<FilecoinMessage>(
       'Filecoin.GasEstimateMessageGas',
@@ -205,41 +200,21 @@ export function validateNativeMultisigAddress(
   return trimmed as NativeMultisigAddress;
 }
 
-export function getMultisigCodeCid(
-  actorCodeCids: Record<string, LotusCid | string>,
-): string | undefined {
-  for (const [name, cid] of Object.entries(actorCodeCids)) {
-    if (name.toLowerCase().includes('multisig')) {
-      return cidValue(cid);
-    }
-  }
-
-  return undefined;
-}
-
-function isMultisigActorCode(
-  actor: LotusActor,
-  actorCodeCids: Record<string, LotusCid | string>,
-): boolean {
+function isMultisigActorCode(actor: LotusActor, multisigCodeCid: string): boolean {
   const actorCode = cidValue(actor.Code);
-  const multisigCode = getMultisigCodeCid(actorCodeCids);
 
-  return Boolean(actorCode && multisigCode && actorCode === multisigCode);
+  return Boolean(actorCode && actorCode === multisigCodeCid);
 }
 
 export async function getCurrentMultisigActorCodeCid(
   networkKey: SendFilNetworkKey,
   rpc: MultisigRpc = lotusMultisigRpc,
 ): Promise<string> {
-  const version = await rpc.getNetworkVersion(networkKey);
-  const codeCids = await rpc.getActorCodeCids(version, networkKey);
-  const multisigCodeCid = getMultisigCodeCid(codeCids);
+  const systemActorState = await rpc.readState(getSystemActorAddress(networkKey), networkKey);
+  const manifestCid = getBuiltinActorsManifestCid(systemActorState);
+  const manifestBase64 = await rpc.readObject({ '/': manifestCid }, networkKey);
 
-  if (!multisigCodeCid) {
-    throw new Error('Could not resolve the current Filecoin multisig actor code CID.');
-  }
-
-  return multisigCodeCid;
+  return decodeMultisigActorCodeCid(manifestBase64);
 }
 
 export async function loadMultisigActorState({
@@ -254,14 +229,13 @@ export async function loadMultisigActorState({
   rpc?: MultisigRpc;
 }): Promise<MultisigActorState> {
   const multisigAddress = validateNativeMultisigAddress(address, networkKey);
-  const [actor, actorState, balance, availableBalance, networkVersion] = await Promise.all([
+  const [actor, actorState, balance, availableBalance, multisigCodeCid] = await Promise.all([
     rpc.getActor(multisigAddress, networkKey),
     rpc.readState(multisigAddress, networkKey),
     rpc.getBalance(multisigAddress, networkKey),
     rpc.getAvailableBalance(multisigAddress, networkKey),
-    rpc.getNetworkVersion(networkKey),
+    getCurrentMultisigActorCodeCid(networkKey, rpc),
   ]);
-  const actorCodeCids = await rpc.getActorCodeCids(networkVersion, networkKey);
   const decodedState = getDecodedState(actorState.State);
   const signers = asStringArray(decodedState.Signers ?? decodedState.signers);
   const threshold =
@@ -270,7 +244,7 @@ export async function loadMultisigActorState({
     asNumber(decodedState.Threshold) ??
     0;
 
-  if (!isMultisigActorCode(actor, actorCodeCids)) {
+  if (!isMultisigActorCode(actor, multisigCodeCid)) {
     throw new Error('The selected actor does not appear to be a Filecoin native multisig.');
   }
 

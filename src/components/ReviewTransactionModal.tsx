@@ -25,6 +25,7 @@ export interface ReviewTransactionModalProps {
   isOpen: boolean;
   onClose: () => void;
   onConfirm: () => Promise<void>;
+  onRecheckTransaction?: () => Promise<void>;
 
   // Recipient data
   recipients: Array<{ address: string; amount: number }>;
@@ -55,6 +56,10 @@ export interface ReviewTransactionModalProps {
     transactionId: number;
   };
   signerGasBalance?: number;
+  submissionSummary?: {
+    recipientCount: number;
+    totalValueAttoFil: string;
+  };
 
   // Transaction state
   transactionState: TransactionState;
@@ -75,6 +80,17 @@ function formatFil(amount: number): string {
   return amount.toLocaleString(undefined, { maximumFractionDigits: 2 }) + ' FIL';
 }
 
+function formatExactAttoFil(attoFil: string): string {
+  const value = BigInt(attoFil);
+  const whole = value / 10n ** 18n;
+  const fraction = (value % 10n ** 18n)
+    .toString()
+    .padStart(18, '0')
+    .replace(/0+$/, '');
+
+  return `${whole.toString()}${fraction ? `.${fraction}` : ''} FIL`;
+}
+
 // Truncate addresses for display
 function truncateAddress(address: string): string {
   if (address.length <= 16) return address;
@@ -90,6 +106,7 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
   isOpen,
   onClose,
   onConfirm,
+  onRecheckTransaction,
   recipients,
   validationErrors,
   validationWarnings,
@@ -109,6 +126,7 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
   multisigSignerCount,
   multisigProposalOutcome,
   signerGasBalance,
+  submissionSummary,
   transactionState,
   transactionHash,
   transactionError,
@@ -582,6 +600,24 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
     </div>
   );
 
+  const renderStoredSubmissionDetails = () =>
+    submissionSummary ? (
+      <div
+        className="mb-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-center text-sm text-slate-700"
+        data-testid="stored-submission-details"
+      >
+        <p className="font-semibold text-slate-900">
+          {getExecutionMethodLabel(batchConfiguration.executionMethod)} ·{' '}
+          {getErrorHandlingLabel(batchConfiguration.errorHandling)}
+        </p>
+        <p className="mt-1">
+          {submissionSummary.recipientCount}{' '}
+          {submissionSummary.recipientCount === 1 ? 'payment' : 'payments'} ·{' '}
+          {formatExactAttoFil(submissionSummary.totalValueAttoFil)} total
+        </p>
+      </div>
+    ) : null;
+
   const renderPendingState = () => (
     <div className="flex flex-col items-center py-8">
       <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-500 mb-4" />
@@ -593,6 +629,7 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
           ? 'Your multisig proposal is being processed...'
           : 'Your batch is being processed...'}
       </p>
+      {renderStoredSubmissionDetails()}
       {transactionHash && (
         <a
           href={getFilfoxUrl(transactionHash)}
@@ -622,11 +659,16 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
               ? `Proposal #${multisigProposalOutcome.transactionId} reached threshold and its batch call completed on-chain.`
               : 'The multisig proposal message was confirmed. Check its approval state before taking another action.'
           : isAtomicMode
-            ? `Successfully finalized ${formatFil(
-                recipientTotal,
-              )} to ${recipients.length} recipients in one atomic batch.`
-            : `Successfully sent ${formatFil(recipientTotal)} to ${recipients.length} recipients.`}
+            ? submissionSummary
+              ? `The stored atomic batch for ${submissionSummary.recipientCount} recipients was confirmed on-chain.`
+              : `Successfully finalized ${formatFil(
+                  recipientTotal,
+                )} to ${recipients.length} recipients in one atomic batch.`
+            : submissionSummary
+              ? `The stored batch for ${submissionSummary.recipientCount} recipients was confirmed on-chain.`
+              : `Successfully sent ${formatFil(recipientTotal)} to ${recipients.length} recipients.`}
       </p>
+      {renderStoredSubmissionDetails()}
       {transactionHash && (
         <a
           href={getFilfoxUrl(transactionHash)}
@@ -657,6 +699,7 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
           ? 'Do not assume the batch executed successfully. Inspect the confirmed proposal before retrying.'
           : errorModeCopy.failureSummary}
       </p>
+      {renderStoredSubmissionDetails()}
       {transactionError?.hint && (
         <p className="text-sm text-gray-500 text-center">{transactionError.hint}</p>
       )}
@@ -766,6 +809,17 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
                 Try Again
               </button>
             )}
+            {transactionError?.recoverable === false &&
+              transactionHash &&
+              onRecheckTransaction && (
+                <button
+                  type="button"
+                  onClick={() => void onRecheckTransaction()}
+                  className="px-6 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-md transition-colors"
+                >
+                  Check status again
+                </button>
+              )}
           </>
         );
       default:

@@ -1,4 +1,4 @@
-import { getBalance, submitTransaction } from '../DataProvider';
+import { getBalance } from '../DataProvider';
 import type { FilecoinMessage, SignedMessage } from '../DataProvider/types';
 import {
   getDefaultNetworkKey,
@@ -16,6 +16,7 @@ import type {
 } from './types';
 import type { AccountNetwork, WalletAdapter, WalletSupportType } from 'iso-filecoin-wallets/types';
 import type { MessageObj, Network as IsoFilecoinNetwork } from 'iso-filecoin/types';
+import { submitSignedNativeFilecoinMessage } from './nativeFilecoinSubmission';
 
 type NativeFilecoinFeatureEnv = Record<string, string | undefined>;
 
@@ -252,7 +253,7 @@ function createIsoWalletProvider({
     },
     getAccount: getConnectedAccount,
     getBalance: readNativeBalance,
-    async signAndSubmitMessage(message) {
+    async signAndSubmitMessage(message, submissionOptions) {
       const account = await getConnectedAccount();
 
       if (!account || !adapter?.connected) {
@@ -270,11 +271,13 @@ function createIsoWalletProvider({
         Message: message,
         Signature: signature.toLotus(),
       };
-      const cid = await submitTransaction(signedMessage, account.networkKey);
 
-      return {
-        cid: cid['/'],
-      };
+      return submitSignedNativeFilecoinMessage(
+        signedMessage,
+        account.networkKey,
+        undefined,
+        submissionOptions,
+      );
     },
   };
 }

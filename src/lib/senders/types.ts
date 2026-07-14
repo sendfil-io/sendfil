@@ -83,6 +83,10 @@ export interface NativeFilecoinSendResult {
   cid: string;
 }
 
+export interface NativeFilecoinSubmissionOptions {
+  onCidComputed?: (cid: string) => void | Promise<void>;
+}
+
 export interface NativeFilecoinWalletProvider {
   metadata: SenderProviderMetadata & { kind: 'native-filecoin-wallet' };
   prepareConnect?: (options?: NativeFilecoinConnectOptions) => Promise<void>;
@@ -91,7 +95,10 @@ export interface NativeFilecoinWalletProvider {
   getAccount: () => Promise<NativeFilecoinAccount | null>;
   getBalance: (account: NativeFilecoinAccount) => Promise<bigint>;
   checkSupport?: () => Promise<NativeFilecoinProviderSupportStatus>;
-  signAndSubmitMessage?: (message: FilecoinMessage) => Promise<NativeFilecoinSendResult>;
+  signAndSubmitMessage?: (
+    message: FilecoinMessage,
+    options?: NativeFilecoinSubmissionOptions,
+  ) => Promise<NativeFilecoinSendResult>;
   signAndSubmitBatch?: (
     request: NativeFilecoinBatchSigningRequest,
   ) => Promise<NativeFilecoinSendResult>;

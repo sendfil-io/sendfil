@@ -28,8 +28,11 @@ Use this catalog before changing validation, network gating, review/send flow, R
 | `INV-NET-001`   | Wrong network disables Send                                                                    | `implemented` | network/wallet gating, review UI gating                    | `src/lib/senders/__tests__/connectedSender.test.ts`, `src/__tests__/app.invariants.test.tsx`                                                                                                                                    |
 | `INV-BAL-001`   | Submit-time balance recheck blocks EVM sends when current balance is insufficient              | `implemented` | submit guard, wallet RPC                                   | `src/lib/transaction/__tests__/submitBalanceCheck.test.ts`, `src/lib/transaction/__tests__/useExecuteBatch.submitBalance.test.tsx`                                                                                              |
 | `INV-RPC-001`   | Contract recipients detected via `eth_getCode` are blocked                                     | `implemented` | RPC contract-recipient check, review UI gating             | `src/__tests__/contractRecipientGuard.test.tsx`, `src/utils/__tests__/contractRecipientGuard.test.ts`                                                                                                                           |
+| `INV-RPC-002`   | Lotus failover preserves deterministic errors and endpoint diagnostics                          | `implemented` | native Filecoin RPC transport                              | `src/lib/DataProvider/__tests__/DataProvider.test.ts`                                                                                                                                                                            |
+| `INV-NATIVE-001` | Signed native messages retain a deterministic CID through submission uncertainty               | `implemented` | native signing, submission, confirmation                   | `src/lib/senders/__tests__/nativeFilecoinSubmission.test.ts`, `src/lib/senders/__tests__/nativeSignerLock.test.ts`, `src/lib/transaction/__tests__/useExecuteNativeBatch.test.tsx`, `src/lib/multisig/__tests__/useExecuteMultisigProposal.test.tsx`, `src/lib/multisig/__tests__/useMultisigs.lifecycle.test.tsx` |
 | `INV-EXEC-001`  | Review estimate and submission use the same execution config                                   | `implemented` | estimate/execute flow, transaction builder                 | `src/lib/transaction/__tests__/batchExecution.test.ts`, `src/lib/transaction/__tests__/thinBatch.test.ts`, `src/lib/transaction/__tests__/nativeBatchPreflight.test.ts`, `src/__tests__/app.invariants.test.tsx`                |
 | `INV-MSIG-001`  | Native multisig proposals preserve the prepared batch and approvals verify its exact semantics | `implemented` | native multisig preparation, approval guard, actor outcome | `src/lib/multisig/__tests__/proposalVerifier.test.ts`, `src/lib/multisig/__tests__/rpc.test.ts`, `src/lib/multisig/__tests__/useExecuteMultisigProposal.test.tsx`, `src/lib/multisig/__tests__/useMultisigs.lifecycle.test.tsx` |
+| `INV-MSIG-002`  | Native multisig creation uses the current actor manifest and remains safe across uncertainty    | `implemented` | native multisig creation, actor identity, submit outcome   | `src/lib/multisig/__tests__/actorManifest.test.ts`, `src/lib/multisig/__tests__/preflight.test.ts`, `src/lib/multisig/__tests__/rpc.test.ts`, `src/lib/multisig/__tests__/useMultisigs.lifecycle.test.tsx`, `src/components/multisig/__tests__/MultisigFundingPanel.render.test.tsx` |
 
 ## INV-ADDR-001 — Accept valid `f1/f2/f3/f4/0x` recipients
 
@@ -393,6 +396,114 @@ RPC contract-recipient check, review UI gating
 
 Current repo note: the FEVM review/send flow checks final payment destinations with `getCode` before review estimation and repeats the check before submit. That includes user-entered `0x` and `f4` recipients plus appended EVM fee rows. Native `f1/f2/f3` recipients do not invoke this check. ThinBatch does not duplicate this product policy on-chain; the local guard applies consistently to Standard and ThinBatch.
 
+## INV-RPC-002 — Lotus failover preserves deterministic errors and endpoint diagnostics
+
+### Rule
+
+The native Filecoin RPC lane may fail over only when another endpoint can plausibly recover the request. Deterministic JSON-RPC application errors must remain visible, and a failed fallback must not replace the primary provider's more useful diagnosis.
+
+### Why this matters
+
+Masking an actor, method, or validation error as a generic browser transport failure makes transaction preparation unsafe to diagnose and can encourage users to repeat an operation whose actual outcome is unknown.
+
+### Execution boundary
+
+native Filecoin RPC transport
+
+### Acceptance criteria
+
+- Transport failures, timeouts, retryable HTTP statuses, malformed responses, and JSON-RPC `-32601` method-unavailable errors may try one distinct fallback endpoint.
+- Other JSON-RPC application errors and non-retryable HTTP client errors are returned without calling the fallback.
+- A combined failure retains method, network, endpoint role, and both endpoint diagnoses, including the primary JSON-RPC code when present.
+- HTTP status, JSON-RPC envelope, result presence, and response ID are validated before a result is accepted.
+- Identical primary and fallback URLs, including trailing-slash variants, are called only once.
+
+### Tests
+
+- `src/lib/DataProvider/__tests__/DataProvider.test.ts`
+  - failover eligibility and duplicate-endpoint coverage
+  - deterministic actor-error preservation
+  - primary method-unavailable plus fallback transport diagnostics
+  - malformed response, HTTP status, and response-ID validation
+
+### Status
+
+`implemented`
+
+## INV-NATIVE-001 — Signed native messages retain a deterministic CID through submission uncertainty
+
+### Rule
+
+Every native Filecoin submission must derive the chain CID from the exact signed payload before
+calling `Filecoin.MpoolPush`. If the push response is lost, malformed, or disagrees with the local
+CID, the app must reconcile the local CID instead of signing or submitting the operation again.
+
+### Why this matters
+
+An RPC timeout after signing does not prove that the message was rejected. Blindly retrying can
+duplicate a batch, multisig creation, proposal, approval, or cancellation.
+
+### Execution boundary
+
+native signing, submission, confirmation
+
+### Acceptance criteria
+
+- BLS messages use the unsigned message CID; secp256k1 and delegated signatures use the canonical
+  signed-message CID.
+- The locally derived CID is available before `MpoolPush` begins and a returned CID must match it.
+- Safety records accept only the canonical Filecoin message-CID form: CIDv1, DAG-CBOR,
+  Blake2b-256, a 32-byte digest, and canonical lowercase unpadded base32.
+- The exact CID and operation snapshot are written to `sendfil.native-submissions.v1` before
+  `MpoolPush`; Create, Approve, and Cancel uncertainty is written to
+  `sendfil.multisig-uncertain-actions.v1` before submission.
+- Every native signing path acquires one origin-wide Web Lock, re-verifies both safety stores while
+  holding it through exact-CID persistence and submission, and fails closed when Web Locks are
+  unavailable; any unresolved native record blocks every new native signature.
+- Only protocol-level JSON-RPC method/parameter rejection proves that `MpoolPush` did not enter
+  Lotus. Lotus application errors, transport/response loss, and CID mismatch remain uncertain
+  because the exact message may already have been added before the error was returned.
+- Native batch, multisig Create, Propose, Approve, and Cancel consumers poll the local CID after an
+  ambiguous push response.
+- A missing receipt or an inconsistent success response never becomes a confirmed operation.
+- Confirmation searches set `allowReplaced=false`, require the returned message CID to equal the
+  requested CID, and validate the receipt's exit code, return bytes, gas, and events-root shape
+  before a durable lock can be released.
+- Reloading, switching sender modes, or reconnecting another wallet cannot erase an unresolved
+  native operation. Storage read/write failures block new native signing without blocking the
+  independent EVM send path.
+- Vite resolves the installed browser `buffer` polyfill rather than externalizing Node's builtin;
+  the Ledger WebHID adapter installs that implementation before loading its transport modules.
+- Single-flight/retry guards remain in force for nonterminal or unverifiable outcomes so the same
+  identity cannot blindly resubmit.
+- Status and explorer links use the network snapshot associated with the signed message.
+
+### Tests
+
+- `src/lib/senders/__tests__/nativeFilecoinSubmission.test.ts`
+  - immutable BLS, secp256k1, and delegated signed-message CID vectors
+  - matching, rejected, ambiguous, and mismatched `MpoolPush` outcomes
+- `src/lib/DataProvider/__tests__/filecoinMessageCid.test.ts`
+  - exact message-CID codec/hash framing and canonical base32 rejection
+- `src/lib/DataProvider/__tests__/DataProvider.test.ts`
+  - exact-CID `StateSearchMsg` behavior and strict live-shaped receipt validation
+- `src/lib/senders/__tests__/nativeSubmissionStorage.test.ts`
+  - global operation lock, strict stored identity/CID validation, and compare-clear behavior
+- `src/lib/senders/__tests__/nativeSignerLock.test.ts`
+  - origin-wide cross-tab serialization, both-store rechecks, fail-closed behavior, and lock release
+- `src/lib/senders/__tests__/nativeFilecoinProvider.test.ts`
+  - Ledger browser-buffer installation and provider-boundary behavior
+- `src/lib/transaction/__tests__/useExecuteNativeBatch.test.tsx`
+  - ambiguous-submit reconciliation, receipt requirements, and same-identity single-flight locking
+- `src/lib/multisig/__tests__/useExecuteMultisigProposal.test.tsx`
+  - ambiguous proposal-submit reconciliation and nested actor outcome checks
+- `src/lib/multisig/__tests__/useMultisigs.lifecycle.test.tsx`
+  - create, approval, and cancellation reconciliation plus identity-bound retry guards
+
+### Status
+
+`implemented`
+
 ## INV-EXEC-001 — Review estimate and submission use the same execution config
 
 ### Rule
@@ -504,3 +615,51 @@ native multisig proposal preparation, pending-approval guard, actor outcome veri
 `implemented`
 
 Current repo note: `src/lib/multisig/proposalBuilder.ts` builds the inner prepared batch and wraps it in actor-compatible multisig params. `src/lib/multisig/proposalVerifier.ts` independently decodes pending proposals and reconstructs their canonical Standard or ThinBatch calldata before approval is enabled. `src/lib/multisig/useExecuteMultisigProposal.ts` estimates the outer proposal gas, rechecks both funding balances before signing, submits through the connected native Filecoin provider, and verifies both the outer receipt and nested actor outcome. Higher-threshold multisigs still require later approvals. Real FilSnap/Ledger Mainnet plus Calibration smoke coverage remains a production-readiness requirement.
+
+## INV-MSIG-002 — Native multisig creation uses the current actor manifest and preserves uncertain submissions
+
+### Rule
+
+Creating an `f2/t2` multisig must use the active network's current multisig actor CodeCID, require the connected creator to fund the initial deposit plus gas, and retain the submitted CID whenever confirmation becomes uncertain.
+
+### Why this matters
+
+InitActor `Exec` embeds an actor CodeCID in the signed message. A stale or guessed CID can create the wrong actor version, while losing a submitted CID can lead a user to create a duplicate multisig after a polling or RPC failure.
+
+### Execution boundary
+
+native multisig creation, actor identity, submit outcome
+
+### Acceptance criteria
+
+- The current multisig actor CodeCID is resolved from `StateReadState(f00/t00).State.BuiltinActors`, then `ChainReadObj`, rather than from a pinned value or the provider-specific `StateActorCodeCIDs` method.
+- Manifest base64, DAG-CBOR list-pair framing, actor names, and CID links are decoded canonically and fail closed on malformed, duplicate, missing, or trailing data.
+- The connected signer must be included in the signer list and its balance must exceed the initial deposit before remote preflight begins.
+- The creator balance is re-read after gas estimation and immediately before signing; it must cover the initial deposit plus estimated creation gas.
+- A confirmed InitActor return is decoded and its network-correct robust multisig address is saved locally.
+- The exact signed message CID is derived before `MpoolPush`; ambiguous submission, polling failures,
+  or unverifiable confirmed returns are shown as uncertain and retain a Filfox link.
+- Uncertain creation records survive remounts and block another Create for the same signer/network
+  identity until an explicit CID recheck proves a terminal failure or canonical success.
+- Create, Approve, and Cancel recovery records are identity-bound, retain the canonical submitted
+  CID across reloads, and fail closed on malformed or inaccessible browser storage.
+- The create form labels approval threshold and initial deposit separately and states that the connected signer pays deposit plus gas.
+
+### Tests
+
+- `src/lib/multisig/__tests__/actorManifest.test.ts`
+  - literal Mainnet and Calibration manifest vectors plus strict malformed-input rejection
+- `src/lib/multisig/__tests__/rpc.test.ts`
+  - System actor manifest resolution and actor CodeCID identity
+- `src/lib/multisig/__tests__/preflight.test.ts`
+  - manifest-resolved CodeCID embedding plus nonce, manifest, and gas network binding
+- `src/lib/multisig/__tests__/useMultisigs.lifecycle.test.tsx`
+  - early and submit-time balance guards, ExecReturn persistence, and uncertain submitted-CID handling
+- `src/lib/multisig/__tests__/actionStorage.test.ts`
+  - canonical CID/address validation, identity conflicts, remount persistence, and compare-clear behavior
+- `src/components/multisig/__tests__/MultisigFundingPanel.render.test.tsx`
+  - explicit labels, creator-funding copy, contextual RPC errors, and duplicate-create blocking
+
+### Status
+
+`implemented`

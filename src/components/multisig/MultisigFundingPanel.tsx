@@ -5,6 +5,7 @@ import type {
   CreateMultisigFormValues,
   CreateMultisigResult,
   MultisigActorState,
+  MultisigCreateActionState,
   MultisigPendingProposal,
   MultisigProposalActionState,
   NativeMultisigAddress,
@@ -15,6 +16,7 @@ import { getProposalSignatureRows } from './signatureStatus';
 interface MultisigFundingPanelProps {
   enabled: boolean;
   isExternallyLocked?: boolean;
+  isRecoveryNavigationLocked?: boolean;
   network?: SendFilNetworkConfig;
   connectedSigner?: NativeFilecoinConnectedSender;
   savedMultisigs: SavedMultisig[];
@@ -23,20 +25,29 @@ interface MultisigFundingPanelProps {
   pendingProposals: MultisigPendingProposal[];
   isLoadingSelected: boolean;
   selectedError?: string;
+  uncertaintyStorageError?: string;
+  createActionState?: MultisigCreateActionState;
+  isCreateActionInFlight: boolean;
+  isCreateRetryBlocked: boolean;
   proposalActionState?: MultisigProposalActionState;
+  isProposalActionInFlight: boolean;
+  isProposalRetryBlocked: boolean;
   onSelect: (address?: NativeMultisigAddress) => void;
   onAdd: (address: string, label?: string) => Promise<SavedMultisig>;
   onRemove: (address: NativeMultisigAddress) => void;
   onCreate: (values: CreateMultisigFormValues) => Promise<CreateMultisigResult>;
+  onRecheckCreate: () => Promise<void>;
   onApprove: (
     proposal: MultisigPendingProposal,
     acknowledgeDuplicatePayments?: boolean,
   ) => Promise<string>;
   onCancel: (proposal: MultisigPendingProposal) => Promise<string>;
+  onRecheckProposal: () => Promise<void>;
   onRefresh: () => Promise<unknown>;
 }
 
 interface ActionStatus {
+  source: 'import' | 'create' | 'proposal';
   message: string;
   cid?: string;
   tone?: 'success' | 'warning';
@@ -86,9 +97,30 @@ function createDefaultCreateValues(connectedSignerAddress?: string): CreateMulti
   };
 }
 
+function getCreateErrorMessage(error: unknown): string {
+  const message =
+    error instanceof Error
+      ? error.message
+      : typeof error === 'string'
+        ? error
+        : 'Failed to create multisig.';
+  const normalizedMessage = message.trim();
+
+  if (/^(?:typeerror:\s*)?failed to fetch\.?$/i.test(normalizedMessage)) {
+    return (
+      'SendFIL could not reach the Filecoin RPC while creating the multisig. ' +
+      'Check your connection or RPC configuration. If you approved a wallet request, inspect ' +
+      'recent messages before trying again.'
+    );
+  }
+
+  return normalizedMessage;
+}
+
 export function MultisigFundingPanel({
   enabled,
   isExternallyLocked = false,
+  isRecoveryNavigationLocked,
   network,
   connectedSigner,
   savedMultisigs,
@@ -97,13 +129,21 @@ export function MultisigFundingPanel({
   pendingProposals,
   isLoadingSelected,
   selectedError,
+  uncertaintyStorageError,
+  createActionState,
+  isCreateActionInFlight,
+  isCreateRetryBlocked,
   proposalActionState,
+  isProposalActionInFlight,
+  isProposalRetryBlocked,
   onSelect,
   onAdd,
   onRemove,
   onCreate,
+  onRecheckCreate,
   onApprove,
   onCancel,
+  onRecheckProposal,
   onRefresh,
 }: MultisigFundingPanelProps) {
   const [importAddress, setImportAddress] = React.useState('');
@@ -111,6 +151,8 @@ export function MultisigFundingPanel({
   const [formError, setFormError] = React.useState<string | undefined>();
   const [actionStatus, setActionStatus] = React.useState<ActionStatus | undefined>();
   const [isCreating, setIsCreating] = React.useState(false);
+  const [isRecheckingCreate, setIsRecheckingCreate] = React.useState(false);
+  const [isRecheckingProposal, setIsRecheckingProposal] = React.useState(false);
   const [isAdding, setIsAdding] = React.useState(false);
   const [isRefreshing, setIsRefreshing] = React.useState(false);
   const [acknowledgedDuplicateProposals, setAcknowledgedDuplicateProposals] = React.useState(
@@ -127,6 +169,19 @@ export function MultisigFundingPanel({
   );
   const canAddMultisig = Boolean(network);
   const canCreateMultisig = enabled && Boolean(network && connectedSigner);
+  const currentCreateAction =
+    createActionState &&
+    connectedSignerAddress === createActionState.signerAddress &&
+    connectedSigner?.networkKey === createActionState.networkKey
+      ? createActionState
+      : undefined;
+  const unresolvedCreateRecovery =
+    createActionState?.status === 'uncertain' && !currentCreateAction
+      ? createActionState
+      : undefined;
+  const hasIdentityBoundUncertainCreate = currentCreateAction?.status === 'uncertain';
+  const createActionStateRef = React.useRef(currentCreateAction);
+  createActionStateRef.current = currentCreateAction;
   const selectedSavedMultisig = savedMultisigs.find(
     (multisig) => multisig.address === selectedAddress,
   );
@@ -144,14 +199,42 @@ export function MultisigFundingPanel({
       ? proposalActionState
       : undefined;
   const isGlobalProposalActionAwaitingConfirmation =
-    proposalActionState?.status === 'signing' || proposalActionState?.status === 'pending';
+    isProposalActionInFlight ||
+    proposalActionState?.status === 'preparing' ||
+    proposalActionState?.status === 'signing' ||
+    proposalActionState?.status === 'submitting' ||
+    proposalActionState?.status === 'pending' ||
+    proposalActionState?.status === 'rechecking';
   const isProposalActionAwaitingConfirmation =
-    currentProposalAction?.status === 'signing' || currentProposalAction?.status === 'pending';
-  const hasWalletActionInFlight =
-    isExternallyLocked ||
+    currentProposalAction?.status === 'preparing' ||
+    currentProposalAction?.status === 'signing' ||
+    currentProposalAction?.status === 'submitting' ||
+    currentProposalAction?.status === 'pending' ||
+    currentProposalAction?.status === 'rechecking';
+  const hasLocalWalletActionInFlight =
     isCreating ||
+    isRecheckingCreate ||
+    isRecheckingProposal ||
+    isCreateActionInFlight ||
     activeProposalAction !== undefined ||
     isGlobalProposalActionAwaitingConfirmation;
+  const hasWalletActionInFlight = isExternallyLocked || hasLocalWalletActionInFlight;
+  const hasRecoveryNavigationInFlight =
+    (isRecoveryNavigationLocked ?? isExternallyLocked) || hasLocalWalletActionInFlight;
+  const identityBoundUncertainProposalAction =
+    proposalActionState?.status === 'uncertain' &&
+    connectedSignerAddress === proposalActionState.signerAddress &&
+    connectedSigner?.networkKey === proposalActionState.networkKey &&
+    (!network || network.key === proposalActionState.networkKey)
+      ? proposalActionState
+      : undefined;
+  const unresolvedProposalAddress = identityBoundUncertainProposalAction?.multisigAddress;
+  const isUnresolvedProposalSelected =
+    unresolvedProposalAddress !== undefined && selectedAddress === unresolvedProposalAddress;
+  const isSavedSelectionDisabled = (address: NativeMultisigAddress) =>
+    hasRecoveryNavigationInFlight ||
+    (unresolvedProposalAddress !== undefined &&
+      (isUnresolvedProposalSelected || address !== unresolvedProposalAddress));
 
   React.useEffect(() => {
     setCreateValues(createDefaultCreateValues(connectedSignerAddress));
@@ -161,7 +244,13 @@ export function MultisigFundingPanel({
     setFormError(undefined);
     setActionStatus(undefined);
     setAcknowledgedDuplicateProposals(new Set());
-  }, [connectedSignerAddress, mode, network?.key, selectedAddress]);
+  }, [connectedSignerAddress, network?.key]);
+
+  React.useEffect(() => {
+    setFormError(undefined);
+    setActionStatus(undefined);
+    setAcknowledgedDuplicateProposals(new Set());
+  }, [mode, selectedAddress]);
 
   const addSigner = () => {
     setCreateValues((current) => ({
@@ -200,7 +289,7 @@ export function MultisigFundingPanel({
       await onAdd(importAddress, importLabel.trim() || undefined);
       setImportAddress('');
       setImportLabel('');
-      setActionStatus({ message: 'Multisig saved locally.' });
+      setActionStatus({ source: 'import', message: 'Multisig saved locally.' });
     } catch (error) {
       setFormError(error instanceof Error ? error.message : 'Failed to add multisig.');
     } finally {
@@ -209,7 +298,7 @@ export function MultisigFundingPanel({
   };
 
   const handleCreate = async () => {
-    if (hasWalletActionInFlight) {
+    if (hasWalletActionInFlight || isCreateRetryBlocked) {
       return;
     }
 
@@ -219,13 +308,20 @@ export function MultisigFundingPanel({
 
     try {
       const result = await onCreate(createValues);
-      setActionStatus({
+      const status: ActionStatus = {
+        source: 'create',
         message: result.warning ?? 'Multisig creation confirmed and saved locally.',
         cid: result.cid,
         tone: result.warning ? 'warning' : 'success',
-      });
+      };
+
+      if (!createActionStateRef.current) {
+        setActionStatus(status);
+      }
     } catch (error) {
-      setFormError(error instanceof Error ? error.message : 'Failed to create multisig.');
+      if (!createActionStateRef.current) {
+        setFormError(getCreateErrorMessage(error));
+      }
     } finally {
       setIsCreating(false);
     }
@@ -250,6 +346,7 @@ export function MultisigFundingPanel({
           ? await onApprove(proposal, acknowledgeDuplicatePayments)
           : await onCancel(proposal);
       setActionStatus({
+        source: 'proposal',
         message: `${action === 'approve' ? 'Approval' : 'Cancellation'} submitted.`,
         cid,
       });
@@ -257,6 +354,40 @@ export function MultisigFundingPanel({
       setFormError(error instanceof Error ? error.message : `Failed to ${action} proposal.`);
     } finally {
       setActiveProposalAction(undefined);
+    }
+  };
+
+  const handleRecheckCreate = async () => {
+    if (hasWalletActionInFlight || !isCreateRetryBlocked || !hasIdentityBoundUncertainCreate) {
+      return;
+    }
+
+    setFormError(undefined);
+    setIsRecheckingCreate(true);
+
+    try {
+      await onRecheckCreate();
+    } catch (error) {
+      setFormError(getCreateErrorMessage(error));
+    } finally {
+      setIsRecheckingCreate(false);
+    }
+  };
+
+  const handleRecheckProposal = async () => {
+    if (hasWalletActionInFlight || !isProposalRetryBlocked) {
+      return;
+    }
+
+    setFormError(undefined);
+    setIsRecheckingProposal(true);
+
+    try {
+      await onRecheckProposal();
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : 'Failed to recheck multisig action.');
+    } finally {
+      setIsRecheckingProposal(false);
     }
   };
 
@@ -301,7 +432,15 @@ export function MultisigFundingPanel({
             Connect FilSnap or Ledger Filecoin to create, approve, or send.
           </p>
         )}
-        {formError && (
+        {uncertaintyStorageError && (
+          <div
+            className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
+            role="alert"
+          >
+            {uncertaintyStorageError}
+          </div>
+        )}
+        {formError && currentCreateAction?.status !== 'failed' && (
           <div
             className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
             role="alert"
@@ -310,26 +449,218 @@ export function MultisigFundingPanel({
           </div>
         )}
 
-        {actionStatus && !currentProposalAction && (
+        {currentCreateAction?.status === 'failed' && (
           <div
-            className={`rounded-xl border px-3 py-2 text-sm ${
-              actionStatus.tone === 'warning'
-                ? 'border-amber-200 bg-amber-50 text-amber-900'
-                : 'border-emerald-200 bg-emerald-50 text-emerald-800'
-            }`}
-            role={actionStatus.tone === 'warning' ? 'alert' : 'status'}
-            aria-live="polite"
+            className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
+            role="alert"
           >
-            <p>{actionStatus.message}</p>
-            {actionStatus.cid && network && (
+            <p>
+              {getCreateErrorMessage(
+                currentCreateAction.error ?? new Error('Multisig creation failed.'),
+              )}
+            </p>
+            {currentCreateAction.cid && (
               <a
-                href={getFilfoxMessageUrl(actionStatus.cid, network.chainId)}
+                href={getFilfoxMessageUrl(currentCreateAction.cid, currentCreateAction.chainId)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="mt-1 inline-block font-semibold underline underline-offset-2"
               >
-                View message on Filfox ↗
+                Inspect create message on Filfox ↗
               </a>
+            )}
+          </div>
+        )}
+
+        {currentCreateAction?.status === 'uncertain' && (
+          <div
+            className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+            role="alert"
+          >
+            <p>
+              {currentCreateAction.warning ??
+                'SendFIL could not determine the result of the submitted multisig creation.'}
+            </p>
+            <p className="mt-1 text-xs">
+              Submitted from {truncateAddress(currentCreateAction.signerAddress)} on{' '}
+              {currentCreateAction.networkLabel}.
+            </p>
+            {currentCreateAction.cid && (
+              <a
+                href={getFilfoxMessageUrl(currentCreateAction.cid, currentCreateAction.chainId)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-1 inline-block font-semibold underline underline-offset-2"
+              >
+                Inspect submitted create on Filfox ↗
+              </a>
+            )}
+            <button
+              type="button"
+              onClick={handleRecheckCreate}
+              disabled={hasWalletActionInFlight || !isCreateRetryBlocked}
+              className="mt-2 block font-semibold underline underline-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isRecheckingCreate ? 'Rechecking create...' : 'Recheck create result'}
+            </button>
+          </div>
+        )}
+
+        {unresolvedCreateRecovery && (
+          <div
+            className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+            role="alert"
+            data-testid="unresolved-create-recovery"
+          >
+            <p>
+              {unresolvedCreateRecovery.warning ??
+                'A submitted multisig creation still needs reconciliation.'}
+            </p>
+            <p className="mt-1 text-xs">
+              Reconnect the recorded signer on {unresolvedCreateRecovery.networkLabel} before
+              rechecking or retrying this creation.
+            </p>
+            <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-amber-700">
+              Recorded signer
+            </p>
+            <code className="mt-1 block break-all rounded-lg bg-white/60 px-2 py-1 font-mono text-xs">
+              {unresolvedCreateRecovery.signerAddress}
+            </code>
+            {unresolvedCreateRecovery.cid && (
+              <>
+                <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-amber-700">
+                  Submitted CID
+                </p>
+                <code className="mt-1 block break-all rounded-lg bg-white/60 px-2 py-1 font-mono text-xs">
+                  {unresolvedCreateRecovery.cid}
+                </code>
+                <a
+                  href={getFilfoxMessageUrl(
+                    unresolvedCreateRecovery.cid,
+                    unresolvedCreateRecovery.chainId,
+                  )}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-1 inline-block font-semibold underline underline-offset-2"
+                >
+                  Inspect submitted create on Filfox ↗
+                </a>
+              </>
+            )}
+          </div>
+        )}
+
+        {currentCreateAction &&
+          currentCreateAction.status !== 'failed' &&
+          currentCreateAction.status !== 'uncertain' && (
+            <div
+              className={`rounded-xl border px-3 py-2 text-sm ${
+                currentCreateAction.status === 'confirmed'
+                  ? currentCreateAction.warning
+                    ? 'border-amber-200 bg-amber-50 text-amber-900'
+                    : 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                  : 'border-blue-200 bg-blue-50 text-blue-900'
+              }`}
+              role={currentCreateAction.warning ? 'alert' : 'status'}
+              aria-live="polite"
+            >
+              <p>
+                {currentCreateAction.status === 'preparing'
+                  ? `Checking balance and preparing multisig creation on ${currentCreateAction.networkLabel}.`
+                  : currentCreateAction.status === 'signing'
+                    ? `Multisig creation is ready on ${currentCreateAction.networkLabel}. Confirm it in your wallet.`
+                    : currentCreateAction.status === 'submitting'
+                      ? `The multisig creation is signed and being submitted on ${currentCreateAction.networkLabel}.`
+                      : currentCreateAction.status === 'pending'
+                        ? `Multisig creation submitted on ${currentCreateAction.networkLabel} and awaiting confirmation.`
+                        : currentCreateAction.status === 'rechecking'
+                          ? `Rechecking the submitted multisig creation on ${currentCreateAction.networkLabel}.`
+                          : (currentCreateAction.warning ??
+                            `Multisig creation confirmed on ${currentCreateAction.networkLabel}.`)}
+              </p>
+              {currentCreateAction.status !== 'confirmed' && currentCreateAction.warning && (
+                <p className="mt-1 text-xs">{currentCreateAction.warning}</p>
+              )}
+              {currentCreateAction.cid && (
+                <a
+                  href={getFilfoxMessageUrl(currentCreateAction.cid, currentCreateAction.chainId)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-1 inline-block font-semibold underline underline-offset-2"
+                >
+                  View create message on Filfox ↗
+                </a>
+              )}
+              {currentCreateAction.createdAddress && (
+                <code className="mt-2 block break-all rounded-lg bg-white/60 px-2 py-1 font-mono text-xs">
+                  {currentCreateAction.createdAddress}
+                </code>
+              )}
+            </div>
+          )}
+
+        {actionStatus &&
+          !currentProposalAction &&
+          (actionStatus.source !== 'create' || !currentCreateAction) &&
+          (actionStatus.source !== 'proposal' || !proposalActionState) && (
+            <div
+              className={`rounded-xl border px-3 py-2 text-sm ${
+                actionStatus.tone === 'warning'
+                  ? 'border-amber-200 bg-amber-50 text-amber-900'
+                  : 'border-emerald-200 bg-emerald-50 text-emerald-800'
+              }`}
+              role={actionStatus.tone === 'warning' ? 'alert' : 'status'}
+              aria-live="polite"
+            >
+              <p>{actionStatus.message}</p>
+              {actionStatus.cid && network && (
+                <a
+                  href={getFilfoxMessageUrl(actionStatus.cid, network.chainId)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-1 inline-block font-semibold underline underline-offset-2"
+                >
+                  View message on Filfox ↗
+                </a>
+              )}
+            </div>
+          )}
+
+        {proposalActionState?.status === 'uncertain' && !currentProposalAction && (
+          <div
+            className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+            role="alert"
+          >
+            <p>
+              A submitted multisig {proposalActionState.action} still needs reconciliation before
+              this signer can perform another multisig action.
+            </p>
+            <p className="mt-1 text-xs">
+              Reconnect {truncateAddress(proposalActionState.signerAddress)} on{' '}
+              {proposalActionState.networkLabel}, then select the recorded actor to recheck it.
+            </p>
+            <code className="mt-2 block break-all rounded-lg bg-white/60 px-2 py-1 font-mono text-xs">
+              {proposalActionState.multisigAddress}
+            </code>
+            {proposalActionState.cid && (
+              <a
+                href={getFilfoxMessageUrl(proposalActionState.cid, proposalActionState.chainId)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-1 inline-block font-semibold underline underline-offset-2"
+              >
+                Inspect submitted action on Filfox ↗
+              </a>
+            )}
+            {selectedAddress !== proposalActionState.multisigAddress && (
+              <button
+                type="button"
+                onClick={() => onSelect(proposalActionState.multisigAddress)}
+                disabled={hasRecoveryNavigationInFlight}
+                className="mt-2 block font-semibold underline underline-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Select recorded actor
+              </button>
             )}
           </div>
         )}
@@ -340,9 +671,9 @@ export function MultisigFundingPanel({
             role="alert"
           >
             <p>{currentProposalAction.error ?? 'The multisig action failed.'}</p>
-            {currentProposalAction.cid && network && (
+            {currentProposalAction.cid && (
               <a
-                href={getFilfoxMessageUrl(currentProposalAction.cid, network.chainId)}
+                href={getFilfoxMessageUrl(currentProposalAction.cid, currentProposalAction.chainId)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="mt-1 inline-block font-semibold underline underline-offset-2"
@@ -353,35 +684,89 @@ export function MultisigFundingPanel({
           </div>
         )}
 
-        {currentProposalAction && currentProposalAction.status !== 'failed' && (
+        {currentProposalAction && currentProposalAction.status === 'uncertain' && (
           <div
-            className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900"
-            role="status"
-            aria-live="polite"
+            className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+            role="alert"
           >
             <p>
-              {currentProposalAction.status === 'signing'
-                ? `Preparing ${currentProposalAction.action}. Confirm it in your wallet.`
-                : currentProposalAction.status === 'pending'
-                  ? `${currentProposalAction.action === 'approve' ? 'Approval' : 'Cancellation'} submitted and awaiting confirmation.`
-                  : currentProposalAction.outcome === 'queued'
-                    ? 'Approval confirmed. The proposal still needs additional approvals.'
-                    : currentProposalAction.outcome === 'applied-success'
-                      ? 'Approval confirmed. The threshold was reached and the batch call completed.'
-                      : 'Proposal cancellation confirmed.'}
+              {currentProposalAction.error ??
+                `SendFIL could not confirm the multisig ${currentProposalAction.action}.`}
             </p>
-            {currentProposalAction.cid && network && (
+            <p className="mt-1 text-xs">
+              Submitted from {truncateAddress(currentProposalAction.signerAddress)} on{' '}
+              {currentProposalAction.networkLabel}.
+            </p>
+            {currentProposalAction.cid && (
               <a
-                href={getFilfoxMessageUrl(currentProposalAction.cid, network.chainId)}
+                href={getFilfoxMessageUrl(currentProposalAction.cid, currentProposalAction.chainId)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="mt-1 inline-block font-semibold underline underline-offset-2"
               >
-                View message on Filfox ↗
+                Inspect submitted action on Filfox ↗
               </a>
             )}
+            <button
+              type="button"
+              onClick={handleRecheckProposal}
+              disabled={
+                hasWalletActionInFlight || !isProposalRetryBlocked || !currentSelectedMultisig
+              }
+              className="mt-2 block font-semibold underline underline-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isRecheckingProposal ? 'Rechecking action...' : 'Recheck action result'}
+            </button>
           </div>
         )}
+
+        {currentProposalAction &&
+          currentProposalAction.status !== 'failed' &&
+          currentProposalAction.status !== 'uncertain' && (
+            <div
+              className={`rounded-xl border px-3 py-2 text-sm ${
+                currentProposalAction.error
+                  ? 'border-amber-200 bg-amber-50 text-amber-900'
+                  : 'border-blue-200 bg-blue-50 text-blue-900'
+              }`}
+              role={currentProposalAction.error ? 'alert' : 'status'}
+              aria-live="polite"
+            >
+              <p>
+                {currentProposalAction.status === 'preparing'
+                  ? `Checking signer permissions, proposal state, and gas before ${currentProposalAction.action}.`
+                  : currentProposalAction.status === 'signing'
+                    ? `Preparing ${currentProposalAction.action}. Confirm it in your wallet.`
+                    : currentProposalAction.status === 'submitting'
+                      ? `The ${currentProposalAction.action} is signed and being submitted on ${currentProposalAction.networkLabel}.`
+                      : currentProposalAction.status === 'pending'
+                        ? `${currentProposalAction.action === 'approve' ? 'Approval' : 'Cancellation'} submitted and awaiting confirmation.`
+                        : currentProposalAction.status === 'rechecking'
+                          ? `Rechecking the submitted ${currentProposalAction.action} on ${currentProposalAction.networkLabel}.`
+                          : currentProposalAction.outcome === 'queued'
+                            ? 'Approval confirmed. The proposal still needs additional approvals.'
+                            : currentProposalAction.outcome === 'applied-success'
+                              ? 'Approval confirmed. The threshold was reached and the batch call completed.'
+                              : 'Proposal cancellation confirmed.'}
+              </p>
+              {currentProposalAction.error && (
+                <p className="mt-1 text-xs">{currentProposalAction.error}</p>
+              )}
+              {currentProposalAction.cid && (
+                <a
+                  href={getFilfoxMessageUrl(
+                    currentProposalAction.cid,
+                    currentProposalAction.chainId,
+                  )}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-1 inline-block font-semibold underline underline-offset-2"
+                >
+                  View message on Filfox ↗
+                </a>
+              )}
+            </div>
+          )}
 
         {savedMultisigs.length > 0 && (
           <div>
@@ -393,7 +778,7 @@ export function MultisigFundingPanel({
                 <button
                   type="button"
                   onClick={() => onSelect(undefined)}
-                  disabled={hasWalletActionInFlight}
+                  disabled={hasRecoveryNavigationInFlight || isUnresolvedProposalSelected}
                   className="text-xs font-semibold text-slate-500 hover:text-slate-900 disabled:cursor-not-allowed disabled:text-slate-300"
                 >
                   Clear
@@ -410,7 +795,7 @@ export function MultisigFundingPanel({
                     <button
                       type="button"
                       onClick={() => onSelect(multisig.address)}
-                      disabled={hasWalletActionInFlight}
+                      disabled={isSavedSelectionDisabled(multisig.address)}
                       aria-pressed={isSelected}
                       aria-label={`Select multisig ${multisig.label || multisig.address}`}
                       className="min-w-0 flex-1 text-left disabled:cursor-not-allowed disabled:opacity-60"
@@ -429,7 +814,11 @@ export function MultisigFundingPanel({
                     <button
                       type="button"
                       onClick={() => onRemove(multisig.address)}
-                      disabled={hasWalletActionInFlight}
+                      disabled={
+                        hasWalletActionInFlight ||
+                        multisig.address === unresolvedProposalAddress ||
+                        (isSelected && isProposalRetryBlocked)
+                      }
                       aria-label={`Remove multisig ${multisig.label || multisig.address}`}
                       className="shrink-0 text-xs font-semibold text-slate-400 hover:text-red-700 disabled:cursor-not-allowed disabled:text-slate-300"
                     >
@@ -547,8 +936,10 @@ export function MultisigFundingPanel({
                 const canApprove =
                   proposal.canApprove &&
                   (!hasDuplicatePayments || hasAcknowledgedDuplicates) &&
+                  !isProposalRetryBlocked &&
                   !hasWalletActionInFlight;
-                const canCancel = proposal.canCancel && !hasWalletActionInFlight;
+                const canCancel =
+                  proposal.canCancel && !isProposalRetryBlocked && !hasWalletActionInFlight;
 
                 return (
                   <div
@@ -811,58 +1202,84 @@ export function MultisigFundingPanel({
               >
                 + Add signer
               </button>
-              <div className="space-y-1">
-                <div className="flex items-center justify-between gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
-                  <span>Signatures required</span>
-                  <span className="shrink-0 text-slate-500">
-                    {createValues.threshold} of {createValues.signers.length}
-                  </span>
-                </div>
+              <div className="space-y-2">
                 <div className="grid grid-cols-2 gap-2">
-                  <input
-                    type="number"
-                    min={1}
-                    max={createValues.signers.length}
-                    step={1}
-                    value={createValues.threshold}
-                    onChange={(event) =>
-                      setCreateValues((current) => ({
-                        ...current,
-                        threshold: Number(event.target.value),
-                      }))
-                    }
-                    className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 focus:border-[#1f69ff] focus:outline-none focus:ring-2 focus:ring-[#1f69ff]/20"
-                    aria-label="Signatures required"
-                  />
-                  <input
-                    value={createValues.initialDepositFil}
-                    onChange={(event) =>
-                      setCreateValues((current) => ({
-                        ...current,
-                        initialDepositFil: event.target.value,
-                      }))
-                    }
-                    placeholder="Deposit FIL"
-                    aria-label="Initial deposit"
-                    className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-300 focus:border-[#1f69ff] focus:outline-none focus:ring-2 focus:ring-[#1f69ff]/20"
-                  />
+                  <label className="min-w-0 space-y-1">
+                    <span className="block text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                      Approval threshold
+                    </span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={createValues.signers.length}
+                      step={1}
+                      value={createValues.threshold}
+                      onInput={(event) => {
+                        const threshold = Number(event.currentTarget.value);
+                        setCreateValues((current) => ({
+                          ...current,
+                          threshold,
+                        }));
+                      }}
+                      className="w-full min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 focus:border-[#1f69ff] focus:outline-none focus:ring-2 focus:ring-[#1f69ff]/20"
+                      aria-label="Approval threshold"
+                    />
+                    <span className="block text-[10px] font-medium text-slate-500">
+                      {createValues.threshold} of {createValues.signers.length}{' '}
+                      {createValues.signers.length === 1 ? 'signer' : 'signers'}
+                    </span>
+                  </label>
+                  <label className="min-w-0 space-y-1">
+                    <span className="block text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                      Initial deposit (FIL)
+                    </span>
+                    <input
+                      value={createValues.initialDepositFil}
+                      onChange={(event) =>
+                        setCreateValues((current) => ({
+                          ...current,
+                          initialDepositFil: event.target.value,
+                        }))
+                      }
+                      inputMode="decimal"
+                      aria-label="Initial deposit (FIL)"
+                      className="w-full min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-300 focus:border-[#1f69ff] focus:outline-none focus:ring-2 focus:ring-[#1f69ff]/20"
+                    />
+                  </label>
                 </div>
+                <p className="text-[11px] leading-4 text-slate-500">
+                  The connected signer pays the initial deposit plus creation gas.
+                </p>
+                {createValues.threshold > 1 && (
+                  <p className="text-[11px] leading-4 text-slate-500">
+                    Each signer needs a small FIL balance later to pay gas when submitting an
+                    approval.
+                  </p>
+                )}
               </div>
               <button
                 type="button"
                 onClick={handleCreate}
-                disabled={!canCreateMultisig || hasWalletActionInFlight}
+                disabled={!canCreateMultisig || hasWalletActionInFlight || isCreateRetryBlocked}
                 className={`w-full rounded-xl px-3 py-2 text-sm font-semibold ${
-                  canCreateMultisig && !hasWalletActionInFlight
+                  canCreateMultisig && !hasWalletActionInFlight && !isCreateRetryBlocked
                     ? 'bg-[#1f69ff] text-white hover:bg-[#1857d4]'
                     : 'cursor-not-allowed bg-slate-200 text-slate-500'
                 }`}
               >
-                {isCreating
-                  ? 'Creating...'
-                  : canCreateMultisig
-                    ? 'Create multisig'
-                    : 'Connect signer to create'}
+                {currentCreateAction?.status === 'pending'
+                  ? 'Awaiting confirmation...'
+                  : currentCreateAction?.status === 'signing'
+                    ? 'Confirm in wallet...'
+                    : isCreating
+                      ? 'Creating...'
+                      : hasIdentityBoundUncertainCreate
+                        ? 'Inspect submitted create'
+                        : isCreateRetryBlocked
+                          ? 'Resolve pending multisig action'
+                          : canCreateMultisig
+                            ? 'Create multisig'
+                            : 'Connect signer to create'}
               </button>
             </div>
           )}

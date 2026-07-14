@@ -21,8 +21,17 @@ const SIGNER_ADDRESS = newSecp256k1Address(
   Uint8Array.from({ length: 33 }, (_, index) => index + 10),
   CoinType.TEST,
 ).toString();
+const WRONG_SIGNER_ADDRESS = newSecp256k1Address(
+  Uint8Array.from({ length: 33 }, (_, index) => index + 60),
+  CoinType.TEST,
+).toString();
 const CONNECTED_SIGNER = createNativeFilecoinConnectedSender({
   address: SIGNER_ADDRESS,
+  provider: FILSNAP_FILECOIN_PROVIDER_METADATA,
+  expectedNetworkKey: 'calibration',
+}).sender!;
+const WRONG_CONNECTED_SIGNER = createNativeFilecoinConnectedSender({
+  address: WRONG_SIGNER_ADDRESS,
   provider: FILSNAP_FILECOIN_PROVIDER_METADATA,
   expectedNetworkKey: 'calibration',
 }).sender!;
@@ -139,12 +148,18 @@ describe('MultisigFundingPanel interactions', () => {
       selectedMultisig: createActor(),
       pendingProposals: [proposal],
       isLoadingSelected: false,
+      isCreateActionInFlight: false,
+      isCreateRetryBlocked: false,
+      isProposalActionInFlight: false,
+      isProposalRetryBlocked: false,
       onSelect: vi.fn(),
       onAdd: vi.fn(),
       onRemove: vi.fn(),
       onCreate: vi.fn(),
+      onRecheckCreate: vi.fn().mockResolvedValue(undefined),
       onApprove: vi.fn().mockResolvedValue('bafyapproval'),
       onCancel: vi.fn().mockResolvedValue('bafycancel'),
+      onRecheckProposal: vi.fn().mockResolvedValue(undefined),
       onRefresh: vi.fn().mockResolvedValue(undefined),
       ...overrides,
     };
@@ -233,6 +248,8 @@ describe('MultisigFundingPanel interactions', () => {
         proposalId: 7,
         multisigAddress: ADDRESS,
         networkKey: 'calibration',
+        chainId: 314159,
+        networkLabel: 'Calibration Testnet',
         signerAddress: SIGNER_ADDRESS,
         status: 'pending',
         cid: 'bafycancel',
@@ -248,6 +265,13 @@ describe('MultisigFundingPanel interactions', () => {
       (container.querySelector('button[aria-label="Cancel proposal #7"]') as HTMLButtonElement)
         .disabled,
     ).toBe(true);
+    expect(
+      (
+        container.querySelector(
+          'button[aria-label="Remove multisig Treasury"]',
+        ) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
     expect(container.querySelector('a[href]')?.getAttribute('href')).toContain('bafycancel');
 
     renderPanel({
@@ -257,6 +281,8 @@ describe('MultisigFundingPanel interactions', () => {
         proposalId: 7,
         multisigAddress: ADDRESS,
         networkKey: 'calibration',
+        chainId: 314159,
+        networkLabel: 'Calibration Testnet',
         signerAddress: SIGNER_ADDRESS,
         status: 'confirmed',
         cid: 'bafycancel',
@@ -289,9 +315,12 @@ describe('MultisigFundingPanel interactions', () => {
         proposalId: 7,
         multisigAddress: ADDRESS,
         networkKey: 'calibration',
+        chainId: 314159,
+        networkLabel: 'Calibration Testnet',
         signerAddress: SIGNER_ADDRESS,
         status: 'pending',
         cid: 'bafypending',
+        error: 'The uncertainty safety lock could not be saved in this browser.',
       },
     });
 
@@ -305,6 +334,255 @@ describe('MultisigFundingPanel interactions', () => {
         .disabled,
     ).toBe(true);
     expect((container.querySelector('a[href]') as HTMLAnchorElement).href).toContain('bafypending');
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      'safety lock could not be saved',
+    );
+  });
+
+  it('blocks duplicate proposal actions and offers CID reconciliation when uncertain', async () => {
+    const onRecheckProposal = vi.fn().mockResolvedValue(undefined);
+    renderPanel({
+      savedMultisigs: [
+        {
+          address: ADDRESS,
+          networkKey: 'calibration',
+          label: 'Treasury',
+          addedAt: '2026-07-10T00:00:00.000Z',
+          updatedAt: '2026-07-10T00:00:00.000Z',
+        },
+        {
+          address: OTHER_ADDRESS,
+          networkKey: 'calibration',
+          label: 'Backup',
+          addedAt: '2026-07-10T00:00:00.000Z',
+          updatedAt: '2026-07-10T00:00:00.000Z',
+        },
+      ],
+      proposalActionState: {
+        action: 'approve',
+        proposalId: 7,
+        multisigAddress: ADDRESS,
+        networkKey: 'calibration',
+        chainId: 314159,
+        networkLabel: 'Calibration Testnet',
+        signerAddress: SIGNER_ADDRESS,
+        status: 'uncertain',
+        cid: 'bafyuncertainapproval',
+        error: 'The approval result could not be proven.',
+      },
+      isProposalRetryBlocked: true,
+      onRecheckProposal,
+    });
+
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('could not be proven');
+    expect(
+      (container.querySelector('button[aria-label="Approve proposal #7"]') as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    expect(
+      (container.querySelector('button[aria-label="Cancel proposal #7"]') as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    expect(
+      (
+        container.querySelector(
+          'button[aria-label="Remove multisig Treasury"]',
+        ) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+    expect(
+      (container.querySelector('button[aria-label="Select multisig Backup"]') as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    expect(
+      Array.from(container.querySelectorAll('button')).find(
+        (button) => button.textContent?.trim() === 'Clear',
+      )?.disabled,
+    ).toBe(true);
+    expect(container.querySelector('a[href]')?.getAttribute('href')).toContain(
+      'bafyuncertainapproval',
+    );
+
+    const recheck = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === 'Recheck action result',
+    ) as HTMLButtonElement;
+    await act(async () => {
+      recheck.click();
+      await Promise.resolve();
+    });
+    expect(onRecheckProposal).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps only the recorded actor selectable when recovery starts from the wrong selection', async () => {
+    const onSelect = vi.fn();
+    renderPanel({
+      isExternallyLocked: true,
+      isRecoveryNavigationLocked: false,
+      savedMultisigs: [
+        {
+          address: ADDRESS,
+          networkKey: 'calibration',
+          label: 'Treasury',
+          addedAt: '2026-07-10T00:00:00.000Z',
+          updatedAt: '2026-07-10T00:00:00.000Z',
+        },
+        {
+          address: OTHER_ADDRESS,
+          networkKey: 'calibration',
+          label: 'Backup',
+          addedAt: '2026-07-10T00:00:00.000Z',
+          updatedAt: '2026-07-10T00:00:00.000Z',
+        },
+      ],
+      selectedAddress: OTHER_ADDRESS,
+      selectedMultisig: createActor(OTHER_ADDRESS),
+      proposalActionState: {
+        action: 'cancel',
+        proposalId: 7,
+        multisigAddress: ADDRESS,
+        networkKey: 'calibration',
+        chainId: 314159,
+        networkLabel: 'Calibration Testnet',
+        signerAddress: SIGNER_ADDRESS,
+        status: 'uncertain',
+        cid: 'bafywrongselection',
+        error: 'The cancellation result could not be proven.',
+      },
+      isProposalRetryBlocked: true,
+      onSelect,
+    });
+
+    const alert = container.querySelector('[role="alert"]');
+    expect(alert?.textContent).toContain('still needs reconciliation');
+    expect(alert?.textContent).toContain(ADDRESS);
+    expect(alert?.textContent).toContain('Calibration Testnet');
+    expect(alert?.querySelector('a[href]')?.getAttribute('href')).toContain('bafywrongselection');
+    expect(
+      (
+        container.querySelector(
+          'button[aria-label="Select multisig Treasury"]',
+        ) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false);
+    expect(
+      (
+        container.querySelector(
+          'button[aria-label="Remove multisig Treasury"]',
+        ) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+    expect(
+      (container.querySelector('button[aria-label="Select multisig Backup"]') as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    expect(
+      Array.from(container.querySelectorAll('button')).find(
+        (button) => button.textContent?.trim() === 'Clear',
+      )?.disabled,
+    ).toBe(false);
+    expect(
+      (container.querySelector('button[aria-label="Approve proposal #7"]') as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+
+    const selectRecordedActor = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === 'Select recorded actor',
+    ) as HTMLButtonElement;
+    await act(async () => {
+      selectRecordedActor.click();
+      await Promise.resolve();
+    });
+    expect(onSelect).toHaveBeenCalledWith(ADDRESS);
+  });
+
+  it('does not freeze saved-actor selection for another signer\'s uncertain action', async () => {
+    const onSelect = vi.fn();
+    renderPanel({
+      savedMultisigs: [
+        {
+          address: ADDRESS,
+          networkKey: 'calibration',
+          label: 'Treasury',
+          addedAt: '2026-07-10T00:00:00.000Z',
+          updatedAt: '2026-07-10T00:00:00.000Z',
+        },
+        {
+          address: OTHER_ADDRESS,
+          networkKey: 'calibration',
+          label: 'Backup',
+          addedAt: '2026-07-10T00:00:00.000Z',
+          updatedAt: '2026-07-10T00:00:00.000Z',
+        },
+      ],
+      proposalActionState: {
+        action: 'approve',
+        proposalId: 7,
+        multisigAddress: ADDRESS,
+        networkKey: 'calibration',
+        chainId: 314159,
+        networkLabel: 'Calibration Testnet',
+        signerAddress: WRONG_SIGNER_ADDRESS,
+        status: 'uncertain',
+        cid: 'bafyotheruseraction',
+        error: 'Another signer must reconcile this approval.',
+      },
+      isProposalRetryBlocked: false,
+      onSelect,
+    });
+
+    const selectBackup = container.querySelector(
+      'button[aria-label="Select multisig Backup"]',
+    ) as HTMLButtonElement;
+    expect(selectBackup.disabled).toBe(false);
+
+    await act(async () => {
+      selectBackup.click();
+      await Promise.resolve();
+    });
+    expect(onSelect).toHaveBeenCalledWith(OTHER_ADDRESS);
+  });
+
+  it('can select the recorded recovery actor when it is no longer saved locally', async () => {
+    const onSelect = vi.fn();
+    renderPanel({
+      savedMultisigs: [
+        {
+          address: OTHER_ADDRESS,
+          networkKey: 'calibration',
+          label: 'Backup',
+          addedAt: '2026-07-10T00:00:00.000Z',
+          updatedAt: '2026-07-10T00:00:00.000Z',
+        },
+      ],
+      selectedAddress: OTHER_ADDRESS,
+      selectedMultisig: createActor(OTHER_ADDRESS),
+      proposalActionState: {
+        action: 'cancel',
+        proposalId: 7,
+        multisigAddress: ADDRESS,
+        networkKey: 'calibration',
+        chainId: 314159,
+        networkLabel: 'Calibration Testnet',
+        signerAddress: SIGNER_ADDRESS,
+        status: 'uncertain',
+        cid: 'bafyunsavedactor',
+        error: 'The cancellation result could not be proven.',
+      },
+      isProposalRetryBlocked: true,
+      onSelect,
+    });
+
+    expect(container.querySelector('button[aria-label="Select multisig Treasury"]')).toBeNull();
+    const selectRecordedActor = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === 'Select recorded actor',
+    ) as HTMLButtonElement;
+    expect(selectRecordedActor.disabled).toBe(false);
+
+    await act(async () => {
+      selectRecordedActor.click();
+      await Promise.resolve();
+    });
+    expect(onSelect).toHaveBeenCalledWith(ADDRESS);
   });
 
   it('requires explicit acknowledgment before approving duplicate payments', async () => {
@@ -374,19 +652,58 @@ describe('MultisigFundingPanel interactions', () => {
     expect(onRefresh).toHaveBeenCalledTimes(1);
   });
 
-  it('shows a warning instead of clean success when creation cannot be verified', async () => {
-    renderPanel({
-      onCreate: vi.fn().mockResolvedValue({
-        cid: 'bafycreatewarning',
-        warning: 'The create message was confirmed, but the actor address could not be verified.',
-      }),
+  it('labels the approval threshold and initial deposit as separate create fields', async () => {
+    renderPanel();
+
+    await act(async () => {
+      (
+        container.querySelector('[data-testid="multisig-mode-create"]') as HTMLButtonElement
+      ).click();
+      await Promise.resolve();
     });
 
-    const createMode = container.querySelector(
-      '[data-testid="multisig-mode-create"]',
+    expect(container.querySelector('input[aria-label="Approval threshold"]')).not.toBeNull();
+    expect(container.querySelector('input[aria-label="Initial deposit (FIL)"]')).not.toBeNull();
+    expect(container.textContent).toContain(
+      'The connected signer pays the initial deposit plus creation gas.',
+    );
+
+    const addSignerButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === '+ Add signer',
     ) as HTMLButtonElement;
     await act(async () => {
-      createMode.click();
+      addSignerButton.click();
+      await Promise.resolve();
+    });
+
+    const threshold = container.querySelector(
+      'input[aria-label="Approval threshold"]',
+    ) as HTMLInputElement;
+    await act(async () => {
+      const valueSetter = Object.getOwnPropertyDescriptor(
+        dom.window.HTMLInputElement.prototype,
+        'value',
+      )?.set;
+      valueSetter?.call(threshold, '2');
+      threshold.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+      threshold.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain(
+      'Each signer needs a small FIL balance later to pay gas when submitting an approval.',
+    );
+  });
+
+  it('adds safe context to a generic create fetch failure', async () => {
+    renderPanel({
+      onCreate: vi.fn().mockRejectedValue(new TypeError('Failed to fetch')),
+    });
+
+    await act(async () => {
+      (
+        container.querySelector('[data-testid="multisig-mode-create"]') as HTMLButtonElement
+      ).click();
       await Promise.resolve();
     });
 
@@ -399,8 +716,317 @@ describe('MultisigFundingPanel interactions', () => {
     });
 
     expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      'could not reach the Filecoin RPC',
+    );
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      'inspect recent messages before trying again',
+    );
+  });
+
+  it('normalizes a hook-provided generic create fetch failure', () => {
+    renderPanel({
+      createActionState: {
+        status: 'failed',
+        signerAddress: SIGNER_ADDRESS,
+        networkKey: 'calibration',
+        chainId: 314159,
+        networkLabel: 'Calibration Testnet',
+        error: 'Failed to fetch',
+      },
+    });
+
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      'could not reach the Filecoin RPC',
+    );
+    expect(container.querySelector('[role="alert"]')?.textContent).not.toBe('Failed to fetch');
+  });
+
+  it.each([
+    'Connected signer has 0 FIL. Fund it or connect a funded signer.',
+    'Filecoin.StateActorCodeCIDs failed on both configured RPC endpoints.',
+    'Lotus RPC Filecoin.StateActorCodeCIDs failed on mainnet after 2 endpoints: primary: JSON-RPC error -32601; fallback: Failed to fetch',
+  ])('preserves a deterministic hook-provided create failure: %s', (error) => {
+    renderPanel({
+      createActionState: {
+        status: 'failed',
+        signerAddress: SIGNER_ADDRESS,
+        networkKey: 'calibration',
+        chainId: 314159,
+        networkLabel: 'Calibration Testnet',
+        error,
+      },
+    });
+
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(error);
+  });
+
+  it('does not duplicate local and hook create completion status', async () => {
+    const onCreate = vi.fn().mockResolvedValue({
+      outcome: 'confirmed' as const,
+      cid: 'bafycreatedonce',
+      createdAddress: ADDRESS,
+    });
+    renderPanel({ onCreate });
+
+    await act(async () => {
+      (
+        container.querySelector('[data-testid="multisig-mode-create"]') as HTMLButtonElement
+      ).click();
+      await Promise.resolve();
+    });
+    const createButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === 'Create multisig',
+    ) as HTMLButtonElement;
+    await act(async () => {
+      createButton.click();
+      await Promise.resolve();
+    });
+
+    renderPanel({
+      onCreate,
+      createActionState: {
+        status: 'confirmed',
+        cid: 'bafycreatedonce',
+        createdAddress: ADDRESS,
+        signerAddress: SIGNER_ADDRESS,
+        networkKey: 'calibration',
+        chainId: 314159,
+        networkLabel: 'Calibration Testnet',
+      },
+    });
+
+    const completionStatuses = Array.from(
+      container.querySelectorAll('[role="status"], [role="alert"]'),
+    ).filter((element) => element.textContent?.includes('Multisig creation confirmed'));
+    expect(completionStatuses).toHaveLength(1);
+  });
+
+  it('surfaces a pending create persistence warning while confirmation is unresolved', () => {
+    renderPanel({
+      createActionState: {
+        status: 'pending',
+        cid: 'bafypendingcreate',
+        signerAddress: SIGNER_ADDRESS,
+        networkKey: 'calibration',
+        chainId: 314159,
+        networkLabel: 'Calibration Testnet',
+        warning: 'The uncertainty safety lock could not be saved in this browser.',
+      },
+      isCreateActionInFlight: true,
+    });
+
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      'safety lock could not be saved',
+    );
+    expect(container.textContent).toContain('awaiting confirmation');
+  });
+
+  it('keeps a confirmed but unsaved multisig address visible for manual import', () => {
+    renderPanel({
+      createActionState: {
+        status: 'confirmed',
+        cid: 'bafycreated',
+        createdAddress: ADDRESS,
+        signerAddress: SIGNER_ADDRESS,
+        networkKey: 'calibration',
+        chainId: 314159,
+        networkLabel: 'Calibration Testnet',
+        warning: `The multisig was created at ${ADDRESS}, but it was not saved locally.`,
+      },
+    });
+
+    expect(container.querySelector('code')?.textContent).toBe(ADDRESS);
+    expect(container.textContent).toContain('was not saved locally');
+  });
+
+  it('uses neutral create-button recovery copy for a proposal-only lock', async () => {
+    const onCreate = vi.fn();
+    const onRecheckCreate = vi.fn();
+    renderPanel({
+      proposalActionState: {
+        action: 'approve',
+        proposalId: 7,
+        multisigAddress: ADDRESS,
+        networkKey: 'calibration',
+        chainId: 314159,
+        networkLabel: 'Calibration Testnet',
+        signerAddress: SIGNER_ADDRESS,
+        status: 'uncertain',
+        cid: 'bafyproposalonly',
+        error: 'The approval still needs reconciliation.',
+      },
+      isCreateRetryBlocked: true,
+      isProposalRetryBlocked: true,
+      onCreate,
+      onRecheckCreate,
+    });
+
+    await act(async () => {
+      (
+        container.querySelector('[data-testid="multisig-mode-create"]') as HTMLButtonElement
+      ).click();
+      await Promise.resolve();
+    });
+
+    const resolveButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === 'Resolve pending multisig action',
+    ) as HTMLButtonElement;
+    expect(resolveButton.disabled).toBe(true);
+    expect(container.textContent).not.toContain('Inspect submitted create');
+    expect(container.textContent).not.toContain('Recheck create result');
+
+    await act(async () => {
+      resolveButton.click();
+      await Promise.resolve();
+    });
+    expect(onCreate).not.toHaveBeenCalled();
+    expect(onRecheckCreate).not.toHaveBeenCalled();
+  });
+
+  it('uses neutral create-button recovery copy for a storage-only lock', async () => {
+    const onCreate = vi.fn();
+    const onRecheckCreate = vi.fn();
+    renderPanel({
+      uncertaintyStorageError:
+        'SendFIL could not safely read its saved uncertain multisig actions.',
+      isCreateRetryBlocked: true,
+      isProposalRetryBlocked: true,
+      onCreate,
+      onRecheckCreate,
+    });
+
+    await act(async () => {
+      (
+        container.querySelector('[data-testid="multisig-mode-create"]') as HTMLButtonElement
+      ).click();
+      await Promise.resolve();
+    });
+
+    const resolveButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === 'Resolve pending multisig action',
+    ) as HTMLButtonElement;
+    expect(resolveButton.disabled).toBe(true);
+    expect(container.textContent).not.toContain('Inspect submitted create');
+    expect(container.textContent).not.toContain('Recheck create result');
+
+    await act(async () => {
+      resolveButton.click();
+      await Promise.resolve();
+    });
+    expect(onCreate).not.toHaveBeenCalled();
+    expect(onRecheckCreate).not.toHaveBeenCalled();
+  });
+
+  it('shows an identity-bound uncertain create with its submitted network snapshot', async () => {
+    const onRecheckCreate = vi.fn().mockResolvedValue(undefined);
+    renderPanel({
+      createActionState: {
+        status: 'uncertain',
+        cid: 'bafycreatewarning',
+        signerAddress: SIGNER_ADDRESS,
+        networkKey: 'calibration',
+        chainId: 314159,
+        networkLabel: 'Calibration Testnet',
+        warning: 'The create message was confirmed, but the actor address could not be verified.',
+      },
+      isCreateRetryBlocked: true,
+      onRecheckCreate,
+    });
+
+    const createMode = container.querySelector(
+      '[data-testid="multisig-mode-create"]',
+    ) as HTMLButtonElement;
+    await act(async () => {
+      createMode.click();
+      await Promise.resolve();
+    });
+
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
       'actor address could not be verified',
     );
-    expect(container.querySelector('a[href]')?.getAttribute('href')).toContain('bafycreatewarning');
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('Calibration Testnet');
+    expect(container.querySelector('a[href]')?.getAttribute('href')).toContain(
+      'https://calibration.filfox.info/en/message/bafycreatewarning',
+    );
+    const recheckCreate = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === 'Recheck create result',
+    ) as HTMLButtonElement;
+    await act(async () => {
+      recheckCreate.click();
+      await Promise.resolve();
+    });
+    expect(onRecheckCreate).toHaveBeenCalledTimes(1);
+    const blockedCreateButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === 'Inspect submitted create',
+    ) as HTMLButtonElement;
+    expect(blockedCreateButton.disabled).toBe(true);
+
+    await act(async () => {
+      (container.querySelector('[data-testid="multisig-mode-add"]') as HTMLButtonElement).click();
+      (
+        container.querySelector('[data-testid="multisig-mode-create"]') as HTMLButtonElement
+      ).click();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('actor address could not be verified');
+    expect(
+      Array.from(container.querySelectorAll('button'))
+        .find((button) => button.textContent?.trim() === 'Inspect submitted create')
+        ?.hasAttribute('disabled'),
+    ).toBe(true);
   });
+
+  it.each([
+    ['a different signer', WRONG_CONNECTED_SIGNER],
+    ['no connected signer', undefined],
+  ] as const)(
+    'shows global create recovery for %s without exposing identity-bound recheck',
+    async (_, signer) => {
+      const onRecheckCreate = vi.fn().mockResolvedValue(undefined);
+      renderPanel({
+        connectedSigner: signer,
+        enabled: Boolean(signer),
+        createActionState: {
+          status: 'uncertain',
+          cid: 'bafyglobalcreate',
+          signerAddress: SIGNER_ADDRESS,
+          networkKey: 'calibration',
+          chainId: 314159,
+          networkLabel: 'Calibration Testnet',
+          warning: 'The submitted create still needs a proof-bearing result.',
+        },
+        isCreateRetryBlocked: false,
+        onRecheckCreate,
+      });
+
+      const recovery = container.querySelector('[data-testid="unresolved-create-recovery"]');
+      expect(recovery?.textContent).toContain('still needs a proof-bearing result');
+      expect(recovery?.textContent).toContain(SIGNER_ADDRESS);
+      expect(recovery?.textContent).toContain('Calibration Testnet');
+      expect(recovery?.textContent).toContain('bafyglobalcreate');
+      expect(recovery?.querySelector('a[href]')?.getAttribute('href')).toContain(
+        'https://calibration.filfox.info/en/message/bafyglobalcreate',
+      );
+      expect(
+        Array.from(container.querySelectorAll('button')).find(
+          (button) => button.textContent?.trim() === 'Recheck create result',
+        ),
+      ).toBeUndefined();
+
+      await act(async () => {
+        (
+          container.querySelector('[data-testid="multisig-mode-create"]') as HTMLButtonElement
+        ).click();
+        await Promise.resolve();
+      });
+
+      const createButton = Array.from(container.querySelectorAll('button')).find((button) =>
+        ['Create multisig', 'Connect signer to create'].includes(button.textContent?.trim() ?? ''),
+      ) as HTMLButtonElement;
+      expect(createButton.textContent).toContain(signer ? 'Create multisig' : 'Connect signer');
+      expect(createButton.disabled).toBe(!signer);
+      expect(onRecheckCreate).not.toHaveBeenCalled();
+    },
+  );
 });
