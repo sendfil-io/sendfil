@@ -73,19 +73,39 @@ describe('networks', () => {
   it('resolves lotus rpc config per network', () => {
     vi.stubEnv('VITE_LOTUS_RPC_URL_MAINNET', 'http://lotus-mainnet');
     vi.stubEnv('VITE_LOTUS_RPC_FALLBACK_MAINNET', 'http://lotus-mainnet-fallback');
+    vi.stubEnv(
+      'VITE_LOTUS_RPC_STATE_READ_FALLBACK_MAINNET',
+      'http://lotus-mainnet-state-read-fallback',
+    );
     vi.stubEnv('VITE_LOTUS_RPC_URL_CALIBRATION', 'http://lotus-calibration');
     vi.stubEnv('VITE_LOTUS_RPC_FALLBACK_CALIBRATION', 'http://lotus-calibration-fallback');
+    vi.stubEnv(
+      'VITE_LOTUS_RPC_STATE_READ_FALLBACK_CALIBRATION',
+      'http://lotus-calibration-state-read-fallback',
+    );
     vi.stubEnv('VITE_LOTUS_RPC_TIMEOUT_MS', '4321');
 
     expect(resolveLotusRpcConfig('mainnet')).toEqual({
       primary: 'http://lotus-mainnet',
       fallback: 'http://lotus-mainnet-fallback',
+      stateReadFallback: 'http://lotus-mainnet-state-read-fallback',
       timeout: 4321,
     });
     expect(resolveLotusRpcConfig('calibration')).toEqual({
       primary: 'http://lotus-calibration',
       fallback: 'http://lotus-calibration-fallback',
+      stateReadFallback: 'http://lotus-calibration-state-read-fallback',
       timeout: 4321,
+    });
+  });
+
+  it('keeps an independent Mainnet state-read fallback when deployment fallback config is broken', () => {
+    vi.stubEnv('VITE_LOTUS_RPC_FALLBACK_MAINNET', 'https://rpc.node.glif.io/rpc/v1');
+    vi.stubEnv('VITE_LOTUS_RPC_STATE_READ_FALLBACK_MAINNET', '');
+
+    expect(resolveLotusRpcConfig('mainnet')).toMatchObject({
+      fallback: 'https://rpc.node.glif.io/rpc/v1',
+      stateReadFallback: 'https://rpc.ankr.com/filecoin',
     });
   });
 

@@ -51,6 +51,8 @@ const MANIFEST_CID = 'bafy2bzaceb22zyxdtqlmveumv7qibp6ncrwmfuskzldj2qiudmvn7bfee
 const MANIFEST_BASE64 =
   'gYJobXVsdGlzaWfYKlgnAAFVoOQCII8ZBt7rkhVOPtysmnTf1/pV7XdiGxz8YGR4wnrQ8VN2';
 const CID = 'bafy2bzacebpekbxp7qyk4xx5r7es3t77sqcgdq5c7osfow4ayvbyyafwl4sxk';
+const FRESH_BALANCE_HEAD_CID =
+  'bafy2bzacebcodbmrjkfrr63lms3wevg2nmceh2666bd3x76lwtsa7iygj7beo';
 const PROPOSE_QUEUED_RETURN = 'hAf0AEA=';
 const PROPOSE_APPLIED_SUCCESS_RETURN = 'hAn1AELerQ==';
 const PROPOSE_APPLIED_FAILURE_RETURN = 'hAr1GCFCAQI=';
@@ -139,6 +141,7 @@ function getRpc(availableBalance = 10n ** 21n): MultisigPreflightRpc {
       };
     }),
     multisig: {
+      getChainHead: vi.fn(async () => ({ Cids: [{ '/': CID }], Height: 1 })),
       readState: vi.fn(async (address: string) =>
         address === 'f00' || address === 't00'
           ? {
@@ -269,6 +272,18 @@ describe('useExecuteMultisigProposal', () => {
     const sender = getNativeSender();
     const provider = getProvider(10n ** 21n);
     const rpc = getRpc();
+    const getChainHead = rpc.multisig?.getChainHead;
+
+    if (!getChainHead) {
+      throw new Error('Expected multisig chain-head mock');
+    }
+
+    vi.mocked(getChainHead)
+      .mockResolvedValueOnce({ Cids: [{ '/': CID }], Height: 1 })
+      .mockResolvedValueOnce({
+        Cids: [{ '/': FRESH_BALANCE_HEAD_CID }],
+        Height: 2,
+      });
     const pollMessageStatus = vi.fn(
       async (): Promise<TransactionStatus> => getConfirmedStatus(PROPOSE_APPLIED_SUCCESS_RETURN),
     );
@@ -286,7 +301,19 @@ describe('useExecuteMultisigProposal', () => {
       await expect(latestHook?.executeBatch(recipients, 'ATOMIC')).resolves.toBe(CID);
     });
 
-    expect(rpc.multisig?.getAvailableBalance).toHaveBeenCalledWith(MULTISIG_T0, 'calibration');
+    expect(getChainHead).toHaveBeenCalledTimes(2);
+    expect(rpc.multisig?.getAvailableBalance).toHaveBeenNthCalledWith(
+      1,
+      MULTISIG_T0,
+      'calibration',
+      [{ '/': CID }],
+    );
+    expect(rpc.multisig?.getAvailableBalance).toHaveBeenNthCalledWith(
+      2,
+      MULTISIG_T0,
+      'calibration',
+      [{ '/': FRESH_BALANCE_HEAD_CID }],
+    );
     expect(provider.getBalance).toHaveBeenCalledWith({
       address: SIGNER_T1,
       networkKey: 'calibration',

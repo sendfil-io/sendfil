@@ -16,6 +16,8 @@ const SECOND_SIGNER = newSecp256k1Address(
   CoinType.TEST,
 ).toString();
 const MANIFEST_CID = 'bafy2bzaceb22zyxdtqlmveumv7qibp6ncrwmfuskzldj2qiudmvn7bfeeaur6';
+const HEAD_CID = 'bafy2bzacebcodbmrjkfrr63lms3wevg2nmceh2666bd3x76lwtsa7iygj7beo';
+const HEAD_TIPSET_KEY = [{ '/': HEAD_CID }] as const;
 const MULTISIG_CODE_CID =
   'bafk2bzacechrsbw65ojbktr63swju5g7275fl3lxminrz7damr4me6wq6fjxm';
 const ONE_ENTRY_MANIFEST_BASE64 =
@@ -58,6 +60,7 @@ function createManifestRpc() {
   }));
   const readObject = vi.fn(async () => ONE_ENTRY_MANIFEST_BASE64);
   const multisigRpc: MultisigRpc = {
+    getChainHead: vi.fn(async () => ({ Cids: HEAD_TIPSET_KEY, Height: 1 })),
     readState,
     lookupID: vi.fn(async (address: string) => address),
     getAvailableBalance: vi.fn(async () => 0n),
@@ -116,7 +119,7 @@ describe('multisig create preflight', () => {
     });
 
     expect(getNonce).toHaveBeenCalledWith(CREATOR, 'calibration');
-    expect(readState).toHaveBeenCalledWith('t00', 'calibration');
+    expect(readState).toHaveBeenCalledWith('t00', 'calibration', HEAD_TIPSET_KEY);
     expect(readObject).toHaveBeenCalledWith({ '/': MANIFEST_CID }, 'calibration');
     expect(estimateGas).toHaveBeenCalledWith(expectedDraft, 'calibration');
     expect(result.multisigActorCodeCid).toBe(MULTISIG_CODE_CID);

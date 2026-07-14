@@ -412,14 +412,17 @@ native Filecoin RPC transport
 
 ### Acceptance criteria
 
-- Transport failures, timeouts, retryable HTTP statuses, malformed responses, and JSON-RPC `-32601` method-unavailable errors may try one distinct fallback endpoint.
+- Transport failures, timeouts, retryable HTTP statuses, malformed responses, and JSON-RPC `-32601` method-unavailable errors may try the configured distinct fallback endpoint.
 - Known load-balanced state-availability failures receive one same-endpoint retry before fallback,
   but only for an explicit read-method allowlist; native submission methods are never retried this
   way.
+- Allowlisted state reads may use one independent read-only fallback after the configured fallback;
+  submission methods such as `MpoolPush` never use that endpoint.
 - Other JSON-RPC application errors and non-retryable HTTP client errors are returned without calling the fallback.
-- A combined failure retains method, network, endpoint role, and both endpoint diagnoses, including the primary JSON-RPC code when present.
+- A combined failure retains method, network, endpoint role, and all attempted endpoint diagnoses, including the primary JSON-RPC code when present.
 - HTTP status, JSON-RPC envelope, result presence, and response ID are validated before a result is accepted.
-- Identical primary and fallback URLs, including trailing-slash variants, are called only once.
+- Identical primary, configured fallback, and state-read fallback URLs, including trailing-slash
+  variants, are called only once.
 
 ### Tests
 
@@ -582,6 +585,8 @@ native multisig proposal preparation, pending-approval guard, actor outcome veri
 - The proposal target is the prepared FEVM target in `f4/t4` form, proposal Value equals the prepared batch value, proposal Method is `InvokeEVM`, and proposal Params are the decoded `InvokeEVM` params bytes.
 - Submit-time checks require multisig available balance to cover the prepared batch total and the connected signer balance to cover estimated proposal gas.
 - Loaded actor and pending state is bound to the selected network, actor address, and connected signer; stale responses cannot authorize another actor.
+- Actor, spendable-balance, vesting, signer-ID, manifest, and pending-proposal reads share one
+  strictly validated chain-head TipSetKey per refresh or preflight snapshot.
 - In-app approval is enabled only after canonical CBOR and ABI decoding proves every nested call is a supported SendFIL payment with matching totals, execution mode, batch limit, active fee rows, and contract-recipient policy.
 - The approval screen displays every decoded recipient and exact amount before authorization.
 - Pending proposals with duplicate payment destinations require a fresh explicit acknowledgment before approval, and the hook enforces that acknowledgment below the UI boundary.

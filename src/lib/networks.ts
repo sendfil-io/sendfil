@@ -58,6 +58,7 @@ const NETWORK_METADATA: Record<
     defaultFilfoxMessageBaseUrl: string;
     defaultFevmRpcUrl: string;
     defaultLotusRpcUrl: string;
+    defaultLotusStateReadFallbackUrl?: string;
   }
 > = {
   mainnet: {
@@ -71,6 +72,7 @@ const NETWORK_METADATA: Record<
     defaultFilfoxMessageBaseUrl: 'https://filfox.info/en/message/',
     defaultFevmRpcUrl: filecoin.rpcUrls.default.http[0]!,
     defaultLotusRpcUrl: 'https://api.node.glif.io/rpc/v1',
+    defaultLotusStateReadFallbackUrl: 'https://rpc.ankr.com/filecoin',
   },
   calibration: {
     key: 'calibration',
@@ -252,6 +254,7 @@ function resolveFevmRpcUrl(key: SendFilNetworkKey): string {
 export function resolveLotusRpcConfig(key: SendFilNetworkKey): {
   primary: string;
   fallback: string;
+  stateReadFallback?: string;
   timeout: number;
 } {
   const isMainnet = key === 'mainnet';
@@ -267,10 +270,17 @@ export function resolveLotusRpcConfig(key: SendFilNetworkKey): {
         : 'VITE_LOTUS_RPC_FALLBACK_CALIBRATION',
       isMainnet ? 'VITE_GLIF_RPC_URL_FALLBACK' : undefined,
     ) ?? primary;
+  const stateReadFallback =
+    readEnv(
+      isMainnet
+        ? 'VITE_LOTUS_RPC_STATE_READ_FALLBACK_MAINNET'
+        : 'VITE_LOTUS_RPC_STATE_READ_FALLBACK_CALIBRATION',
+    ) ?? NETWORK_METADATA[key].defaultLotusStateReadFallbackUrl;
 
   return {
     primary,
     fallback,
+    stateReadFallback,
     timeout: readNumberEnvWithLegacy(
       'VITE_LOTUS_RPC_TIMEOUT_MS',
       10_000,

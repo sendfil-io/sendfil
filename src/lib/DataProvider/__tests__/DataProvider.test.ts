@@ -3,13 +3,19 @@ import { http, HttpResponse, delay } from 'msw';
 import { setupServer } from 'msw/node';
 const PRIMARY = 'http://primary';
 const FALLBACK = 'http://fallback';
+const STATE_READ_FALLBACK = 'http://state-read-fallback';
 const CALIBRATION_PRIMARY = 'http://calibration-primary';
 const CALIBRATION_FALLBACK = 'http://calibration-fallback';
 
 vi.stubEnv('VITE_LOTUS_RPC_URL_MAINNET', PRIMARY);
 vi.stubEnv('VITE_LOTUS_RPC_FALLBACK_MAINNET', FALLBACK);
+vi.stubEnv('VITE_LOTUS_RPC_STATE_READ_FALLBACK_MAINNET', FALLBACK);
 vi.stubEnv('VITE_LOTUS_RPC_URL_CALIBRATION', CALIBRATION_PRIMARY);
 vi.stubEnv('VITE_LOTUS_RPC_FALLBACK_CALIBRATION', CALIBRATION_FALLBACK);
+vi.stubEnv(
+  'VITE_LOTUS_RPC_STATE_READ_FALLBACK_CALIBRATION',
+  CALIBRATION_FALLBACK,
+);
 vi.stubEnv('VITE_LOTUS_RPC_TIMEOUT_MS', '50');
 
 import * as DataProvider from '../index';
@@ -55,7 +61,12 @@ beforeAll(() => server.listen());
 afterEach(() => {
   server.resetHandlers();
   vi.stubEnv('VITE_LOTUS_RPC_FALLBACK_MAINNET', FALLBACK);
+  vi.stubEnv('VITE_LOTUS_RPC_STATE_READ_FALLBACK_MAINNET', FALLBACK);
   vi.stubEnv('VITE_LOTUS_RPC_FALLBACK_CALIBRATION', CALIBRATION_FALLBACK);
+  vi.stubEnv(
+    'VITE_LOTUS_RPC_STATE_READ_FALLBACK_CALIBRATION',
+    CALIBRATION_FALLBACK,
+  );
 });
 afterAll(() => server.close());
 
@@ -540,6 +551,77 @@ describe('DataProvider', () => {
     expect(fallbackRequests).toBe(0);
   });
 
+  it('uses the independent state-read fallback after stale primary and broken configured fallback', async () => {
+    vi.stubEnv(
+      'VITE_LOTUS_RPC_STATE_READ_FALLBACK_MAINNET',
+      STATE_READ_FALLBACK,
+    );
+    let primaryRequests = 0;
+    let configuredFallbackRequests = 0;
+    let stateReadFallbackRequests = 0;
+
+    server.use(
+      http.post(PRIMARY, ({ request }) => {
+        primaryRequests += 1;
+        return jsonRpcError(
+          request,
+          1,
+          'RPC error (-32603): Failed to load actor with addr=f03810106, state_cid=bafy-stale',
+        );
+      }),
+      http.post(FALLBACK, () => {
+        configuredFallbackRequests += 1;
+        return HttpResponse.error();
+      }),
+      http.post(STATE_READ_FALLBACK, ({ request }) => {
+        stateReadFallbackRequests += 1;
+        return jsonRpcResult(request, {
+          Balance: '500000000000000000',
+          Code: { '/': 'bafk-multisig' },
+          State: { Signers: ['f0100', 'f0101'], NumApprovalsThreshold: 2 },
+        });
+      }),
+    );
+
+    await expect(
+      callRpc('Filecoin.StateReadState', ['f03810106', []], 'mainnet'),
+    ).resolves.toMatchObject({ Balance: '500000000000000000' });
+    expect(primaryRequests).toBe(2);
+    expect(configuredFallbackRequests).toBe(1);
+    expect(stateReadFallbackRequests).toBe(1);
+  });
+
+  it('treats actor-not-found from a pinned multisig read as transient provider state', async () => {
+    vi.stubEnv(
+      'VITE_LOTUS_RPC_STATE_READ_FALLBACK_MAINNET',
+      STATE_READ_FALLBACK,
+    );
+    let primaryRequests = 0;
+    let stateReadFallbackRequests = 0;
+
+    server.use(
+      http.post(PRIMARY, ({ request }) => {
+        primaryRequests += 1;
+        return jsonRpcError(request, 1, 'Actor not found');
+      }),
+      http.post(FALLBACK, () => HttpResponse.error()),
+      http.post(STATE_READ_FALLBACK, ({ request }) => {
+        stateReadFallbackRequests += 1;
+        return jsonRpcResult(request, []);
+      }),
+    );
+
+    await expect(
+      callRpc(
+        'Filecoin.MsigGetPending',
+        ['f03810106', [{ '/': 'bafy-pinned-head' }]],
+        'mainnet',
+      ),
+    ).resolves.toEqual([]);
+    expect(primaryRequests).toBe(2);
+    expect(stateReadFallbackRequests).toBe(1);
+  });
+
   it('retries a stale load-balanced ID lookup once on the same endpoint', async () => {
     let primaryRequests = 0;
     let fallbackRequests = 0;
@@ -597,8 +679,31 @@ describe('DataProvider', () => {
     expect(fallbackRequests).toBe(0);
   });
 
-  it('does not call the same endpoint twice when fallback is a duplicate', async () => {
+  it('never sends MpoolPush to the independent state-read fallback', async () => {
+    vi.stubEnv(
+      'VITE_LOTUS_RPC_STATE_READ_FALLBACK_MAINNET',
+      STATE_READ_FALLBACK,
+    );
+    let stateReadFallbackRequests = 0;
+
+    server.use(
+      http.post(PRIMARY, () => HttpResponse.error()),
+      http.post(FALLBACK, () => HttpResponse.error()),
+      http.post(STATE_READ_FALLBACK, ({ request }) => {
+        stateReadFallbackRequests += 1;
+        return jsonRpcResult(request, { '/': 'bafy-should-not-submit' });
+      }),
+    );
+
+    await expect(
+      callRpc('Filecoin.MpoolPush', [{ Message: {}, Signature: {} }], 'mainnet'),
+    ).rejects.toThrow('transport error');
+    expect(stateReadFallbackRequests).toBe(0);
+  });
+
+  it('deduplicates primary, configured fallback, and state-read fallback URL variants', async () => {
     vi.stubEnv('VITE_LOTUS_RPC_FALLBACK_MAINNET', `${PRIMARY}/`);
+    vi.stubEnv('VITE_LOTUS_RPC_STATE_READ_FALLBACK_MAINNET', `${PRIMARY}/`);
     let primaryRequests = 0;
     server.use(
       http.post(PRIMARY, () => {
@@ -607,7 +712,9 @@ describe('DataProvider', () => {
       }),
     );
 
-    const error = await captureRpcError(DataProvider.getBalance('f1'));
+    const error = await captureRpcError(
+      callRpc('Filecoin.StateReadState', ['f0100', []], 'mainnet'),
+    );
 
     expect(error).toMatchObject({
       kind: 'http',
@@ -700,6 +807,7 @@ describe('DataProvider', () => {
     expect(getRpcConfig('calibration')).toEqual({
       primary: CALIBRATION_PRIMARY,
       fallback: CALIBRATION_FALLBACK,
+      stateReadFallback: CALIBRATION_FALLBACK,
       timeout: 50,
     });
   });

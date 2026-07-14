@@ -29,7 +29,11 @@ import {
   type MultisigPreflightRpc,
   type PreparedMultisigProposalPreflight,
 } from './preflight';
-import { loadMultisigActorState, lotusMultisigRpc } from './rpc';
+import {
+  getMultisigSnapshotTipSetKey,
+  loadMultisigActorState,
+  lotusMultisigRpc,
+} from './rpc';
 
 export interface UseExecuteMultisigProposalOptions {
   sender?: NativeFilecoinConnectedSender;
@@ -725,10 +729,16 @@ export function useExecuteMultisigProposal({
 
           failureStage = 'execution';
 
+          const multisigRpc = rpc?.multisig ?? lotusMultisigRpc;
+          const balanceTipSetKey = await getMultisigSnapshotTipSetKey(
+            currentMultisig.networkKey,
+            multisigRpc,
+          );
           const [availableBalance, signerBalance] = await Promise.all([
-            (rpc?.multisig ?? lotusMultisigRpc).getAvailableBalance(
+            multisigRpc.getAvailableBalance(
               currentMultisigIdAddress,
               currentMultisig.networkKey,
+              balanceTipSetKey,
             ),
             nativeProvider.getBalance({
               address: sender.address,

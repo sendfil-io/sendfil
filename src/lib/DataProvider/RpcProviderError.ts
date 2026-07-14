@@ -8,7 +8,7 @@ export type RpcProviderErrorKind =
   | 'malformed-response'
   | 'failover';
 
-export type RpcEndpointRole = 'primary' | 'fallback';
+export type RpcEndpointRole = 'primary' | 'fallback' | 'state-read-fallback';
 
 export interface RpcProviderErrorOptions {
   code?: number;

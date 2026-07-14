@@ -37,6 +37,7 @@ import {
 } from '../useMultisigs';
 
 const moduleMocks = vi.hoisted(() => ({
+  getSnapshotTipSetKey: vi.fn(),
   loadActorState: vi.fn(),
   loadPendingProposals: vi.fn(),
   preflightCreateMultisig: vi.fn(),
@@ -48,6 +49,7 @@ vi.mock('../rpc', async () => {
 
   return {
     ...actual,
+    getMultisigSnapshotTipSetKey: moduleMocks.getSnapshotTipSetKey,
     loadMultisigActorState: moduleMocks.loadActorState,
     loadMultisigPendingProposals: moduleMocks.loadPendingProposals,
   };
@@ -72,6 +74,13 @@ const MULTISIG_B = newActorAddress(
   CoinType.TEST,
 ).toString() as NativeMultisigAddress;
 const CID = 'bafy2bzacecltcibo6i2aewv7b3fz4f7cie26c5jminwhxs7iuttgzbtaptvui';
+const SNAPSHOT_TIPSET_KEY = [{ '/': CID }] as const;
+const REFRESH_SNAPSHOT_TIPSET_KEY = [
+  { '/': 'bafy2bzacebcodbmrjkfrr63lms3wevg2nmceh2666bd3x76lwtsa7iygj7beo' },
+] as const;
+const SECOND_REFRESH_SNAPSHOT_TIPSET_KEY = [
+  { '/': 'bafy2bzacebpekbxp7qyk4xx5r7es3t77sqcgdq5c7osfow4ayvbyyafwl4sxk' },
+] as const;
 const APPROVE_QUEUED_RETURN = 'g/QAQA==';
 const APPROVE_APPLIED_FAILURE_RETURN = 'g/UYIUA=';
 const SIGNER_A = newSecp256k1Address(
@@ -318,6 +327,8 @@ describe('useMultisigs selection lifecycle', () => {
   };
 
   beforeEach(async () => {
+    moduleMocks.getSnapshotTipSetKey.mockReset();
+    moduleMocks.getSnapshotTipSetKey.mockResolvedValue(SNAPSHOT_TIPSET_KEY);
     moduleMocks.loadActorState.mockReset();
     moduleMocks.loadPendingProposals.mockReset();
     moduleMocks.preflightCreateMultisig.mockReset();
@@ -398,6 +409,68 @@ describe('useMultisigs selection lifecycle', () => {
     await flushAsyncWork();
 
     expect(latestHook?.selectedMultisig?.address).toBe(MULTISIG_B);
+  });
+
+  it('shares one chain-head snapshot across selected actor and pending proposal reads', async () => {
+    moduleMocks.getSnapshotTipSetKey.mockResolvedValue(SNAPSHOT_TIPSET_KEY);
+    moduleMocks.loadActorState.mockResolvedValue(createActorState(MULTISIG_A));
+    moduleMocks.loadPendingProposals.mockResolvedValue([createProposal()]);
+
+    act(() => {
+      latestHook!.selectMultisig(MULTISIG_A);
+    });
+    await flushAsyncWork();
+
+    expect(moduleMocks.getSnapshotTipSetKey).toHaveBeenCalledTimes(1);
+    expect(moduleMocks.loadActorState).toHaveBeenCalledWith(
+      expect.objectContaining({
+        address: MULTISIG_A,
+        tipSetKey: SNAPSHOT_TIPSET_KEY,
+      }),
+    );
+    expect(moduleMocks.loadPendingProposals).toHaveBeenCalledWith(
+      expect.objectContaining({
+        multisig: expect.objectContaining({ address: MULTISIG_A }),
+        tipSetKey: SNAPSHOT_TIPSET_KEY,
+      }),
+    );
+  });
+
+  it('acquires a fresh shared snapshot for every manual refresh', async () => {
+    moduleMocks.getSnapshotTipSetKey
+      .mockResolvedValueOnce(SNAPSHOT_TIPSET_KEY)
+      .mockResolvedValueOnce(REFRESH_SNAPSHOT_TIPSET_KEY)
+      .mockResolvedValueOnce(SECOND_REFRESH_SNAPSHOT_TIPSET_KEY);
+    moduleMocks.loadActorState.mockResolvedValue(createActorState(MULTISIG_A));
+    moduleMocks.loadPendingProposals.mockResolvedValue([createProposal()]);
+
+    act(() => {
+      latestHook!.selectMultisig(MULTISIG_A);
+    });
+    await flushAsyncWork();
+
+    await act(async () => {
+      await latestHook!.refreshSelected();
+    });
+    await act(async () => {
+      await latestHook!.refreshSelected();
+    });
+
+    expect(moduleMocks.getSnapshotTipSetKey).toHaveBeenCalledTimes(3);
+    expect(
+      moduleMocks.loadActorState.mock.calls.map(([options]) => options.tipSetKey),
+    ).toEqual([
+      SNAPSHOT_TIPSET_KEY,
+      REFRESH_SNAPSHOT_TIPSET_KEY,
+      SECOND_REFRESH_SNAPSHOT_TIPSET_KEY,
+    ]);
+    expect(
+      moduleMocks.loadPendingProposals.mock.calls.map(([options]) => options.tipSetKey),
+    ).toEqual([
+      SNAPSHOT_TIPSET_KEY,
+      REFRESH_SNAPSHOT_TIPSET_KEY,
+      SECOND_REFRESH_SNAPSHOT_TIPSET_KEY,
+    ]);
   });
 
   it('does not let a late actor A response overwrite a loaded actor B', async () => {
@@ -1510,6 +1583,10 @@ describe('useMultisigs selection lifecycle', () => {
       canApprove: false,
     };
     const provider = createProvider();
+    moduleMocks.getSnapshotTipSetKey
+      .mockResolvedValueOnce(SNAPSHOT_TIPSET_KEY)
+      .mockResolvedValueOnce(REFRESH_SNAPSHOT_TIPSET_KEY)
+      .mockResolvedValueOnce(SECOND_REFRESH_SNAPSHOT_TIPSET_KEY);
     moduleMocks.loadActorState.mockResolvedValue(
       createActorState(MULTISIG_A, SIGNER_A, {
         threshold: 3,
@@ -1568,6 +1645,20 @@ describe('useMultisigs selection lifecycle', () => {
     });
     expect(moduleMocks.loadActorState).toHaveBeenCalledTimes(3);
     expect(moduleMocks.loadPendingProposals).toHaveBeenCalledTimes(3);
+    expect(
+      moduleMocks.loadActorState.mock.calls.map(([options]) => options.tipSetKey),
+    ).toEqual([
+      SNAPSHOT_TIPSET_KEY,
+      REFRESH_SNAPSHOT_TIPSET_KEY,
+      SECOND_REFRESH_SNAPSHOT_TIPSET_KEY,
+    ]);
+    expect(
+      moduleMocks.loadPendingProposals.mock.calls.map(([options]) => options.tipSetKey),
+    ).toEqual([
+      SNAPSHOT_TIPSET_KEY,
+      REFRESH_SNAPSHOT_TIPSET_KEY,
+      SECOND_REFRESH_SNAPSHOT_TIPSET_KEY,
+    ]);
     expect(latestHook?.pendingProposals[0]).toMatchObject({
       id: proposal.id,
       connectedSignerHasApproved: true,

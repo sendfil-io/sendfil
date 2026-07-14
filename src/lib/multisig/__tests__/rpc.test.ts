@@ -11,6 +11,7 @@ import { buildMulticallBatch } from '../../transaction/multicall';
 import { toF4 } from '../../../utils/toF4';
 import type { MultisigRpc } from '../rpc';
 import {
+  getMultisigSnapshotTipSetKey,
   getCurrentMultisigActorCodeCid,
   loadMultisigActorState,
   loadMultisigPendingProposals,
@@ -37,9 +38,13 @@ const MULTISIG_CODE =
 const MANIFEST_CID = 'bafy2bzaceb22zyxdtqlmveumv7qibp6ncrwmfuskzldj2qiudmvn7bfeeaur6';
 const TEST_MANIFEST_BASE64 =
   'gYJobXVsdGlzaWfYKlgnAAFVoOQCII8ZBt7rkhVOPtysmnTf1/pV7XdiGxz8YGR4wnrQ8VN2';
+const HEAD_CID = 'bafy2bzacebcodbmrjkfrr63lms3wevg2nmceh2666bd3x76lwtsa7iygj7beo';
+const OTHER_HEAD_CID = 'bafy2bzacebpekbxp7qyk4xx5r7es3t77sqcgdq5c7osfow4ayvbyyafwl4sxk';
+const HEAD_TIPSET_KEY = [{ '/': HEAD_CID }] as const;
 
 function createRpc(): MultisigRpc {
   return {
+    getChainHead: vi.fn(async () => ({ Cids: HEAD_TIPSET_KEY, Height: 5_000_000 })),
     readState: vi.fn(async (address: string) =>
       address === 'f00' || address === 't00'
         ? {
@@ -93,8 +98,147 @@ describe('multisig RPC helpers', () => {
     await expect(getCurrentMultisigActorCodeCid('calibration', rpc)).resolves.toBe(
       MULTISIG_CODE,
     );
-    expect(rpc.readState).toHaveBeenCalledWith('t00', 'calibration');
+    expect(rpc.readState).toHaveBeenCalledWith('t00', 'calibration', HEAD_TIPSET_KEY);
     expect(rpc.readObject).toHaveBeenCalledWith({ '/': MANIFEST_CID }, 'calibration');
+  });
+
+  it('pins actor, balance, manifest, vesting, and signer reads to one validated chain head', async () => {
+    const rpc = createRpc();
+    rpc.getChainHead = vi.fn(async () => ({ Cids: HEAD_TIPSET_KEY, Height: 5_000_000 }));
+
+    await expect(
+      loadMultisigActorState({
+        address: MULTISIG_T2,
+        connectedSignerAddress: SIGNER_T1,
+        networkKey: 'calibration',
+        rpc,
+      }),
+    ).resolves.toMatchObject({
+      idAddress: MULTISIG_T0,
+      availableBalanceAttoFil: 2000n,
+    });
+
+    expect(rpc.getChainHead).toHaveBeenCalledTimes(1);
+    expect(rpc.lookupID).toHaveBeenCalledWith(
+      MULTISIG_T2,
+      'calibration',
+      HEAD_TIPSET_KEY,
+    );
+    expect(rpc.readState).toHaveBeenCalledWith(
+      MULTISIG_T0,
+      'calibration',
+      HEAD_TIPSET_KEY,
+    );
+    expect(rpc.readState).toHaveBeenCalledWith('t00', 'calibration', HEAD_TIPSET_KEY);
+    expect(rpc.getAvailableBalance).toHaveBeenCalledWith(
+      MULTISIG_T0,
+      'calibration',
+      HEAD_TIPSET_KEY,
+    );
+    expect(rpc.getVestingSchedule).toHaveBeenCalledWith(
+      MULTISIG_T0,
+      'calibration',
+      HEAD_TIPSET_KEY,
+    );
+    expect(rpc.lookupID).toHaveBeenCalledWith(
+      SIGNER_T1,
+      'calibration',
+      HEAD_TIPSET_KEY,
+    );
+  });
+
+  it('shares an explicitly acquired chain head across actor and pending reads', async () => {
+    const rpc = createRpc();
+    rpc.getChainHead = vi.fn(async () => ({ Cids: HEAD_TIPSET_KEY, Height: 5_000_000 }));
+    const tipSetKey = await getMultisigSnapshotTipSetKey('calibration', rpc);
+    const multisig = await loadMultisigActorState({
+      address: MULTISIG_T2,
+      connectedSignerAddress: SIGNER_T1,
+      networkKey: 'calibration',
+      rpc,
+      tipSetKey,
+    });
+
+    await expect(
+      loadMultisigPendingProposals({
+        multisig,
+        network: getNetworkConfig('calibration'),
+        connectedSignerAddress: SIGNER_T1,
+        rpc,
+        tipSetKey,
+      }),
+    ).resolves.toEqual([]);
+
+    expect(rpc.getChainHead).toHaveBeenCalledTimes(1);
+    expect(rpc.getPending).toHaveBeenCalledWith(
+      MULTISIG_T0,
+      'calibration',
+      HEAD_TIPSET_KEY,
+    );
+  });
+
+  it('acquires a fresh chain head for each independent multisig snapshot', async () => {
+    const rpc = createRpc();
+    rpc.getChainHead = vi
+      .fn()
+      .mockResolvedValueOnce({ Cids: HEAD_TIPSET_KEY, Height: 5_000_000 })
+      .mockResolvedValueOnce({ Cids: [{ '/': OTHER_HEAD_CID }], Height: 5_000_001 });
+
+    await expect(getMultisigSnapshotTipSetKey('calibration', rpc)).resolves.toEqual(
+      HEAD_TIPSET_KEY,
+    );
+    await expect(getMultisigSnapshotTipSetKey('calibration', rpc)).resolves.toEqual([
+      { '/': OTHER_HEAD_CID },
+    ]);
+    expect(rpc.getChainHead).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    ['missing CID list', { Height: 5_000_000 }],
+    ['empty CID list', { Cids: [], Height: 5_000_000 }],
+    ['malformed CID', { Cids: [{ '/': 'bafy-not-a-cid' }], Height: 5_000_000 }],
+    [
+      'duplicate CID',
+      { Cids: [{ '/': HEAD_CID }, { '/': HEAD_CID }], Height: 5_000_000 },
+    ],
+    ['unsafe height', { Cids: HEAD_TIPSET_KEY, Height: Number.MAX_SAFE_INTEGER + 1 }],
+  ])('rejects a %s chain head before reading actor state', async (_label, chainHead) => {
+    const rpc = createRpc();
+    rpc.getChainHead = vi.fn(async () => chainHead);
+
+    await expect(
+      loadMultisigActorState({
+        address: MULTISIG_T2,
+        networkKey: 'calibration',
+        rpc,
+      }),
+    ).rejects.toThrow(/chain head|duplicate block CID/i);
+    expect(rpc.lookupID).not.toHaveBeenCalled();
+    expect(rpc.readState).not.toHaveBeenCalled();
+  });
+
+  it('avoids the empty-head GLIF failure by supplying the pinned tipset key', async () => {
+    const rpc = createRpc();
+    rpc.getChainHead = vi.fn(async () => ({ Cids: HEAD_TIPSET_KEY, Height: 5_000_000 }));
+    vi.mocked(rpc.getAvailableBalance).mockImplementation(
+      async (_address, _networkKey, tipSetKey) => {
+        if (!tipSetKey || tipSetKey.length === 0) {
+          throw new Error(
+            'RPC error (-32603): Failed to load actor with addr=t01000, state_cid=bafy-stale',
+          );
+        }
+
+        return 2000n;
+      },
+    );
+
+    await expect(
+      loadMultisigActorState({
+        address: MULTISIG_T2,
+        networkKey: 'calibration',
+        rpc,
+      }),
+    ).resolves.toMatchObject({ availableBalanceAttoFil: 2000n });
   });
 
   it('rejects malformed eth_getCode payloads instead of treating them as EOAs', () => {
@@ -121,9 +265,21 @@ describe('multisig RPC helpers', () => {
     expect(state.lockedBalanceAttoFil).toBe(1000n);
     expect(state.idAddress).toBe(MULTISIG_T0);
     expect(state.robustAddress).toBe(MULTISIG_T2);
-    expect(rpc.readState).toHaveBeenCalledWith(MULTISIG_T0, 'calibration');
-    expect(rpc.getAvailableBalance).toHaveBeenCalledWith(MULTISIG_T0, 'calibration');
-    expect(rpc.getVestingSchedule).toHaveBeenCalledWith(MULTISIG_T0, 'calibration');
+    expect(rpc.readState).toHaveBeenCalledWith(
+      MULTISIG_T0,
+      'calibration',
+      HEAD_TIPSET_KEY,
+    );
+    expect(rpc.getAvailableBalance).toHaveBeenCalledWith(
+      MULTISIG_T0,
+      'calibration',
+      HEAD_TIPSET_KEY,
+    );
+    expect(rpc.getVestingSchedule).toHaveBeenCalledWith(
+      MULTISIG_T0,
+      'calibration',
+      HEAD_TIPSET_KEY,
+    );
   });
 
   it('loads a new multisig through its ID address when robust actor reads fail', async () => {
@@ -315,6 +471,7 @@ describe('multisig RPC helpers', () => {
       network,
       connectedSignerAddress: SIGNER_T1,
       rpc,
+      tipSetKey: HEAD_TIPSET_KEY,
     });
 
     expect(proposals[0]?.isSendFilCompatible).toBe(true);
@@ -328,7 +485,21 @@ describe('multisig RPC helpers', () => {
     });
     expect(proposals[1]?.isSendFilCompatible).toBe(false);
     expect(proposals[1]?.canApprove).toBe(false);
-    expect(rpc.getPending).toHaveBeenCalledWith(MULTISIG_T0, 'calibration');
+    expect(rpc.getPending).toHaveBeenCalledWith(
+      MULTISIG_T0,
+      'calibration',
+      HEAD_TIPSET_KEY,
+    );
+    const pendingIdentityLookups = vi
+      .mocked(rpc.lookupID)
+      .mock.calls.filter(([address]) => address === 't01002');
+    expect(pendingIdentityLookups).toHaveLength(3);
+    expect(
+      pendingIdentityLookups.every(
+        ([, networkKey, tipSetKey]) =>
+          networkKey === 'calibration' && tipSetKey === HEAD_TIPSET_KEY,
+      ),
+    ).toBe(true);
   });
 
   it('isolates malformed delegated proposals without hiding safe siblings', async () => {
@@ -382,6 +553,7 @@ describe('multisig RPC helpers', () => {
       network,
       connectedSignerAddress: SIGNER_T1,
       rpc,
+      tipSetKey: HEAD_TIPSET_KEY,
     });
 
     expect(proposals).toHaveLength(3);
@@ -434,6 +606,7 @@ describe('multisig RPC helpers', () => {
       network,
       connectedSignerAddress: SIGNER_T1,
       rpc,
+      tipSetKey: HEAD_TIPSET_KEY,
     });
 
     expect(proposal).toMatchObject({
@@ -483,6 +656,7 @@ describe('multisig RPC helpers', () => {
       network,
       connectedSignerAddress: SIGNER_T1,
       rpc,
+      tipSetKey: HEAD_TIPSET_KEY,
     });
 
     expect(proposal).toMatchObject({
@@ -530,6 +704,7 @@ describe('multisig RPC helpers', () => {
       network,
       connectedSignerAddress: SIGNER_T1,
       rpc,
+      tipSetKey: HEAD_TIPSET_KEY,
     });
 
     expect(proposal).toMatchObject({

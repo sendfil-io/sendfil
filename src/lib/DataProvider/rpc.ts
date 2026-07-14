@@ -76,11 +76,21 @@ function isMethodNotFound(code: number): boolean {
 }
 
 const LOAD_BALANCED_STATE_READ_METHODS = new Set([
+  'Filecoin.ChainHead',
+  'Filecoin.ChainReadObj',
   'Filecoin.StateGetActor',
   'Filecoin.StateLookupID',
   'Filecoin.StateLookupRobustAddress',
   'Filecoin.StateReadState',
   'Filecoin.StateSearchMsg',
+  'Filecoin.MsigGetAvailableBalance',
+  'Filecoin.MsigGetPending',
+  'Filecoin.MsigGetVestingSchedule',
+]);
+
+const ACTOR_STATE_READ_METHODS = new Set([
+  'Filecoin.StateLookupID',
+  'Filecoin.StateReadState',
   'Filecoin.MsigGetAvailableBalance',
   'Filecoin.MsigGetPending',
   'Filecoin.MsigGetVestingSchedule',
@@ -103,7 +113,7 @@ function isTransientStateAvailabilityError(method: string, message: string): boo
     /failed to load actor\b.*\bstate_cid=/i.test(message) ||
     /no state tree exists for (?:the )?root/i.test(message) ||
     /failed to load message\b/i.test(message) ||
-    ((method === 'Filecoin.StateLookupID' || method === 'Filecoin.StateReadState') &&
+    (ACTOR_STATE_READ_METHODS.has(method) &&
       /(?:actor not found|failed to lookup the id address)\b/i.test(message))
   );
 }
@@ -370,13 +380,14 @@ function combineAttemptErrors(
 export function getRpcConfig(
   networkKey: SendFilNetworkKey = getDefaultNetworkKey(),
 ) {
-  const { primary, fallback, timeout } = resolveLotusRpcConfig(networkKey);
+  const { primary, fallback, stateReadFallback, timeout } =
+    resolveLotusRpcConfig(networkKey);
 
   if (!primary) {
     throw new Error(`Missing Lotus RPC configuration for ${networkKey}`);
   }
 
-  return { primary, fallback, timeout };
+  return { primary, fallback, stateReadFallback, timeout };
 }
 
 export async function callRpc<T = unknown>(
@@ -384,13 +395,28 @@ export async function callRpc<T = unknown>(
   params: unknown[] = [],
   networkKey: SendFilNetworkKey = getDefaultNetworkKey(),
 ): Promise<T> {
-  const { primary, fallback, timeout } = getRpcConfig(networkKey);
-  const endpoints: Array<{ url: string; endpointRole: RpcEndpointRole }> = [
-    { url: primary, endpointRole: 'primary' },
-  ];
+  const { primary, fallback, stateReadFallback, timeout } = getRpcConfig(networkKey);
+  const endpoints: Array<{ url: string; endpointRole: RpcEndpointRole }> = [];
+  const normalizedEndpoints = new Set<string>();
+  const addEndpoint = (url: string | undefined, endpointRole: RpcEndpointRole) => {
+    if (!url) {
+      return;
+    }
 
-  if (fallback && normalizeEndpoint(fallback) !== normalizeEndpoint(primary)) {
-    endpoints.push({ url: fallback, endpointRole: 'fallback' });
+    const normalized = normalizeEndpoint(url);
+    if (normalizedEndpoints.has(normalized)) {
+      return;
+    }
+
+    normalizedEndpoints.add(normalized);
+    endpoints.push({ url, endpointRole });
+  };
+
+  addEndpoint(primary, 'primary');
+  addEndpoint(fallback, 'fallback');
+
+  if (LOAD_BALANCED_STATE_READ_METHODS.has(method)) {
+    addEndpoint(stateReadFallback, 'state-read-fallback');
   }
 
   const errors: RpcProviderError[] = [];

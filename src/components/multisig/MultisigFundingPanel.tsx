@@ -978,10 +978,12 @@ export function MultisigFundingPanel({
                 role="alert"
               >
                 <p className="text-sm font-medium">
-                  SendFIL could not load this multisig's current details.
+                  {selectedSavedMultisig
+                    ? 'This multisig is saved, but SendFIL could not refresh its current details.'
+                    : "SendFIL could not load this multisig's current details."}
                 </p>
                 <p className="mt-1 text-xs leading-5">
-                  The selected address is unchanged. Select Refresh to try again.
+                  No transaction was attempted. Select Refresh to try again.
                 </p>
                 <details className="mt-2 min-w-0 border-t border-amber-200/80 pt-2 text-xs">
                   <summary className="cursor-pointer font-semibold text-amber-800">

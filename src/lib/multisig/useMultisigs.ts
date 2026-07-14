@@ -23,6 +23,7 @@ import {
   filStringToAttoFil,
 } from './actorParams';
 import {
+  getMultisigSnapshotTipSetKey,
   loadMultisigActorState,
   loadMultisigPendingProposals,
   lotusMultisigRpc,
@@ -727,11 +728,13 @@ export function useMultisigs({
       selectionRequestSequence.current === requestId && selectedIdentityRef.current === identity;
 
     try {
+      const tipSetKey = await getMultisigSnapshotTipSetKey(network.key, multisigRpc);
       const actorState = await loadMultisigActorState({
         address: selectedAddress,
         connectedSignerAddress: sender?.address,
         networkKey: network.key,
         rpc: multisigRpc,
+        tipSetKey,
       });
 
       if (!isCurrentRequest()) {
@@ -743,6 +746,7 @@ export function useMultisigs({
         network,
         connectedSignerAddress: sender?.address,
         rpc: multisigRpc,
+        tipSetKey,
       });
 
       if (!isCurrentRequest()) {
@@ -1603,11 +1607,13 @@ export function useMultisigs({
 
       try {
         const nativeProvider = getNativeExecutionProvider(provider);
+        const tipSetKey = await getMultisigSnapshotTipSetKey(network.key, multisigRpc);
         const freshMultisig = await loadMultisigActorState({
           address: selectedMultisig.address,
           connectedSignerAddress: sender.address,
           networkKey: network.key,
           rpc: multisigRpc,
+          tipSetKey,
         });
 
         if (
@@ -1624,6 +1630,7 @@ export function useMultisigs({
           network,
           connectedSignerAddress: sender.address,
           rpc: multisigRpc,
+          tipSetKey,
         });
         const freshProposal = freshProposals.find((candidate) => candidate.id === proposal.id);
 

@@ -1186,9 +1186,11 @@ describe('MultisigFundingPanel interactions', () => {
 
     expect(detailsSection.textContent).toContain('Selected multisig details');
     expect(alert.className).toContain('border-amber-200');
-    expect(alert.textContent).toContain("SendFIL could not load this multisig's current details.");
     expect(alert.textContent).toContain(
-      'The selected address is unchanged. Select Refresh to try again.',
+      'This multisig is saved, but SendFIL could not refresh its current details.',
+    );
+    expect(alert.textContent).toContain(
+      'No transaction was attempted. Select Refresh to try again.',
     );
     expect(technicalDetails.open).toBe(false);
     expect(technicalCopy.textContent).toBe(selectedError);

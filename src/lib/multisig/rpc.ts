@@ -1,5 +1,6 @@
 import { CoinType, Protocol, newFromString } from '@glif/filecoin-address';
 import { callRpc } from '../DataProvider/rpc';
+import { isCanonicalFilecoinDagCborCid } from '../DataProvider/filecoinMessageCid';
 import type { FilecoinMessage } from '../DataProvider/types';
 import type { SendFilNetworkKey } from '../networks';
 import { validateNoEvmContractRecipients } from '../../utils/contractRecipientGuard';
@@ -21,6 +22,8 @@ export interface LotusCid {
   '/': string;
 }
 
+export type LotusTipSetKey = readonly [LotusCid, ...LotusCid[]];
+
 export interface LotusActorState {
   Balance: string;
   Code?: LotusCid;
@@ -40,16 +43,31 @@ export interface LotusPendingTransaction {
 }
 
 export interface MultisigRpc {
-  readState: (address: string, networkKey: SendFilNetworkKey) => Promise<LotusActorState>;
-  lookupID: (address: string, networkKey: SendFilNetworkKey) => Promise<string>;
-  getAvailableBalance: (address: string, networkKey: SendFilNetworkKey) => Promise<bigint>;
+  getChainHead: (networkKey: SendFilNetworkKey) => Promise<unknown>;
+  readState: (
+    address: string,
+    networkKey: SendFilNetworkKey,
+    tipSetKey: LotusTipSetKey,
+  ) => Promise<LotusActorState>;
+  lookupID: (
+    address: string,
+    networkKey: SendFilNetworkKey,
+    tipSetKey: LotusTipSetKey,
+  ) => Promise<string>;
+  getAvailableBalance: (
+    address: string,
+    networkKey: SendFilNetworkKey,
+    tipSetKey: LotusTipSetKey,
+  ) => Promise<bigint>;
   getVestingSchedule: (
     address: string,
     networkKey: SendFilNetworkKey,
+    tipSetKey: LotusTipSetKey,
   ) => Promise<MultisigVestingSchedule | undefined>;
   getPending: (
     address: string,
     networkKey: SendFilNetworkKey,
+    tipSetKey: LotusTipSetKey,
   ) => Promise<LotusPendingTransaction[]>;
   readObject: (cid: LotusCid, networkKey: SendFilNetworkKey) => Promise<string>;
   estimateGas: (
@@ -71,23 +89,38 @@ export function parseEvmCodeResult(value: unknown): `0x${string}` {
 }
 
 export const lotusMultisigRpc: MultisigRpc = {
-  readState: (address, networkKey) =>
-    callRpc<LotusActorState>('Filecoin.StateReadState', [address, []], networkKey),
-  lookupID: (address, networkKey) =>
-    callRpc<string>('Filecoin.StateLookupID', [address, []], networkKey),
-  getAvailableBalance: async (address, networkKey) =>
-    BigInt(await callRpc<string>('Filecoin.MsigGetAvailableBalance', [address, []], networkKey)),
-  getVestingSchedule: async (address, networkKey) => {
+  getChainHead: (networkKey) => callRpc<unknown>('Filecoin.ChainHead', [], networkKey),
+  readState: (address, networkKey, tipSetKey) =>
+    callRpc<LotusActorState>(
+      'Filecoin.StateReadState',
+      [address, tipSetKey],
+      networkKey,
+    ),
+  lookupID: (address, networkKey, tipSetKey) =>
+    callRpc<string>('Filecoin.StateLookupID', [address, tipSetKey], networkKey),
+  getAvailableBalance: async (address, networkKey, tipSetKey) =>
+    BigInt(
+      await callRpc<string>(
+        'Filecoin.MsigGetAvailableBalance',
+        [address, tipSetKey],
+        networkKey,
+      ),
+    ),
+  getVestingSchedule: async (address, networkKey, tipSetKey) => {
     const raw = await callRpc<unknown>(
       'Filecoin.MsigGetVestingSchedule',
-      [address, []],
+      [address, tipSetKey],
       networkKey,
     );
 
     return normalizeVestingSchedule(raw);
   },
-  getPending: (address, networkKey) =>
-    callRpc<LotusPendingTransaction[]>('Filecoin.MsigGetPending', [address, []], networkKey),
+  getPending: (address, networkKey, tipSetKey) =>
+    callRpc<LotusPendingTransaction[]>(
+      'Filecoin.MsigGetPending',
+      [address, tipSetKey],
+      networkKey,
+    ),
   readObject: (cid, networkKey) =>
     callRpc<string>('Filecoin.ChainReadObj', [cid], networkKey),
   estimateGas: (message, networkKey) =>
@@ -110,6 +143,47 @@ function asString(value: unknown): string | undefined {
 
 function asNumber(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function normalizeChainHeadTipSetKey(raw: unknown): LotusTipSetKey {
+  if (!isRecord(raw) || !Array.isArray(raw.Cids)) {
+    throw new Error('Lotus returned a malformed chain head for the multisig snapshot.');
+  }
+
+  const height = raw.Height;
+  if (!Number.isSafeInteger(height) || (height as number) < 0 || raw.Cids.length === 0) {
+    throw new Error('Lotus returned a malformed chain head for the multisig snapshot.');
+  }
+
+  const seen = new Set<string>();
+  const tipSetKey = raw.Cids.map((value) => {
+    if (!isRecord(value) || !isCanonicalFilecoinDagCborCid(value['/'])) {
+      throw new Error('Lotus returned a malformed chain head for the multisig snapshot.');
+    }
+
+    const cid = value['/'];
+    if (seen.has(cid)) {
+      throw new Error('Lotus returned a duplicate block CID in the multisig snapshot.');
+    }
+
+    seen.add(cid);
+    return { '/': cid };
+  });
+
+  const [firstCid, ...remainingCids] = tipSetKey;
+
+  if (!firstCid) {
+    throw new Error('Lotus returned a malformed chain head for the multisig snapshot.');
+  }
+
+  return [firstCid, ...remainingCids];
+}
+
+export async function getMultisigSnapshotTipSetKey(
+  networkKey: SendFilNetworkKey,
+  rpc: MultisigRpc = lotusMultisigRpc,
+): Promise<LotusTipSetKey> {
+  return normalizeChainHeadTipSetKey(await rpc.getChainHead(networkKey));
 }
 
 function asStringArray(value: unknown): string[] | undefined {
@@ -233,8 +307,15 @@ function validateNativeActorIdAddress(
 export async function getCurrentMultisigActorCodeCid(
   networkKey: SendFilNetworkKey,
   rpc: MultisigRpc = lotusMultisigRpc,
+  tipSetKey?: LotusTipSetKey,
 ): Promise<string> {
-  const systemActorState = await rpc.readState(getSystemActorAddress(networkKey), networkKey);
+  const snapshotTipSetKey =
+    tipSetKey ?? (await getMultisigSnapshotTipSetKey(networkKey, rpc));
+  const systemActorState = await rpc.readState(
+    getSystemActorAddress(networkKey),
+    networkKey,
+    snapshotTipSetKey,
+  );
   const manifestCid = getBuiltinActorsManifestCid(systemActorState);
   const manifestBase64 = await rpc.readObject({ '/': manifestCid }, networkKey);
 
@@ -246,21 +327,27 @@ export async function loadMultisigActorState({
   connectedSignerAddress,
   networkKey,
   rpc = lotusMultisigRpc,
+  tipSetKey,
 }: {
   address: string;
   connectedSignerAddress?: string;
   networkKey: SendFilNetworkKey;
   rpc?: MultisigRpc;
+  tipSetKey?: LotusTipSetKey;
 }): Promise<MultisigActorState> {
   const multisigAddress = validateNativeMultisigAddress(address, networkKey);
+  const snapshotTipSetKey =
+    tipSetKey ?? (await getMultisigSnapshotTipSetKey(networkKey, rpc));
+  const lookupID = (value: string) =>
+    rpc.lookupID(value, networkKey, snapshotTipSetKey);
   const idAddress = validateNativeActorIdAddress(
-    await rpc.lookupID(multisigAddress, networkKey),
+    await lookupID(multisigAddress),
     networkKey,
   );
   const [actorState, availableBalance, multisigCodeCid] = await Promise.all([
-    rpc.readState(idAddress, networkKey),
-    rpc.getAvailableBalance(idAddress, networkKey),
-    getCurrentMultisigActorCodeCid(networkKey, rpc),
+    rpc.readState(idAddress, networkKey, snapshotTipSetKey),
+    rpc.getAvailableBalance(idAddress, networkKey, snapshotTipSetKey),
+    getCurrentMultisigActorCodeCid(networkKey, rpc, snapshotTipSetKey),
   ]);
   const balance = asNonNegativeBigInt(actorState.Balance);
   const decodedState = getDecodedState(actorState.State);
@@ -289,10 +376,12 @@ export async function loadMultisigActorState({
   }
 
   const [vesting, signerIdLookups, connectedSignerIdAddress] = await Promise.all([
-    rpc.getVestingSchedule(idAddress, networkKey).catch(() => undefined),
-    Promise.all(signers.map((signer) => rpc.lookupID(signer, networkKey).catch(() => signer))),
+    rpc
+      .getVestingSchedule(idAddress, networkKey, snapshotTipSetKey)
+      .catch(() => undefined),
+    Promise.all(signers.map((signer) => lookupID(signer).catch(() => signer))),
     connectedSignerAddress
-      ? rpc.lookupID(connectedSignerAddress, networkKey).catch(() => undefined)
+      ? lookupID(connectedSignerAddress).catch(() => undefined)
       : Promise.resolve(undefined),
   ]);
   const connectedSignerCanApprove = Boolean(
@@ -339,23 +428,27 @@ export async function loadMultisigPendingProposals({
   network,
   connectedSignerAddress,
   rpc = lotusMultisigRpc,
+  tipSetKey,
 }: {
   multisig: MultisigActorState;
   network: import('../networks').SendFilNetworkConfig;
   connectedSignerAddress?: string;
   rpc?: MultisigRpc;
+  tipSetKey: LotusTipSetKey;
 }): Promise<MultisigPendingProposal[]> {
+  const lookupID = (value: string) =>
+    rpc.lookupID(value, multisig.networkKey, tipSetKey);
   const idAddress = multisig.idAddress
     ? validateNativeActorIdAddress(multisig.idAddress, multisig.networkKey)
     : validateNativeActorIdAddress(
-        await rpc.lookupID(multisig.address, multisig.networkKey),
+        await lookupID(multisig.address),
         multisig.networkKey,
       );
-  const pending = await rpc.getPending(idAddress, multisig.networkKey);
+  const pending = await rpc.getPending(idAddress, multisig.networkKey, tipSetKey);
   const connectedSignerIdAddress =
     multisig.connectedSignerIdAddress ??
     (connectedSignerAddress
-      ? await rpc.lookupID(connectedSignerAddress, multisig.networkKey).catch(() => undefined)
+      ? await lookupID(connectedSignerAddress).catch(() => undefined)
       : undefined);
   const evmCodeRequests = new Map<`0x${string}`, Promise<`0x${string}` | undefined>>();
   const getEvmCode = rpc.getEvmCode;
@@ -381,12 +474,12 @@ export async function loadMultisigPendingProposals({
       const approvals = parsedApprovals ?? [];
       const approvalIdAddresses = await Promise.all(
         approvals.map((approval) =>
-          rpc.lookupID(approval, multisig.networkKey).catch(() => approval),
+          lookupID(approval).catch(() => approval),
         ),
       );
       const proposer = asString(proposal.Proposer) ?? approvals[0] ?? '';
       const proposerIdAddress = proposer
-        ? await rpc.lookupID(proposer, multisig.networkKey).catch(() => undefined)
+        ? await lookupID(proposer).catch(() => undefined)
         : undefined;
       const proposalId = parsePendingId(proposal.ID ?? proposal.TxnID);
       const to = asString(proposal.To) ?? '';
