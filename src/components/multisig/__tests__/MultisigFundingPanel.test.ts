@@ -10,7 +10,9 @@ const multisig: MultisigActorState = {
   threshold: 2,
   signers: ['t1signer-a', 't1signer-b', 't1signer-c'],
   signerIdAddresses: ['t01001', 't01002', 't01003'],
+  signerIdentityStatusKnown: true,
   connectedSignerIdAddress: 't01002',
+  connectedSignerMembershipKnown: true,
   connectedSignerCanApprove: true,
 };
 
@@ -25,6 +27,7 @@ const proposal: MultisigPendingProposal = {
   paramsBytes: new Uint8Array(),
   approvals: ['t01001'],
   approvalIdAddresses: ['t01001'],
+  approvalStatusKnown: true,
   connectedSignerHasApproved: false,
   isSendFilCompatible: true,
   canApprove: true,

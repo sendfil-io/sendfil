@@ -260,6 +260,8 @@ describe('multisig RPC helpers', () => {
     });
 
     expect(state.connectedSignerIdAddress).toBe('t01001');
+    expect(state.signerIdentityStatusKnown).toBe(true);
+    expect(state.connectedSignerMembershipKnown).toBe(true);
     expect(state.connectedSignerCanApprove).toBe(true);
     expect(state.availableBalanceAttoFil).toBe(2000n);
     expect(state.lockedBalanceAttoFil).toBe(1000n);
@@ -280,6 +282,96 @@ describe('multisig RPC helpers', () => {
       'calibration',
       HEAD_TIPSET_KEY,
     );
+  });
+
+  it('recognizes a connected signer by its exact robust address when signer ID lookup fails', async () => {
+    const rpc = createRpc();
+    vi.mocked(rpc.readState).mockImplementation(async (address: string) =>
+      address === 't00'
+        ? {
+            Balance: '0',
+            State: { BuiltinActors: { '/': MANIFEST_CID } },
+          }
+        : {
+            Balance: '3000',
+            Code: { '/': MULTISIG_CODE },
+            State: {
+              Signers: [SIGNER_T1],
+              NumApprovalsThreshold: 1,
+            },
+          },
+    );
+    let signerLookupCount = 0;
+    vi.mocked(rpc.lookupID).mockImplementation(async (address: string) => {
+      if (address === MULTISIG_T2) {
+        return MULTISIG_T0;
+      }
+
+      if (address === SIGNER_T1) {
+        signerLookupCount += 1;
+        if (signerLookupCount === 1) {
+          throw new Error('temporary signer lookup failure');
+        }
+
+        return 't01001';
+      }
+
+      return address;
+    });
+
+    const state = await loadMultisigActorState({
+      address: MULTISIG_T2,
+      connectedSignerAddress: SIGNER_T1,
+      networkKey: 'calibration',
+      rpc,
+    });
+
+    expect(state.signerIdAddresses).toEqual([SIGNER_T1]);
+    expect(state.signerIdentityStatusKnown).toBe(false);
+    expect(state.connectedSignerMembershipKnown).toBe(true);
+    expect(state.connectedSignerCanApprove).toBe(true);
+  });
+
+  it('marks non-membership unknown when any unmatched signer identity cannot be resolved', async () => {
+    const rpc = createRpc();
+    const unresolvedSigner = 't1unresolved-signer';
+    vi.mocked(rpc.readState).mockImplementation(async (address: string) =>
+      address === 't00'
+        ? {
+            Balance: '0',
+            State: { BuiltinActors: { '/': MANIFEST_CID } },
+          }
+        : {
+            Balance: '3000',
+            Code: { '/': MULTISIG_CODE },
+            State: {
+              Signers: [unresolvedSigner],
+              NumApprovalsThreshold: 1,
+            },
+          },
+    );
+    vi.mocked(rpc.lookupID).mockImplementation(async (address: string) => {
+      if (address === MULTISIG_T2) {
+        return MULTISIG_T0;
+      }
+
+      if (address === unresolvedSigner) {
+        throw new Error('temporary signer lookup failure');
+      }
+
+      return address === SIGNER_T1 ? 't01001' : address;
+    });
+
+    const state = await loadMultisigActorState({
+      address: MULTISIG_T2,
+      connectedSignerAddress: SIGNER_T1,
+      networkKey: 'calibration',
+      rpc,
+    });
+
+    expect(state.signerIdentityStatusKnown).toBe(false);
+    expect(state.connectedSignerMembershipKnown).toBe(false);
+    expect(state.connectedSignerCanApprove).toBe(false);
   });
 
   it('loads a new multisig through its ID address when robust actor reads fail', async () => {
@@ -475,6 +567,7 @@ describe('multisig RPC helpers', () => {
     });
 
     expect(proposals[0]?.isSendFilCompatible).toBe(true);
+    expect(proposals[0]?.approvalStatusKnown).toBe(true);
     expect(proposals[0]?.canApprove).toBe(true);
     expect(proposals[0]?.proposalHash).toHaveLength(32);
     expect(proposals[0]?.decodedBatch).toMatchObject({
@@ -484,6 +577,7 @@ describe('multisig RPC helpers', () => {
       totalValueAttoFil: '100',
     });
     expect(proposals[1]?.isSendFilCompatible).toBe(false);
+    expect(proposals[1]?.approvalStatusKnown).toBe(true);
     expect(proposals[1]?.canApprove).toBe(false);
     expect(rpc.getPending).toHaveBeenCalledWith(
       MULTISIG_T0,
@@ -611,6 +705,7 @@ describe('multisig RPC helpers', () => {
 
     expect(proposal).toMatchObject({
       id: 12,
+      approvalStatusKnown: false,
       isSendFilCompatible: false,
       canApprove: false,
       canCancel: true,

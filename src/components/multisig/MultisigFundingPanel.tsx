@@ -53,6 +53,11 @@ interface ActionStatus {
   tone?: 'success' | 'warning';
 }
 
+interface ConnectedWalletStatus {
+  label: string;
+  tone: 'positive' | 'neutral' | 'warning';
+}
+
 function formatFilFromAtto(value?: bigint): string {
   if (value === undefined) {
     return 'Unavailable';
@@ -87,6 +92,23 @@ function truncateAddress(address: string): string {
   }
 
   return `${address.slice(0, 8)}...${address.slice(-6)}`;
+}
+
+function getConnectedWalletStatus(
+  connectedSigner: NativeFilecoinConnectedSender | undefined,
+  multisig: MultisigActorState,
+): ConnectedWalletStatus {
+  if (!connectedSigner) {
+    return { label: 'Not connected', tone: 'neutral' };
+  }
+
+  if (!multisig.connectedSignerMembershipKnown) {
+    return { label: 'Could not verify', tone: 'warning' };
+  }
+
+  return multisig.connectedSignerCanApprove
+    ? { label: 'Signer', tone: 'positive' }
+    : { label: 'Not a signer', tone: 'neutral' };
 }
 
 function createDefaultCreateValues(connectedSignerAddress?: string): CreateMultisigFormValues {
@@ -191,6 +213,12 @@ export function MultisigFundingPanel({
     (!network || selectedMultisig.networkKey === network.key)
       ? selectedMultisig
       : undefined;
+  const connectedWalletStatus = currentSelectedMultisig
+    ? getConnectedWalletStatus(connectedSigner, currentSelectedMultisig)
+    : undefined;
+  const currentlyLockedBalance = currentSelectedMultisig
+    ? currentSelectedMultisig.balanceAttoFil - currentSelectedMultisig.availableBalanceAttoFil
+    : undefined;
   const currentProposalAction =
     proposalActionState &&
     selectedAddress === proposalActionState.multisigAddress &&
@@ -943,9 +971,9 @@ export function MultisigFundingPanel({
           >
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
-                  Selected multisig details
-                </p>
+                <h4 className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                  Multisig overview
+                </h4>
                 {!selectedSavedMultisig && (
                   <>
                     <p className="mt-1 truncate text-sm font-semibold text-slate-950">
@@ -995,57 +1023,167 @@ export function MultisigFundingPanel({
                 </details>
               </div>
             ) : currentSelectedMultisig ? (
-              <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
-                <div>
-                  <dt className="text-slate-500">Spendable</dt>
-                  <dd className="mt-0.5 font-semibold text-slate-900">
-                    {formatFilFromAtto(currentSelectedMultisig.availableBalanceAttoFil)}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-slate-500">Threshold</dt>
-                  <dd className="mt-0.5 font-semibold text-slate-900">
-                    {currentSelectedMultisig.threshold} / {currentSelectedMultisig.signers.length}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-slate-500">Balance</dt>
-                  <dd className="mt-0.5 font-semibold text-slate-900">
-                    {formatFilFromAtto(currentSelectedMultisig.balanceAttoFil)}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-slate-500">Signer</dt>
-                  <dd
-                    className={`mt-0.5 font-semibold ${
-                      currentSelectedMultisig.connectedSignerCanApprove
-                        ? 'text-emerald-700'
-                        : 'text-red-700'
-                    }`}
+              <>
+                <dl
+                  className="mt-3 divide-y divide-slate-200 border-y border-slate-200 text-xs"
+                  data-testid="selected-multisig-summary"
+                >
+                  <div className="flex items-center justify-between gap-3 py-2">
+                    <dt className="text-slate-500">Total balance</dt>
+                    <dd
+                      className="shrink-0 font-semibold tabular-nums text-slate-900"
+                      data-testid="multisig-total-balance"
+                    >
+                      {formatFilFromAtto(currentSelectedMultisig.balanceAttoFil)}
+                    </dd>
+                  </div>
+                  <div className="flex items-center justify-between gap-3 py-2">
+                    <dt className="text-slate-500">Available now</dt>
+                    <dd
+                      className="shrink-0 font-semibold tabular-nums text-slate-900"
+                      data-testid="multisig-available-balance"
+                    >
+                      {formatFilFromAtto(currentSelectedMultisig.availableBalanceAttoFil)}
+                    </dd>
+                  </div>
+                  {currentlyLockedBalance !== undefined && currentlyLockedBalance > 0n && (
+                    <div className="flex items-center justify-between gap-3 py-2">
+                      <dt className="text-slate-500">Locked by vesting</dt>
+                      <dd
+                        className="shrink-0 font-semibold tabular-nums text-slate-900"
+                        data-testid="multisig-locked-balance"
+                      >
+                        {formatFilFromAtto(currentlyLockedBalance)}
+                      </dd>
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between gap-3 py-2">
+                    <dt className="text-slate-500">Total signers</dt>
+                    <dd
+                      className="shrink-0 font-semibold tabular-nums text-slate-900"
+                      data-testid="multisig-total-signers"
+                    >
+                      {currentSelectedMultisig.signers.length}
+                    </dd>
+                  </div>
+                  <div className="flex items-center justify-between gap-3 py-2">
+                    <dt className="text-slate-500">Approvals required</dt>
+                    <dd
+                      className="shrink-0 font-semibold tabular-nums text-slate-900"
+                      data-testid="multisig-approval-threshold"
+                    >
+                      {currentSelectedMultisig.threshold}
+                    </dd>
+                  </div>
+                  <div className="flex items-center justify-between gap-3 py-2">
+                    <dt className="text-slate-500">Connected wallet</dt>
+                    <dd
+                      className={`shrink-0 font-semibold ${
+                        connectedWalletStatus?.tone === 'positive'
+                          ? 'text-emerald-700'
+                          : connectedWalletStatus?.tone === 'warning'
+                            ? 'text-amber-700'
+                            : 'text-slate-600'
+                      }`}
+                      data-testid="multisig-connected-wallet-status"
+                    >
+                      {connectedWalletStatus?.label}
+                    </dd>
+                  </div>
+                </dl>
+
+                <details className="mt-3 text-[11px] leading-4 text-slate-500">
+                  <summary className="cursor-pointer font-semibold text-[#124ac4]">
+                    What does available mean?
+                  </summary>
+                  <p className="mt-1.5">
+                    Available now is the unlocked portion of the total balance. FIL still locked by
+                    the multisig&apos;s vesting schedule is excluded. Pending proposals are not
+                    deducted from this number. The connected signer pays network gas separately.
+                  </p>
+                </details>
+
+                <details className="mt-3" data-testid="selected-multisig-signers">
+                  <summary className="cursor-pointer text-[11px] font-semibold text-[#124ac4]">
+                    View {currentSelectedMultisig.signers.length}{' '}
+                    {currentSelectedMultisig.signers.length === 1
+                      ? 'signer address'
+                      : 'signer addresses'}
+                  </summary>
+                  <ul
+                    className="mt-2 max-h-32 space-y-1.5 overflow-y-auto rounded-lg pr-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+                    aria-label={`Signer addresses for multisig ${currentSelectedMultisig.address}`}
+                    tabIndex={currentSelectedMultisig.signers.length > 4 ? 0 : undefined}
                   >
-                    {currentSelectedMultisig.connectedSignerCanApprove ? 'Member' : 'Not member'}
-                  </dd>
-                </div>
-              </dl>
+                    {currentSelectedMultisig.signers.map((signer, index) => {
+                      const signerIdAddress =
+                        currentSelectedMultisig.signerIdAddresses[index] ?? signer;
+                      const isConnectedSigner = Boolean(
+                        connectedSigner &&
+                          ((currentSelectedMultisig.connectedSignerIdAddress &&
+                            signerIdAddress === currentSelectedMultisig.connectedSignerIdAddress) ||
+                            signer === connectedSigner.address),
+                      );
+
+                      return (
+                        <li
+                          key={`${signerIdAddress}-${index}`}
+                          className="rounded-lg bg-white px-2 py-1.5"
+                          aria-label={`${signer}${isConnectedSigner ? ', connected wallet' : ''}`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <code className="min-w-0 break-all text-[11px] leading-4 text-slate-600">
+                              {signer}
+                            </code>
+                            {isConnectedSigner && (
+                              <span className="shrink-0 rounded-full bg-blue-50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-[#124ac4]">
+                                Connected
+                              </span>
+                            )}
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </details>
+              </>
             ) : null}
+          </div>
+        )}
+
+        {currentSelectedMultisig && pendingProposals.length === 0 && (
+          <div
+            className="rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-3"
+            data-testid="no-pending-multisig-proposals"
+          >
+            <h4 className="text-xs font-semibold text-slate-700">Pending proposals</h4>
+            <p className="mt-1 text-[11px] leading-4 text-slate-500">
+              No proposals are awaiting approval. Per-signer status appears for proposals that
+              remain pending.
+            </p>
           </div>
         )}
 
         {currentSelectedMultisig && pendingProposals.length > 0 && (
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-              Pending
-            </p>
+            <h4 className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+              Pending proposals
+            </h4>
             <div className="mt-2 divide-y divide-slate-100 border-y border-slate-100">
               {pendingProposals.map((proposal) => {
                 const signatureRows = getProposalSignatureRows(currentSelectedMultisig, proposal);
-                const completedSignatureCount = signatureRows.filter(
+                const approvalStatusKnown =
+                  proposal.approvalStatusKnown &&
+                  currentSelectedMultisig.signerIdentityStatusKnown;
+                const completedApprovalCount = signatureRows.filter(
                   (row) => row.hasApproved,
                 ).length;
-                const signaturesNeeded = Math.max(
-                  currentSelectedMultisig.threshold - completedSignatureCount,
+                const approvalsNeeded = Math.max(
+                  currentSelectedMultisig.threshold - completedApprovalCount,
                   0,
                 );
+                const proposalIsUnderfunded =
+                  proposal.valueAttoFil > currentSelectedMultisig.availableBalanceAttoFil;
                 const seenRecipients = new Set<string>();
                 const hasDuplicatePayments = Boolean(
                   proposal.decodedBatch?.payments.some((payment) => {
@@ -1084,15 +1222,34 @@ export function MultisigFundingPanel({
                     <div className="flex justify-between gap-3">
                       <span className="font-semibold text-slate-900">Proposal #{proposal.id}</span>
                       <span className="text-slate-500">
-                        {completedSignatureCount} / {currentSelectedMultisig.threshold}
+                        {approvalStatusKnown
+                          ? `${completedApprovalCount} of ${currentSelectedMultisig.threshold} required approvals`
+                          : 'Approval status unavailable'}
                       </span>
                     </div>
                     <p className="mt-1 font-mono text-xs text-slate-500">
                       {truncateAddress(proposal.to)}
                     </p>
-                    <p className="mt-1 text-xs text-slate-500">
-                      {formatFilFromAtto(proposal.valueAttoFil)}
+                    <p className="mt-1 flex items-center justify-between gap-3 text-xs text-slate-500">
+                      <span>Proposed value</span>
+                      <span className="font-semibold tabular-nums text-slate-700">
+                        {formatFilFromAtto(proposal.valueAttoFil)}
+                      </span>
                     </p>
+                    {proposalIsUnderfunded && (
+                      <div
+                        className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2 text-[11px] leading-4 text-amber-800"
+                        role="status"
+                        data-testid={`proposal-${proposal.id}-underfunded`}
+                      >
+                        Not currently executable: this proposal requires{' '}
+                        {formatExactFilFromAtto(proposal.valueAttoFil.toString())}, but only{' '}
+                        {formatExactFilFromAtto(
+                          currentSelectedMultisig.availableBalanceAttoFil.toString(),
+                        )}{' '}
+                        is available now. Pending proposals do not reserve funds.
+                      </div>
+                    )}
                     {proposal.decodedBatch && (
                       <div
                         className="mt-3 rounded-xl border border-slate-200 bg-white px-3 py-2"
@@ -1172,41 +1329,73 @@ export function MultisigFundingPanel({
                         </span>
                       </label>
                     )}
-                    <div className="mt-3 rounded-xl bg-slate-50 px-3 py-2">
+                    <div
+                      className="mt-3 rounded-xl bg-slate-50 px-3 py-2"
+                      data-testid={`proposal-${proposal.id}-approval-status`}
+                    >
                       <div className="flex items-center justify-between gap-3 text-xs">
-                        <span className="font-semibold text-slate-700">Signatures</span>
-                        <span
-                          className={
-                            signaturesNeeded === 0
-                              ? 'font-semibold text-emerald-700'
-                              : 'font-semibold text-slate-500'
-                          }
-                        >
-                          {signaturesNeeded === 0 ? 'Ready' : `${signaturesNeeded} needed`}
-                        </span>
-                      </div>
-                      <div className="mt-2 space-y-1.5">
-                        {signatureRows.map((row) => (
-                          <div
-                            key={`${proposal.id}-${row.signerIdAddress}`}
-                            className="flex items-center justify-between gap-2"
+                        <span className="font-semibold text-slate-700">Approval status</span>
+                        {approvalStatusKnown && (
+                          <span
+                            className={
+                              approvalsNeeded === 0
+                                ? 'font-semibold text-emerald-700'
+                                : 'font-semibold text-slate-500'
+                            }
                           >
-                            <span className="min-w-0 truncate font-mono text-xs text-slate-500">
-                              {truncateAddress(row.signer)}
-                              {row.isConnectedSigner ? ' (you)' : ''}
-                            </span>
-                            <span
-                              className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] ${
-                                row.hasApproved
-                                  ? 'bg-emerald-100 text-emerald-700'
-                                  : 'bg-slate-200 text-slate-500'
-                              }`}
-                            >
-                              {row.hasApproved ? 'Signed' : 'Needed'}
-                            </span>
-                          </div>
-                        ))}
+                            {approvalsNeeded === 0
+                              ? 'Threshold met · execution pending'
+                              : `${approvalsNeeded} more ${approvalsNeeded === 1 ? 'approval' : 'approvals'} required`}
+                          </span>
+                        )}
                       </div>
+                      {approvalStatusKnown ? (
+                        <details className="mt-2">
+                          <summary className="cursor-pointer text-[11px] font-semibold text-[#124ac4]">
+                            View signer approval status
+                          </summary>
+                          <ul
+                            className="mt-2 max-h-48 space-y-1.5 overflow-y-auto rounded-lg pr-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+                            aria-label={`Approval status for proposal #${proposal.id}`}
+                            tabIndex={signatureRows.length > 6 ? 0 : undefined}
+                          >
+                            {signatureRows.map((row) => (
+                              <li
+                                key={`${proposal.id}-${row.signerIdAddress}`}
+                                className="flex items-start justify-between gap-2"
+                                aria-label={`${row.signer}: ${row.hasApproved ? 'approved' : 'not approved'}${
+                                  row.isConnectedSigner ? ', connected wallet' : ''
+                                }`}
+                              >
+                                <code
+                                  className="min-w-0 break-all text-[11px] leading-4 text-slate-500"
+                                  title={row.signer}
+                                >
+                                  {row.signer}
+                                  {row.isConnectedSigner ? ' (connected)' : ''}
+                                </code>
+                                <span
+                                  className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] ${
+                                    row.hasApproved
+                                      ? 'bg-emerald-100 text-emerald-700'
+                                      : 'bg-slate-200 text-slate-500'
+                                  }`}
+                                >
+                                  {row.hasApproved ? 'Approved' : 'Not approved'}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        </details>
+                      ) : (
+                        <p
+                          className="mt-2 text-[11px] leading-4 text-amber-700"
+                          role="status"
+                        >
+                          Approval data or signer identities could not be verified, so per-signer
+                          status is unavailable.
+                        </p>
+                      )}
                     </div>
                     {!proposal.isSendFilCompatible && (
                       <p className="mt-2 text-xs text-amber-700">{proposal.compatibilityReason}</p>

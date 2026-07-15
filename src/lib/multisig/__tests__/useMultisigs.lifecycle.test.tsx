@@ -167,7 +167,9 @@ function createActorState(
     threshold: 2,
     signers: [SIGNER_A, SIGNER_B],
     signerIdAddresses: ['t01001', 't01002'],
+    signerIdentityStatusKnown: true,
     connectedSignerIdAddress: signerAddress === SIGNER_A ? 't01001' : 't01002',
+    connectedSignerMembershipKnown: true,
     connectedSignerCanApprove: true,
     ...overrides,
   };
@@ -220,6 +222,7 @@ function createProposal(id = 1): MultisigPendingProposal {
     paramsBytes: new Uint8Array(),
     approvals: ['t01002'],
     approvalIdAddresses: ['t01002'],
+    approvalStatusKnown: true,
     connectedSignerHasApproved: false,
     isSendFilCompatible: true,
     proposalHash: new Uint8Array(32),

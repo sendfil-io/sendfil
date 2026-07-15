@@ -116,7 +116,9 @@ function getMultisig(overrides: Partial<MultisigActorState> = {}): MultisigActor
     threshold: 2,
     signers: ['t01001'],
     signerIdAddresses: ['t01001'],
+    signerIdentityStatusKnown: true,
     connectedSignerIdAddress: 't01001',
+    connectedSignerMembershipKnown: true,
     connectedSignerCanApprove: true,
     ...overrides,
   };

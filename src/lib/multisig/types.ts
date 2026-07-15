@@ -30,7 +30,9 @@ export interface MultisigActorState {
   threshold: number;
   signers: string[];
   signerIdAddresses: string[];
+  signerIdentityStatusKnown: boolean;
   connectedSignerIdAddress?: string;
+  connectedSignerMembershipKnown: boolean;
   connectedSignerCanApprove: boolean;
   startEpoch?: number;
   unlockDuration?: number;
@@ -69,6 +71,7 @@ export interface MultisigPendingProposal {
   paramsBytes: Uint8Array;
   approvals: string[];
   approvalIdAddresses: string[];
+  approvalStatusKnown: boolean;
   connectedSignerHasApproved: boolean;
   isSendFilCompatible: boolean;
   compatibilityReason?: string;

@@ -54,7 +54,9 @@ function createActor(address = ADDRESS): MultisigActorState {
     threshold: 2,
     signers: ['t1signer-a', 't1signer-b'],
     signerIdAddresses: ['t01001', 't01002'],
+    signerIdentityStatusKnown: true,
     connectedSignerIdAddress: 't01002',
+    connectedSignerMembershipKnown: true,
     connectedSignerCanApprove: true,
   };
 }
@@ -71,6 +73,7 @@ function createProposal(): MultisigPendingProposal {
     paramsBytes: new Uint8Array(),
     approvals: ['t01001'],
     approvalIdAddresses: ['t01001'],
+    approvalStatusKnown: true,
     connectedSignerHasApproved: false,
     isSendFilCompatible: true,
     decodedBatch: {
@@ -189,6 +192,272 @@ describe('MultisigFundingPanel interactions', () => {
     );
     expect(balance.getAttribute('title')).toBe('Current multisig balance');
     expect(selectButton.getAttribute('aria-describedby')).toBe(balance.id);
+  });
+
+  it('separates total, unlocked, and vesting-locked balances from signer requirements', () => {
+    renderPanel({
+      selectedMultisig: {
+        ...createActor(),
+        balanceAttoFil: 5n * 10n ** 18n,
+        availableBalanceAttoFil: 2n * 10n ** 18n,
+        threshold: 2,
+        signers: ['t1signer-a', 't1signer-b', 't1signer-c'],
+        signerIdAddresses: ['t01001', 't01002', 't01003'],
+      },
+    });
+
+    expect(container.querySelector('[data-testid="multisig-total-balance"]')?.textContent).toBe(
+      '5 FIL',
+    );
+    expect(
+      container.querySelector('[data-testid="multisig-available-balance"]')?.textContent,
+    ).toBe('2 FIL');
+    expect(container.querySelector('[data-testid="multisig-locked-balance"]')?.textContent).toBe(
+      '3 FIL',
+    );
+    expect(container.querySelector('[data-testid="multisig-total-signers"]')?.textContent).toBe(
+      '3',
+    );
+    expect(
+      container.querySelector('[data-testid="multisig-approval-threshold"]')?.textContent,
+    ).toBe('2');
+    expect(container.textContent).toContain('What does available mean?');
+    expect(container.textContent).toContain(
+      'Pending proposals are not deducted from this number. The connected signer pays network gas separately.',
+    );
+  });
+
+  it('shows every permanent signer address and identifies the connected signer', () => {
+    renderPanel();
+
+    const signerList = container.querySelector(
+      '[data-testid="selected-multisig-signers"] ul',
+    ) as HTMLUListElement;
+    const signerRows = Array.from(signerList.querySelectorAll('li'));
+
+    expect(signerRows).toHaveLength(2);
+    expect(signerRows[0]?.textContent).toContain('t1signer-a');
+    expect(signerRows[1]?.textContent).toContain('t1signer-b');
+    expect(signerRows[1]?.textContent).toContain('Connected');
+    expect(signerList.getAttribute('aria-label')).toBe(
+      `Signer addresses for multisig ${ADDRESS}`,
+    );
+  });
+
+  it.each([
+    {
+      name: 'a verified signer',
+      connectedSigner: CONNECTED_SIGNER,
+      actor: createActor(),
+      expected: 'Signer',
+    },
+    {
+      name: 'no connected wallet',
+      connectedSigner: undefined,
+      actor: createActor(),
+      expected: 'Not connected',
+    },
+    {
+      name: 'an unresolved wallet identity',
+      connectedSigner: CONNECTED_SIGNER,
+      actor: {
+        ...createActor(),
+        connectedSignerIdAddress: undefined,
+        connectedSignerMembershipKnown: false,
+        connectedSignerCanApprove: false,
+      },
+      expected: 'Could not verify',
+    },
+    {
+      name: 'a partially unresolved signer roster',
+      connectedSigner: CONNECTED_SIGNER,
+      actor: {
+        ...createActor(),
+        signerIdAddresses: ['t1signer-a', 't01002'],
+        signerIdentityStatusKnown: false,
+        connectedSignerIdAddress: 't09999',
+        connectedSignerMembershipKnown: false,
+        connectedSignerCanApprove: false,
+      },
+      expected: 'Could not verify',
+    },
+    {
+      name: 'a connected non-signer',
+      connectedSigner: WRONG_CONNECTED_SIGNER,
+      actor: {
+        ...createActor(),
+        connectedSignerIdAddress: 't09999',
+        connectedSignerCanApprove: false,
+      },
+      expected: 'Not a signer',
+    },
+  ])('distinguishes $name in the overview', ({ connectedSigner, actor, expected }) => {
+    renderPanel({ connectedSigner, selectedMultisig: actor });
+
+    expect(
+      container.querySelector('[data-testid="multisig-connected-wallet-status"]')?.textContent,
+    ).toBe(expected);
+  });
+
+  it('shows proposal approval progress for every signer', () => {
+    renderPanel();
+
+    const proposalStatus = container.querySelector(
+      '[data-testid="proposal-7-approval-status"]',
+    ) as HTMLDivElement;
+    const approvalRows = Array.from(proposalStatus.querySelectorAll('li'));
+
+    expect(container.textContent).toContain('1 of 2 required approvals');
+    expect(proposalStatus.textContent).toContain('1 more approval required');
+    expect(approvalRows).toHaveLength(2);
+    expect(approvalRows[0]?.getAttribute('aria-label')).toBe('t1signer-a: approved');
+    expect(approvalRows[0]?.textContent).toContain('Approved');
+    expect(approvalRows[1]?.getAttribute('aria-label')).toBe(
+      't1signer-b: not approved, connected wallet',
+    );
+    expect(approvalRows[1]?.textContent).toContain('Not approved');
+    expect(
+      Array.from(container.querySelectorAll('h4')).some(
+        (heading) => heading.textContent === 'Pending proposals',
+      ),
+    ).toBe(true);
+  });
+
+  it('shows threshold-met approval status without implying that execution completed', () => {
+    const proposal = {
+      ...createProposal(),
+      approvals: ['t01001', 't01002'],
+      approvalIdAddresses: ['t01001', 't01002'],
+      connectedSignerHasApproved: true,
+      canApprove: false,
+    };
+    renderPanel({ pendingProposals: [proposal] });
+
+    const proposalStatus = container.querySelector(
+      '[data-testid="proposal-7-approval-status"]',
+    ) as HTMLDivElement;
+    expect(container.textContent).toContain('2 of 2 required approvals');
+    expect(proposalStatus.textContent).toContain('Threshold met · execution pending');
+    expect(Array.from(proposalStatus.querySelectorAll('li'))).toHaveLength(2);
+    expect(
+      Array.from(proposalStatus.querySelectorAll('li')).every((row) =>
+        row.textContent?.includes('Approved'),
+      ),
+    ).toBe(true);
+  });
+
+  it('does not let duplicate or unmatched approval identities inflate progress', () => {
+    const proposal = {
+      ...createProposal(),
+      approvals: ['t01001', 't01001', 't09999'],
+      approvalIdAddresses: ['t01001', 't01001', 't09999'],
+    };
+    renderPanel({ pendingProposals: [proposal] });
+
+    expect(container.textContent).toContain('1 of 2 required approvals');
+    const approvalRows = Array.from(
+      container.querySelectorAll('[data-testid="proposal-7-approval-status"] li'),
+    );
+    expect(approvalRows.filter((row) => row.textContent?.includes('Approved'))).toHaveLength(1);
+  });
+
+  it('shows unknown approval data as unavailable instead of zero approvals', () => {
+    const proposal = {
+      ...createProposal(),
+      approvals: [],
+      approvalIdAddresses: [],
+      approvalStatusKnown: false,
+      isSendFilCompatible: false,
+      compatibilityReason: 'Proposal approvals are missing or invalid.',
+      canApprove: false,
+    };
+    renderPanel({ pendingProposals: [proposal] });
+
+    const proposalStatus = container.querySelector(
+      '[data-testid="proposal-7-approval-status"]',
+    ) as HTMLDivElement;
+    expect(container.textContent).toContain('Approval status unavailable');
+    expect(proposalStatus.textContent).toContain(
+      'Approval data or signer identities could not be verified, so per-signer status is unavailable.',
+    );
+    expect(proposalStatus.querySelector('li')).toBeNull();
+    expect(container.textContent).not.toContain('0 of 2 required approvals');
+  });
+
+  it('withholds per-signer approval claims when signer identities are unresolved', () => {
+    renderPanel({
+      selectedMultisig: {
+        ...createActor(),
+        signerIdAddresses: ['t1signer-a', 't01002'],
+        signerIdentityStatusKnown: false,
+      },
+    });
+
+    expect(container.textContent).toContain('Approval status unavailable');
+    expect(container.textContent).toContain(
+      'Approval data or signer identities could not be verified, so per-signer status is unavailable.',
+    );
+    expect(container.textContent).not.toContain('1 of 2 required approvals');
+  });
+
+  it('warns when a pending proposal exceeds the currently available balance', () => {
+    renderPanel({
+      selectedMultisig: {
+        ...createActor(),
+        availableBalanceAttoFil: 5n * 10n ** 17n,
+      },
+    });
+
+    const warning = container.querySelector('[data-testid="proposal-7-underfunded"]');
+    expect(warning?.textContent).toContain(
+      'Not currently executable: this proposal requires 1.000000000000000001 FIL, but only 0.5 FIL is available now.',
+    );
+    expect(warning?.textContent).toContain('Pending proposals do not reserve funds.');
+  });
+
+  it('keeps large signer and approval rosters compact and keyboard-scrollable', () => {
+    const signers = Array.from({ length: 7 }, (_, index) => `t1signer-${index + 1}`);
+    const signerIdAddresses = Array.from({ length: 7 }, (_, index) => `t0100${index + 1}`);
+    renderPanel({
+      selectedMultisig: {
+        ...createActor(),
+        signers,
+        signerIdAddresses,
+        connectedSignerIdAddress: 't01002',
+      },
+    });
+
+    const signerDisclosure = container.querySelector(
+      '[data-testid="selected-multisig-signers"]',
+    ) as HTMLDetailsElement;
+    const signerList = signerDisclosure.querySelector('ul') as HTMLUListElement;
+    const approvalDisclosure = container.querySelector(
+      '[data-testid="proposal-7-approval-status"] details',
+    ) as HTMLDetailsElement;
+    const approvalList = approvalDisclosure.querySelector('ul') as HTMLUListElement;
+
+    expect(signerDisclosure.open).toBe(false);
+    expect(signerDisclosure.querySelector('summary')?.textContent).toContain(
+      'View 7 signer addresses',
+    );
+    expect(signerList.getAttribute('tabindex')).toBe('0');
+    expect(signerList.className).toContain('max-h-32');
+    expect(approvalDisclosure.open).toBe(false);
+    expect(approvalList.getAttribute('tabindex')).toBe('0');
+    expect(approvalList.className).toContain('max-h-48');
+  });
+
+  it('explains when no proposal has per-signer approval status yet', () => {
+    renderPanel({ pendingProposals: [] });
+
+    const emptyState = container.querySelector(
+      '[data-testid="no-pending-multisig-proposals"]',
+    );
+    expect(emptyState?.textContent).toContain('Pending proposals');
+    expect(emptyState?.textContent).toContain(
+      'No proposals are awaiting approval. Per-signer status appears for proposals that remain pending.',
+    );
+    expect(container.querySelector('[data-testid="proposal-7-approval-status"]')).toBeNull();
   });
 
   it('hides the previous saved-row balance while a refresh is in flight', async () => {
@@ -746,7 +1015,7 @@ describe('MultisigFundingPanel interactions', () => {
     renderPanel({ selectedMultisig: createActor(OTHER_ADDRESS) });
 
     expect(container.textContent).toContain(ADDRESS);
-    expect(container.textContent).not.toContain('2 / 2');
+    expect(container.querySelector('[data-testid="selected-multisig-summary"]')).toBeNull();
     expect(container.querySelector('button[aria-label="Approve proposal #7"]')).toBeNull();
   });
 
@@ -1184,7 +1453,7 @@ describe('MultisigFundingPanel interactions', () => {
     const technicalDetails = alert.querySelector('details') as HTMLDetailsElement;
     const technicalCopy = technicalDetails.querySelector('p') as HTMLParagraphElement;
 
-    expect(detailsSection.textContent).toContain('Selected multisig details');
+    expect(detailsSection.textContent).toContain('Multisig overview');
     expect(alert.className).toContain('border-amber-200');
     expect(alert.textContent).toContain(
       'This multisig is saved, but SendFIL could not refresh its current details.',

@@ -375,18 +375,40 @@ export async function loadMultisigActorState({
     throw new Error('The selected multisig actor state is malformed.');
   }
 
-  const [vesting, signerIdLookups, connectedSignerIdAddress] = await Promise.all([
+  const [vesting, signerIdentityLookups, connectedSignerIdAddress] = await Promise.all([
     rpc
       .getVestingSchedule(idAddress, networkKey, snapshotTipSetKey)
       .catch(() => undefined),
-    Promise.all(signers.map((signer) => lookupID(signer).catch(() => signer))),
+    Promise.all(
+      signers.map(async (signer) => {
+        try {
+          return {
+            idAddress: validateNativeActorIdAddress(await lookupID(signer), networkKey),
+            resolved: true,
+          };
+        } catch {
+          return { idAddress: signer, resolved: false };
+        }
+      }),
+    ),
     connectedSignerAddress
-      ? lookupID(connectedSignerAddress).catch(() => undefined)
+      ? lookupID(connectedSignerAddress)
+          .then((value) => validateNativeActorIdAddress(value, networkKey))
+          .catch(() => undefined)
       : Promise.resolve(undefined),
   ]);
+  const signerIdLookups = signerIdentityLookups.map(({ idAddress: signerId }) => signerId);
+  const signerIdentityStatusKnown = signerIdentityLookups.every(({ resolved }) => resolved);
   const connectedSignerCanApprove = Boolean(
     connectedSignerIdAddress &&
-    signerIdLookups.some((signerId) => signerId === connectedSignerIdAddress),
+    signerIdentityLookups.some(
+      ({ idAddress: signerId }, index) =>
+        signerId === connectedSignerIdAddress || signers[index] === connectedSignerAddress,
+    ),
+  );
+  const connectedSignerMembershipKnown = Boolean(
+    connectedSignerIdAddress &&
+      (connectedSignerCanApprove || signerIdentityStatusKnown),
   );
 
   return {
@@ -400,7 +422,9 @@ export async function loadMultisigActorState({
     threshold,
     signers,
     signerIdAddresses: signerIdLookups,
+    signerIdentityStatusKnown,
     connectedSignerIdAddress,
+    connectedSignerMembershipKnown,
     connectedSignerCanApprove,
     startEpoch: vesting?.startEpoch ?? asNumber(decodedState.StartEpoch),
     unlockDuration: vesting?.unlockDuration ?? asNumber(decodedState.UnlockDuration),
@@ -587,6 +611,7 @@ export async function loadMultisigPendingProposals({
         paramsBytes,
         approvals,
         approvalIdAddresses,
+        approvalStatusKnown: parsedApprovals !== undefined,
         connectedSignerHasApproved,
         isSendFilCompatible,
         compatibilityReason,

@@ -484,7 +484,9 @@ function createMultisigActorState(
     threshold: 1,
     signers: [signerAddress],
     signerIdAddresses: [networkKey === 'mainnet' ? 'f01000' : 't01000'],
+    signerIdentityStatusKnown: true,
     connectedSignerIdAddress: networkKey === 'mainnet' ? 'f01000' : 't01000',
+    connectedSignerMembershipKnown: true,
     connectedSignerCanApprove: true,
   };
 }
@@ -1148,7 +1150,9 @@ describe('App confirm flow', () => {
       threshold: 2,
       signers: [NATIVE_SIGNER, 'f01001'],
       signerIdAddresses: ['f01000', 'f01001'],
+      signerIdentityStatusKnown: true,
       connectedSignerIdAddress: 'f01000',
+      connectedSignerMembershipKnown: true,
       connectedSignerCanApprove: true,
     };
     const proposalCid = 'bafy2bzaceappmultisigproposal';
