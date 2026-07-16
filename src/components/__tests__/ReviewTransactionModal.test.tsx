@@ -312,6 +312,7 @@ describe('ReviewTransactionModal', () => {
       stage: 'preflight',
       recoverable: true,
       hint: 'Correct the failing recipient rows and try again, or use Partial for best-effort delivery when available.',
+      details: 'execution reverted: forward failed',
     });
 
     act(() => {
@@ -320,6 +321,19 @@ describe('ReviewTransactionModal', () => {
 
     expect(container.textContent).toContain('Atomic batch would revert');
     expect(getButton(container, 'Send').disabled).toBe(true);
+
+    const technicalDetails = container.querySelector(
+      '[data-testid="gas-estimation-technical-details"]',
+    ) as HTMLDetailsElement;
+    const summary = technicalDetails.querySelector('summary');
+
+    expect(technicalDetails.tagName).toBe('DETAILS');
+    expect(technicalDetails.open).toBe(false);
+    expect(summary?.textContent).toContain('Technical details');
+    expect(container.textContent).toContain('execution reverted: forward failed');
+
+    click(summary as HTMLElement);
+    expect(technicalDetails.open).toBe(true);
   });
 
   it('blocks send while EVM contract-recipient checks are pending', () => {
@@ -365,6 +379,9 @@ describe('ReviewTransactionModal', () => {
     expect(container.textContent).not.toContain(
       'Some transfers may already be finalized; failed payment value is refunded by ThinBatch unless the refund itself reverts.',
     );
+    expect(
+      container.querySelector('[data-testid="transaction-error-technical-details"]'),
+    ).toBeNull();
   });
 
   it('does not present an inner multisig failure as a successful partial batch', () => {
@@ -393,10 +410,42 @@ describe('ReviewTransactionModal', () => {
 
     expect(container.textContent).toContain('Multisig batch execution failed');
     expect(container.textContent).toContain('Do not assume the batch executed successfully');
+    expect(container.textContent).toContain('proposal message CID');
     expect(container.textContent).not.toContain('Some transfers may already be finalized');
     expect(container.querySelector('a[href]')?.getAttribute('href')).toContain(
       'bafyfailedproposal',
     );
+  });
+
+  it('states that no multisig proposal was submitted when failure has no CID', () => {
+    const props = getBaseProps();
+    props.fundingMode = 'native-multisig';
+    props.transactionState = 'failed';
+    props.transactionError = new BatchExecutionError({
+      category: 'WALLET_FAILURE',
+      title: 'Wallet signing failed',
+      message: 'Ledger could not sign the Filecoin message.',
+      errorMode: 'ATOMIC',
+      stage: 'execution',
+      recoverable: true,
+      hint: 'Keep the Filecoin app open and try again.',
+      details: 'Ledger device: Invalid data received (0x6a80)',
+    });
+
+    act(() => {
+      root.render(<ReviewTransactionModal {...props} />);
+    });
+
+    expect(container.textContent).toContain(
+      'No multisig proposal was submitted, so the batch did not execute.',
+    );
+    expect(container.textContent).toContain('Ledger device: Invalid data received (0x6a80)');
+    expect(container.querySelector('a[href]')).toBeNull();
+
+    const technicalDetails = container.querySelector(
+      '[data-testid="transaction-error-technical-details"]',
+    ) as HTMLDetailsElement;
+    expect(technicalDetails.open).toBe(false);
   });
 
   it('does not offer retry when a confirmed multisig outcome cannot be verified', () => {
@@ -455,5 +504,40 @@ describe('ReviewTransactionModal', () => {
 
     expect(document.activeElement).toBe(outsideButton);
     outsideButton.remove();
+  });
+
+  it('keeps the technical-details disclosure inside the failed-state focus trap', () => {
+    const props = getBaseProps();
+    props.fundingMode = 'native-multisig';
+    props.transactionState = 'failed';
+    props.transactionError = new BatchExecutionError({
+      category: 'WALLET_FAILURE',
+      title: 'Wallet signing failed',
+      message: 'Ledger could not sign the Filecoin message.',
+      errorMode: 'ATOMIC',
+      stage: 'execution',
+      recoverable: true,
+      details: 'Ledger transport error',
+    });
+
+    act(() => {
+      root.render(<ReviewTransactionModal {...props} />);
+    });
+
+    const summary = container.querySelector('summary') as HTMLElement;
+    const tryAgainButton = getButton(container, 'Try Again');
+
+    summary.focus();
+    act(() => {
+      document.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true }),
+      );
+    });
+    expect(document.activeElement).toBe(tryAgainButton);
+
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
+    });
+    expect(document.activeElement).toBe(summary);
   });
 });

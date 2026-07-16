@@ -102,6 +102,32 @@ function attoFilToNanoFil(attoFil: string): number {
   return Number(BigInt(attoFil)) / 1e9;
 }
 
+function TechnicalErrorDetails({
+  details,
+  testId,
+}: {
+  details?: string;
+  testId: string;
+}) {
+  if (!details?.trim()) {
+    return null;
+  }
+
+  return (
+    <details
+      className="mt-3 w-full rounded-lg border border-current/15 bg-white/60 px-3 py-2 text-left"
+      data-testid={testId}
+    >
+      <summary className="cursor-pointer text-xs font-semibold">
+        Technical details
+      </summary>
+      <code className="mt-2 block whitespace-pre-wrap break-all text-xs leading-5 opacity-80">
+        {details}
+      </code>
+    </details>
+  );
+}
+
 export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
   isOpen,
   onClose,
@@ -210,7 +236,7 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
 
       const focusableElements = Array.from(
         modalRef.current.querySelectorAll<HTMLElement>(
-          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])',
         ),
       );
 
@@ -377,6 +403,10 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
               {gasEstimationError.hint}
             </p>
           )}
+          <TechnicalErrorDetails
+            details={gasEstimationError.details}
+            testId="gas-estimation-technical-details"
+          />
         </div>
       )}
 
@@ -696,13 +726,19 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
       </p>
       <p className="text-sm text-gray-500 text-center mb-2">
         {fundingMode === 'native-multisig'
-          ? 'Do not assume the batch executed successfully. Inspect the confirmed proposal before retrying.'
+          ? transactionHash
+            ? 'Do not assume the batch executed successfully. Inspect the proposal message CID before retrying.'
+            : 'No multisig proposal was submitted, so the batch did not execute.'
           : errorModeCopy.failureSummary}
       </p>
       {renderStoredSubmissionDetails()}
       {transactionError?.hint && (
         <p className="text-sm text-gray-500 text-center">{transactionError.hint}</p>
       )}
+      <TechnicalErrorDetails
+        details={transactionError?.details}
+        testId="transaction-error-technical-details"
+      />
       {transactionHash && (
         <a
           href={getFilfoxUrl(transactionHash)}

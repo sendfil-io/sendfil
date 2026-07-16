@@ -264,7 +264,7 @@ function createIsoWalletProvider({
       try {
         signature = await adapter.signMessage(toIsoMessage(message));
       } catch (error) {
-        throw normalizeNativeWalletError(metadata, error);
+        throw normalizeNativeWalletError(metadata, error, 'sign');
       }
 
       const signedMessage: SignedMessage = {
@@ -290,12 +290,23 @@ function getErrorMessage(error: unknown): string {
   return typeof error === 'string' ? error : 'Unknown error';
 }
 
+function getErrorStatusCode(error: unknown): number | undefined {
+  if (typeof error !== 'object' || error === null) {
+    return undefined;
+  }
+
+  const statusCode = Reflect.get(error, 'statusCode');
+  return typeof statusCode === 'number' ? statusCode : undefined;
+}
+
 export function formatNativeFilecoinWalletErrorMessage(
   metadata: SenderProviderMetadata,
   error: unknown,
+  operation: 'connect' | 'sign' = 'connect',
 ): string {
   const rawMessage = getErrorMessage(error);
   const normalizedMessage = rawMessage.toLowerCase();
+  const statusCode = getErrorStatusCode(error);
 
   if (metadata.id === LEDGER_FILECOIN_PROVIDER_METADATA.id) {
     if (normalizedMessage.includes('buffer is not defined')) {
@@ -313,16 +324,76 @@ export function formatNativeFilecoinWalletErrorMessage(
     }
 
     if (
-      normalizedMessage.includes('access denied') ||
-      normalizedMessage.includes('denied') ||
-      normalizedMessage.includes('cancel') ||
-      normalizedMessage.includes('no device selected')
+      operation !== 'sign' &&
+      (normalizedMessage.includes('access denied') ||
+        normalizedMessage.includes('denied') ||
+        normalizedMessage.includes('cancel') ||
+        normalizedMessage.includes('no device selected'))
     ) {
       return 'Ledger connection was cancelled or blocked. Unlock your Ledger, open the Filecoin app, choose it in the browser device prompt, and approve the connection.';
     }
 
     if (normalizedMessage.includes('version is too old')) {
       return 'Your Ledger Filecoin app is too old. Update the Filecoin app in Ledger Live, then try again.';
+    }
+
+    if (operation === 'sign') {
+      if (
+        statusCode === 0x5501 ||
+        statusCode === 0x6986 ||
+        normalizedMessage.includes('user rejected') ||
+        normalizedMessage.includes('user denied') ||
+        normalizedMessage.includes('user refused on device') ||
+        normalizedMessage.includes('userrefusedondevice') ||
+        normalizedMessage.includes('rejected the request') ||
+        normalizedMessage.includes('request rejected') ||
+        normalizedMessage.includes('request cancelled') ||
+        normalizedMessage.includes('request canceled') ||
+        normalizedMessage.includes('command not allowed') ||
+        normalizedMessage.includes('command rejected') ||
+        normalizedMessage.includes('0x5501') ||
+        normalizedMessage.includes('0x6986')
+      ) {
+        return 'Ledger signature request was rejected on the device. No Filecoin message was submitted.';
+      }
+
+      if (
+        statusCode === 0x6e01 ||
+        normalizedMessage.includes('filecoin app not open') ||
+        normalizedMessage.includes('0x6e01')
+      ) {
+        return 'Open the Filecoin app on your Ledger, then retry the signature. No Filecoin message was submitted.';
+      }
+
+      if (
+        statusCode === 0x5515 ||
+        statusCode === 0x6982 ||
+        normalizedMessage.includes('locked device') ||
+        normalizedMessage.includes('security not satisfied') ||
+        normalizedMessage.includes('0x5515') ||
+        normalizedMessage.includes('0x6982')
+      ) {
+        return 'Unlock your Ledger and open the Filecoin app, then retry the signature. No Filecoin message was submitted.';
+      }
+
+      if (
+        statusCode === 0x6a80 ||
+        normalizedMessage.includes('bad key handle') ||
+        normalizedMessage.includes('0x6a80')
+      ) {
+        return 'Ledger could not use the selected Filecoin account key. Reconnect the Ledger account, verify the Filecoin app is open and up to date, then try again.';
+      }
+
+      if (
+        statusCode === 0x6984 ||
+        normalizedMessage.includes('invalid data') ||
+        normalizedMessage.includes('data is invalid') ||
+        normalizedMessage.includes('0x6984')
+      ) {
+        return 'The Ledger Filecoin app rejected the message data before signing. Confirm the app is up to date, then try again. No Filecoin message was submitted.';
+      }
+
+      return 'Ledger could not sign the Filecoin message. Keep your Ledger unlocked with the Filecoin app open, then try again.';
     }
 
     return 'Ledger could not connect. Unlock your Ledger, open the Filecoin app, choose it in the browser device prompt, and approve the connection.';
@@ -332,14 +403,24 @@ export function formatNativeFilecoinWalletErrorMessage(
     if (
       normalizedMessage.includes('not found') ||
       normalizedMessage.includes('not installed') ||
-      normalizedMessage.includes('no provider') ||
-      normalizedMessage.includes('metamask')
+      normalizedMessage.includes('no provider')
     ) {
       return 'FilSnap needs MetaMask with the FilSnap Snap installed. Open MetaMask, install or enable FilSnap, then try again.';
     }
 
-    if (normalizedMessage.includes('denied') || normalizedMessage.includes('reject')) {
-      return 'FilSnap connection was rejected in MetaMask. Approve the Snap connection to continue.';
+    if (
+      normalizedMessage.includes('denied') ||
+      normalizedMessage.includes('reject') ||
+      normalizedMessage.includes('cancelled') ||
+      normalizedMessage.includes('canceled')
+    ) {
+      return operation === 'sign'
+        ? 'FilSnap signature request was rejected in MetaMask. No Filecoin message was submitted.'
+        : 'FilSnap connection was rejected in MetaMask. Approve the Snap connection to continue.';
+    }
+
+    if (operation === 'sign') {
+      return 'FilSnap could not sign the Filecoin message. Unlock MetaMask, make sure FilSnap is enabled, and try again.';
     }
 
     return 'FilSnap could not connect. Open MetaMask, approve the FilSnap request, and try again.';
@@ -351,9 +432,10 @@ export function formatNativeFilecoinWalletErrorMessage(
 function normalizeNativeWalletError(
   metadata: SenderProviderMetadata,
   error: unknown,
+  operation: 'connect' | 'sign' = 'connect',
 ): Error {
   const normalizedError = new Error(
-    formatNativeFilecoinWalletErrorMessage(metadata, error),
+    formatNativeFilecoinWalletErrorMessage(metadata, error, operation),
   ) as Error & { cause?: unknown };
 
   normalizedError.cause = error;

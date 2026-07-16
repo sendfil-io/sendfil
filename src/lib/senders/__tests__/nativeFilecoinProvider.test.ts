@@ -19,6 +19,12 @@ const CALIBRATION_T1 = newSecp256k1Address(
   CoinType.TEST,
 ).toString();
 
+function createStatusError(message: string, statusCode: number): Error {
+  const error = new Error(message) as Error & { statusCode: number };
+  error.statusCode = statusCode;
+  return error;
+}
+
 describe('native Filecoin provider boundary', () => {
   it('keeps native Filecoin providers hidden when explicitly disabled', () => {
     expect(getNativeFilecoinWalletProviders({ featureEnabled: false })).toEqual([]);
@@ -129,6 +135,48 @@ describe('native Filecoin provider boundary', () => {
     );
   });
 
+  it('formats Ledger signing rejection separately from connection failures', () => {
+    expect(
+      formatNativeFilecoinWalletErrorMessage(
+        LEDGER_FILECOIN_PROVIDER_METADATA,
+        createStatusError('Filecoin App: Command rejected (0x6986)', 0x6986),
+        'sign',
+      ),
+    ).toBe(
+      'Ledger signature request was rejected on the device. No Filecoin message was submitted.',
+    );
+
+    expect(
+      formatNativeFilecoinWalletErrorMessage(
+        LEDGER_FILECOIN_PROVIDER_METADATA,
+        createStatusError('Filecoin App: Data is invalid (0x6984)', 0x6984),
+        'sign',
+      ),
+    ).toBe(
+      'The Ledger Filecoin app rejected the message data before signing. Confirm the app is up to date, then try again. No Filecoin message was submitted.',
+    );
+
+    expect(
+      formatNativeFilecoinWalletErrorMessage(
+        LEDGER_FILECOIN_PROVIDER_METADATA,
+        createStatusError('Filecoin App: Bad key handle (0x6a80)', 0x6a80),
+        'sign',
+      ),
+    ).toBe(
+      'Ledger could not use the selected Filecoin account key. Reconnect the Ledger account, verify the Filecoin app is open and up to date, then try again.',
+    );
+
+    expect(
+      formatNativeFilecoinWalletErrorMessage(
+        LEDGER_FILECOIN_PROVIDER_METADATA,
+        createStatusError('Filecoin App: Filecoin app not open (0x6e01)', 0x6e01),
+        'sign',
+      ),
+    ).toBe(
+      'Open the Filecoin app on your Ledger, then retry the signature. No Filecoin message was submitted.',
+    );
+  });
+
   it('formats FilSnap provider errors as MetaMask Snap guidance', () => {
     expect(
       formatNativeFilecoinWalletErrorMessage(
@@ -137,6 +185,38 @@ describe('native Filecoin provider boundary', () => {
       ),
     ).toBe(
       'FilSnap needs MetaMask with the FilSnap Snap installed. Open MetaMask, install or enable FilSnap, then try again.',
+    );
+  });
+
+  it('formats FilSnap signing rejection and locked-wallet errors accurately', () => {
+    expect(
+      formatNativeFilecoinWalletErrorMessage(
+        FILSNAP_FILECOIN_PROVIDER_METADATA,
+        new Error('MetaMask user rejected the request'),
+        'sign',
+      ),
+    ).toBe(
+      'FilSnap signature request was rejected in MetaMask. No Filecoin message was submitted.',
+    );
+
+    expect(
+      formatNativeFilecoinWalletErrorMessage(
+        FILSNAP_FILECOIN_PROVIDER_METADATA,
+        new Error('Request cancelled'),
+        'sign',
+      ),
+    ).toBe(
+      'FilSnap signature request was rejected in MetaMask. No Filecoin message was submitted.',
+    );
+
+    expect(
+      formatNativeFilecoinWalletErrorMessage(
+        FILSNAP_FILECOIN_PROVIDER_METADATA,
+        new Error('MetaMask is locked'),
+        'sign',
+      ),
+    ).toBe(
+      'FilSnap could not sign the Filecoin message. Unlock MetaMask, make sure FilSnap is enabled, and try again.',
     );
   });
 });

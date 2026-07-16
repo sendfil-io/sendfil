@@ -580,6 +580,64 @@ describe('useExecuteMultisigProposal', () => {
     });
   });
 
+  it('preserves live Lotus RPC diagnostics when proposal preflight fails', async () => {
+    const rpc = getRpc();
+    vi.mocked(rpc.estimateGas!).mockRejectedValue(
+      new Error(
+        'Lotus RPC Filecoin.GasEstimateMessageGas failed on calibration: timeout after 10000ms',
+      ),
+    );
+
+    await renderHook({
+      sender: getNativeSender(),
+      provider: getProvider(10n ** 21n),
+      multisig: getMultisig(),
+      network: getNetworkConfig('calibration'),
+      rpc,
+      pollMessageStatus: vi.fn(),
+    });
+
+    await expect(
+      latestHook!.estimateBatch(recipients, 'ATOMIC'),
+    ).rejects.toMatchObject({
+      category: 'RPC_FAILURE',
+      details: expect.stringContaining('Filecoin.GasEstimateMessageGas'),
+    });
+  });
+
+  it('fails execution before signing and preserves proposal preflight diagnostics', async () => {
+    const provider = getProvider(10n ** 21n);
+    const rpc = getRpc();
+    vi.mocked(rpc.estimateGas!).mockRejectedValue(
+      new Error(
+        'Lotus RPC Filecoin.GasEstimateMessageGas failed on calibration: timeout after 10000ms',
+      ),
+    );
+
+    await renderHook({
+      sender: getNativeSender(),
+      provider,
+      multisig: getMultisig(),
+      network: getNetworkConfig('calibration'),
+      rpc,
+      pollMessageStatus: vi.fn(),
+    });
+
+    await act(async () => {
+      await expect(
+        latestHook!.executeBatch(recipients, 'ATOMIC'),
+      ).rejects.toMatchObject({
+        category: 'RPC_FAILURE',
+        details: expect.stringContaining('Filecoin.GasEstimateMessageGas'),
+      });
+    });
+
+    expect(latestHook?.state).toBe('failed');
+    expect(latestHook?.txHash).toBeUndefined();
+    expect(latestHook?.submissionSnapshot).toBeUndefined();
+    expect(provider.signAndSubmitMessage).not.toHaveBeenCalled();
+  });
+
   it('coalesces concurrent execute calls into one proposal submission', async () => {
     const sender = getNativeSender();
     const provider = getProvider(10n ** 21n);
@@ -902,7 +960,34 @@ describe('useExecuteMultisigProposal', () => {
     expect(pollMessageStatus).not.toHaveBeenCalled();
   });
 
-  it('removes a proposal CID lock after a deterministic pre-push rejection', async () => {
+  it('reports a signature rejection before a proposal CID is computed', async () => {
+    const provider = getProvider(10n ** 21n);
+
+    vi.mocked(provider.signAndSubmitMessage!).mockRejectedValue(
+      new Error('User rejected the signature request'),
+    );
+
+    await renderHook({
+      sender: getNativeSender(),
+      provider,
+      multisig: getMultisig(),
+      network: getNetworkConfig('calibration'),
+      rpc: getRpc(),
+      storage: dom.window.localStorage,
+      pollMessageStatus: vi.fn(),
+    });
+
+    await act(async () => {
+      await expect(latestHook!.executeBatch(recipients, 'ATOMIC')).rejects.toMatchObject({
+        category: 'USER_REJECTED',
+      });
+    });
+
+    expect(latestHook?.txHash).toBeUndefined();
+    expect(latestHook?.submissionSnapshot).toBeUndefined();
+  });
+
+  it('removes a proposal CID lock after a definitive post-signing RPC rejection', async () => {
     const sender = getNativeSender();
     const provider = getProvider(10n ** 21n);
     const storage = dom.window.localStorage;
@@ -910,7 +995,9 @@ describe('useExecuteMultisigProposal', () => {
     vi.mocked(provider.signAndSubmitMessage!).mockImplementation(
       async (_message, options) => {
         await options?.onCidComputed?.(CID);
-        throw new Error('User rejected the signature request');
+        throw new Error(
+          'Lotus RPC Filecoin.MpoolPush rejected the signed message: invalid nonce',
+        );
       },
     );
 
@@ -926,12 +1013,14 @@ describe('useExecuteMultisigProposal', () => {
 
     await act(async () => {
       await expect(latestHook!.executeBatch(recipients, 'ATOMIC')).rejects.toMatchObject({
-        category: 'USER_REJECTED',
+        category: 'RPC_FAILURE',
       });
     });
 
     expect(readNativeSubmissionRecords(storage).records).toEqual([]);
     expect(latestHook?.isIdentityLocked).toBe(false);
     expect(latestHook?.isWalletMutationUnsafe).toBe(false);
+    expect(latestHook?.txHash).toBeUndefined();
+    expect(latestHook?.submissionSnapshot).toBeUndefined();
   });
 });

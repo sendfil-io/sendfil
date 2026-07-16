@@ -847,6 +847,9 @@ export function useExecuteMultisigProposal({
                         errorMode,
                       );
                     }
+
+                    setSubmissionSnapshot(undefined);
+                    setTxHash(undefined);
                   }
 
                   throw cause;

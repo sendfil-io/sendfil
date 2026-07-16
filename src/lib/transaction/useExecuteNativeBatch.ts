@@ -737,6 +737,9 @@ export function useExecuteNativeBatch({
                         errorMode,
                       );
                     }
+
+                    setSubmissionSnapshot(undefined);
+                    setTxHash(undefined);
                   }
 
                   throw cause;

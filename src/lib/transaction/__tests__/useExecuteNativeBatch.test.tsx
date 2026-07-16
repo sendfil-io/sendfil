@@ -652,7 +652,7 @@ describe('useExecuteNativeBatch', () => {
     expect(pollMessageStatus).not.toHaveBeenCalled();
   });
 
-  it('removes a pre-push CID lock after a deterministic wallet rejection', async () => {
+  it('removes a pre-push CID lock after a definitive RPC rejection', async () => {
     const sender = getNativeSender();
     const provider = getProvider(10n ** 30n);
     const storage = dom.window.localStorage;
@@ -660,7 +660,9 @@ describe('useExecuteNativeBatch', () => {
     vi.mocked(provider.signAndSubmitMessage!).mockImplementation(
       async (_message, options) => {
         await options?.onCidComputed?.(CID);
-        throw new Error('User rejected the signature request');
+        throw new Error(
+          'Lotus RPC Filecoin.MpoolPush rejected the signed message: invalid nonce',
+        );
       },
     );
 
@@ -674,13 +676,15 @@ describe('useExecuteNativeBatch', () => {
 
     await act(async () => {
       await expect(latestHook!.executeBatch(recipients, 'ATOMIC')).rejects.toMatchObject({
-        category: 'USER_REJECTED',
+        category: 'RPC_FAILURE',
       });
     });
 
     expect(readNativeSubmissionRecords(storage).records).toEqual([]);
     expect(latestHook?.isIdentityLocked).toBe(false);
     expect(latestHook?.isWalletMutationUnsafe).toBe(false);
+    expect(latestHook?.txHash).toBeUndefined();
+    expect(latestHook?.submissionSnapshot).toBeUndefined();
   });
 
   it('rechecks an in-memory CID when the post-Mpool fallback storage write failed', async () => {
