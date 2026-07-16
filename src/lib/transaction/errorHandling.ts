@@ -2,6 +2,7 @@ import type { ErrorMode } from './multicall';
 
 export type BatchExecutionErrorCategory =
   | 'USER_REJECTED'
+  | 'WALLET_FAILURE'
   | 'INSUFFICIENT_FUNDS'
   | 'INVALID_RECIPIENT'
   | 'SIMULATION_REVERT'
@@ -41,7 +42,7 @@ export const ERROR_MODE_COPY: Record<ErrorMode, ErrorModeCopy> = {
   PARTIAL: {
     reviewSummary: 'ThinBatch refunds failed payments while successful transfers continue.',
     reviewDetail:
-      'Partial mode is only enabled for ThinBatch so failed payment value can be refunded instead of left in Multicall3.',
+      'Failed payments are refunded while successful payments can continue.',
     failureSummary:
       'Some transfers may already be finalized; failed payment value is refunded by ThinBatch unless the refund itself reverts.',
     retryHint: 'Switch to Atomic if you need all-or-nothing delivery.',
@@ -52,7 +53,7 @@ export const ERROR_MODE_COPY: Record<ErrorMode, ErrorModeCopy> = {
       'Atomic mode requires every recipient call to succeed in the same aggregate transaction.',
     failureSummary: 'No transfers are finalized if any internal call fails.',
     retryHint:
-      'Correct the failing recipient rows and try again, or use configured ThinBatch Partial for best-effort delivery.',
+      'Correct the failing recipient rows and try again, or use Partial for best-effort delivery when available.',
   },
 };
 
@@ -87,19 +88,43 @@ function includesAny(message: string, phrases: string[]): boolean {
   return phrases.some((phrase) => message.includes(phrase));
 }
 
-function getErrorCode(error: unknown): number | undefined {
+function collectErrorCodes(
+  error: unknown,
+  visited = new Set<object>(),
+): number[] {
   if (typeof error !== 'object' || error === null) {
-    return undefined;
+    return [];
   }
 
-  const maybeCode = Reflect.get(error, 'code');
+  if (visited.has(error)) {
+    return [];
+  }
 
-  return typeof maybeCode === 'number' ? maybeCode : undefined;
+  visited.add(error);
+  const codes: number[] = [];
+
+  for (const field of ['code', 'statusCode']) {
+    const value = Reflect.get(error, field);
+    if (typeof value === 'number') {
+      codes.push(value);
+    }
+  }
+
+  const cause = Reflect.get(error, 'cause');
+  if (cause) {
+    codes.push(...collectErrorCodes(cause, visited));
+  }
+
+  return codes;
 }
 
 function collectErrorMessages(error: unknown): string[] {
   if (error instanceof Error) {
     const messages = [error.message];
+
+    if (error.name && error.name !== 'Error') {
+      messages.push(error.name);
+    }
 
     const shortMessage = Reflect.get(error, 'shortMessage');
     if (typeof shortMessage === 'string') {
@@ -148,6 +173,20 @@ function createBatchExecutionError(
         stage: context.stage,
         recoverable: true,
         hint: 'Review the batch and retry when you are ready to sign.',
+        details,
+        cause,
+      });
+    case 'WALLET_FAILURE':
+      return new BatchExecutionError({
+        category,
+        title: 'Wallet signing failed',
+        message:
+          'The connected wallet could not sign the Filecoin message, so it was not submitted.',
+        errorMode: context.errorMode,
+        stage: context.stage,
+        recoverable: true,
+        hint:
+          'Keep the wallet unlocked and ready to sign. For Ledger, keep the Filecoin app open, then try again.',
         details,
         cause,
       });
@@ -214,13 +253,13 @@ function createBatchExecutionError(
     case 'RPC_FAILURE':
       return new BatchExecutionError({
         category,
-        title: 'RPC connection failed',
+        title: 'Network connection failed',
         message:
-          'SendFIL could not reach the configured RPC provider while estimating or sending this batch.',
+          'SendFIL could not reach the Filecoin network while estimating or sending this batch.',
         errorMode: context.errorMode,
         stage: context.stage,
         recoverable: true,
-        hint: 'Retry in a moment. If the problem persists, verify the configured RPC endpoint.',
+        hint: 'Retry in a moment. If the problem persists, switch networks or try again later.',
         details,
         cause,
       });
@@ -232,7 +271,7 @@ function createBatchExecutionError(
         message:
           context.errorMode === 'ATOMIC'
             ? `The batch failed unexpectedly. ${ERROR_MODE_COPY.ATOMIC.failureSummary}`
-            : 'The wallet or RPC returned an unexpected error while processing the batch.',
+            : 'The wallet or network returned an unexpected error while processing the batch.',
         errorMode: context.errorMode,
         stage: context.stage,
         recoverable: true,
@@ -256,10 +295,41 @@ export function mapBatchExecutionError(
 
   const details = collectErrorMessages(error).join(' | ');
   const lowerDetails = details.toLowerCase();
-  const code = getErrorCode(error);
+  const errorCodes = collectErrorCodes(error);
+  const hasLedgerContext = includesAny(lowerDetails, ['ledger', 'filecoin app']);
+  const isLedgerDeviceRejection =
+    hasLedgerContext &&
+    (errorCodes.includes(0x6986) ||
+      includesAny(lowerDetails, [
+        'command not allowed',
+        'command rejected',
+        '0x6986',
+      ]));
+  const isExplicitDeviceRefusal =
+    includesAny(lowerDetails, ['user refused on device', 'userrefusedondevice']) ||
+    (hasLedgerContext &&
+      (errorCodes.includes(0x5501) || lowerDetails.includes('0x5501')));
+  const isWalletRequestRejection =
+    includesAny(lowerDetails, [
+      'ledger',
+      'filecoin app',
+      'filsnap',
+      'metamask',
+      'wallet',
+    ]) &&
+    includesAny(lowerDetails, [
+      'request rejected',
+      'request was rejected',
+      'signature request was rejected',
+      'request cancelled',
+      'request canceled',
+    ]);
 
   if (
-    code === 4001 ||
+    errorCodes.includes(4001) ||
+    isLedgerDeviceRejection ||
+    isExplicitDeviceRefusal ||
+    isWalletRequestRejection ||
     includesAny(lowerDetails, [
       'user rejected',
       'user denied',
@@ -309,19 +379,54 @@ export function mapBatchExecutionError(
     return createBatchExecutionError('ONCHAIN_REVERT_ATOMIC', context, details, error);
   }
 
+  const hasStrongRpcEvidence = includesAny(lowerDetails, [
+    'rpc',
+    'json-rpc',
+    'fetch failed',
+    'failed to fetch',
+    'public client not available',
+    'http 503',
+    'http 502',
+    'http 500',
+  ]);
+
+  if (hasStrongRpcEvidence) {
+    return createBatchExecutionError('RPC_FAILURE', context, details, error);
+  }
+
+  const isNativeWalletError = includesAny(lowerDetails, [
+    'ledger',
+    'filsnap',
+    'filecoin wallet',
+    'filecoin app',
+    'metamask snap',
+  ]);
+  const isSigningError = includesAny(lowerDetails, [
+    'sign',
+    'signature',
+    'device',
+    'not connected',
+    'filecoin message',
+    'message data',
+    'account key',
+    'key handle',
+    'app not open',
+    'transport',
+    'hid',
+  ]);
+
+  if (isNativeWalletError && isSigningError) {
+    return createBatchExecutionError('WALLET_FAILURE', context, details, error);
+  }
+
   if (
     includesAny(lowerDetails, [
-      'rpc',
-      'json-rpc',
-      'fetch failed',
-      'failed to fetch',
       'timeout',
       'network error',
-      'public client not available',
       'connector not connected',
-      '503',
-      '502',
-      '500',
+      'status 503',
+      'status 502',
+      'status 500',
     ])
   ) {
     return createBatchExecutionError('RPC_FAILURE', context, details, error);

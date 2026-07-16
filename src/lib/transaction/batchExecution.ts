@@ -115,11 +115,7 @@ function prepareThinBatch(
 ): ThinBatchBatchResult {
   if (!network.thinBatchAddress) {
     throw new Error(
-      `ThinBatch is not configured for ${network.chainName}. Set ${
-        network.key === 'mainnet'
-          ? 'VITE_THINBATCH_ADDRESS_MAINNET'
-          : 'VITE_THINBATCH_ADDRESS_CALIBRATION'
-      } before using this execution method.`,
+      `ThinBatch is unavailable on ${network.chainName}. Use Standard for this batch.`,
     );
   }
 

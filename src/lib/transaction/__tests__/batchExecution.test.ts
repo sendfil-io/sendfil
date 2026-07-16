@@ -177,8 +177,6 @@ describe('INV-EXEC-001 prepared batch determinism', () => {
         network,
         'THINBATCH',
       ),
-    ).toThrow(
-      'ThinBatch is not configured for Calibration. Set VITE_THINBATCH_ADDRESS_CALIBRATION before using this execution method.',
-    );
+    ).toThrow('ThinBatch is unavailable on Calibration. Use Standard for this batch.');
   });
 });

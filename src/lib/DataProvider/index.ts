@@ -7,6 +7,7 @@ import type {
   TransactionStatus,
 } from './types';
 import type { SendFilNetworkKey } from '../networks';
+import { RpcProviderError } from './RpcProviderError';
 
 /** Filecoin.WalletBalance */
 export const getBalance = (address: string, networkKey?: SendFilNetworkKey) =>
@@ -37,13 +38,7 @@ export const submitTransaction = (
 
 /** Filecoin.StateSearchMsg - Search for message by CID */
 export const searchMessage = (cid: { '/': string }, networkKey?: SendFilNetworkKey) =>
-  callRpc<{
-    Message: { '/': string };
-    Receipt: MessageReceipt;
-    ReturnDec: unknown;
-    TipSet: { '/': string };
-    Height: number;
-  } | null>('Filecoin.StateSearchMsg', [null, cid, -1, true], networkKey);
+  callRpc<unknown | null>('Filecoin.StateSearchMsg', [null, cid, -1, false], networkKey);
 
 /** Filecoin.StateGetReceipt - Get receipt for message CID */
 export const getTransactionReceipt = (
@@ -66,6 +61,74 @@ export const getPendingMessages = (
 ) =>
   callRpc<FilecoinMessage[]>('Filecoin.MpoolPending', [address ? [address] : []], networkKey);
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function parseExactSearchResult(
+  value: unknown,
+): { messageCid: string; receipt: MessageReceipt } | undefined {
+  if (!isRecord(value) || !isRecord(value.Message) || !isRecord(value.Receipt)) {
+    return undefined;
+  }
+
+  const messageCid = value.Message['/'];
+  const { ExitCode, Return, GasUsed } = value.Receipt;
+
+  if (
+    typeof messageCid !== 'string' ||
+    messageCid.length === 0 ||
+    typeof ExitCode !== 'number' ||
+    !Number.isSafeInteger(ExitCode) ||
+    ExitCode < 0 ||
+    (typeof Return !== 'string' && Return !== null) ||
+    typeof GasUsed !== 'number' ||
+    !Number.isSafeInteger(GasUsed) ||
+    GasUsed < 0
+  ) {
+    return undefined;
+  }
+
+  const EventsRoot = value.Receipt.EventsRoot;
+
+  if (
+    EventsRoot !== undefined &&
+    EventsRoot !== null &&
+    (!isRecord(EventsRoot) ||
+      typeof EventsRoot['/'] !== 'string' ||
+      EventsRoot['/'].length === 0)
+  ) {
+    return undefined;
+  }
+
+  const normalizedEventsRoot =
+    EventsRoot === null
+      ? null
+      : isRecord(EventsRoot)
+        ? { '/': EventsRoot['/'] as string }
+        : undefined;
+
+  return {
+    messageCid,
+    receipt: {
+      ExitCode,
+      Return: Return ?? '',
+      GasUsed,
+      ...(normalizedEventsRoot === undefined
+        ? {}
+        : { EventsRoot: normalizedEventsRoot }),
+    },
+  };
+}
+
+function isRetryableRpcReadFailure(error: unknown): boolean {
+  if (!(error instanceof RpcProviderError)) {
+    return false;
+  }
+
+  return error.retryable || Boolean(error.attempts?.some((attempt) => attempt.retryable));
+}
+
 /** Helper: Check transaction status by CID */
 export const getTransactionStatus = async (
   cidString: string,
@@ -77,13 +140,38 @@ export const getTransactionStatus = async (
     // First try to find the message
     const searchResult = await searchMessage(cid, networkKey);
     
-    if (searchResult) {
+    if (searchResult !== null) {
+      const parsedSearchResult = parseExactSearchResult(searchResult);
+
+      if (!parsedSearchResult) {
+        return {
+          cid: cidString,
+          status: 'failed',
+          error:
+            'Filecoin.StateSearchMsg returned a malformed message or receipt. ' +
+            'The requested message outcome is uncertain.',
+        };
+      }
+
+      if (parsedSearchResult.messageCid !== cidString) {
+        return {
+          cid: cidString,
+          status: 'failed',
+          error:
+            `Filecoin.StateSearchMsg returned replacement CID ${parsedSearchResult.messageCid} ` +
+            `instead of the requested CID ${cidString}. The requested message outcome is uncertain.`,
+        };
+      }
+
       // Message found and executed
       return {
         cid: cidString,
-        status: searchResult.Receipt.ExitCode === 0 ? 'confirmed' : 'failed',
-        receipt: searchResult.Receipt,
-        error: searchResult.Receipt.ExitCode !== 0 ? `Exit code: ${searchResult.Receipt.ExitCode}` : undefined,
+        status: parsedSearchResult.receipt.ExitCode === 0 ? 'confirmed' : 'failed',
+        receipt: parsedSearchResult.receipt,
+        error:
+          parsedSearchResult.receipt.ExitCode !== 0
+            ? `Exit code: ${parsedSearchResult.receipt.ExitCode}`
+            : undefined,
       };
     }
     
@@ -93,10 +181,12 @@ export const getTransactionStatus = async (
       status: 'pending',
     };
   } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+
     return {
       cid: cidString,
-      status: 'failed',
-      error: error instanceof Error ? error.message : 'Unknown error',
+      status: isRetryableRpcReadFailure(error) ? 'pending' : 'failed',
+      error: message,
     };
   }
 };
@@ -108,21 +198,29 @@ export const pollTransactionStatus = async (
   intervalMs: number = 5000,
   networkKey?: SendFilNetworkKey,
 ): Promise<TransactionStatus> => {
+  let lastPendingError: string | undefined;
+
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const status = await getTransactionStatus(cidString, networkKey);
-    
+
     if (status.status !== 'pending') {
       return status;
     }
-    
+
+    if (status.error) {
+      lastPendingError = status.error;
+    }
+
     if (attempt < maxAttempts - 1) {
       await new Promise(resolve => setTimeout(resolve, intervalMs));
     }
   }
-  
+
   return {
     cid: cidString,
     status: 'failed',
-    error: 'Transaction timeout - still pending after maximum wait time',
+    error: lastPendingError
+      ? `Transaction confirmation remained unavailable after ${maxAttempts} attempts. Last RPC error: ${lastPendingError}`
+      : 'Transaction timeout - still pending after maximum wait time',
   };
 }; 

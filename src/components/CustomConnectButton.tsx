@@ -39,6 +39,7 @@ interface NativeWalletConnectionProps {
 }
 
 export interface CustomConnectButtonProps {
+  disabled?: boolean;
   nativeFilecoin?: NativeWalletConnectionProps;
 }
 
@@ -100,17 +101,11 @@ function WalletOptionButton({
           {isConnecting ? `${label}...` : label}
         </span>
         {description ? (
-          <span className="mt-1 block text-sm text-slate-500">
-            {description}
-          </span>
+          <span className="mt-1 block text-sm text-slate-500">{description}</span>
         ) : null}
       </span>
       {logo.src ? (
-        <img
-          src={logo.src}
-          alt={logo.alt}
-          className={`shrink-0 ${logo.className}`}
-        />
+        <img src={logo.src} alt={logo.alt} className={`shrink-0 ${logo.className}`} />
       ) : (
         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-xs font-semibold uppercase text-slate-600">
           {label.slice(0, 2)}
@@ -134,7 +129,9 @@ function normalizeWalletName(name: string): string {
   return name.replace(/\s+/g, ' ').trim().toLowerCase();
 }
 
-function getRainbowKitConnectorDetails(connector: Connector): RainbowKitConnectorDetails | undefined {
+function getRainbowKitConnectorDetails(
+  connector: Connector,
+): RainbowKitConnectorDetails | undefined {
   return (connector as RainbowKitConnector).rkDetails;
 }
 
@@ -147,7 +144,9 @@ function getEvmWalletLabel(connector: Connector): string {
 }
 
 function getEvmWalletSortIndex(connector: Connector): number {
-  const normalizedName = normalizeWalletName(`${getEvmWalletKey(connector)} ${getEvmWalletLabel(connector)}`);
+  const normalizedName = normalizeWalletName(
+    `${getEvmWalletKey(connector)} ${getEvmWalletLabel(connector)}`,
+  );
 
   if (normalizedName.includes('metamask')) {
     return 0;
@@ -209,20 +208,17 @@ function renderModalPortal(content: React.ReactNode): React.ReactNode {
 }
 
 export const CustomConnectButton: React.FC<CustomConnectButtonProps> = ({
+  disabled = false,
   nativeFilecoin,
 }) => {
   const [showAccountModal, setShowAccountModal] = useState(false);
   const [showNativeNetworkChooser, setShowNativeNetworkChooser] = useState(false);
   const [showWalletChooser, setShowWalletChooser] = useState(false);
-  const [connectingNativeProviderId, setConnectingNativeProviderId] = useState<string | null>(
-    null,
-  );
+  const [connectingNativeProviderId, setConnectingNativeProviderId] = useState<string | null>(null);
   const [preparedNativeProviderIds, setPreparedNativeProviderIds] = useState<Set<string>>(
     () => new Set(),
   );
-  const [connectingEvmConnectorUid, setConnectingEvmConnectorUid] = useState<string | null>(
-    null,
-  );
+  const [connectingEvmConnectorUid, setConnectingEvmConnectorUid] = useState<string | null>(null);
   const [switchingNativeNetworkKey, setSwitchingNativeNetworkKey] =
     useState<SendFilNetworkKey | null>(null);
   const [evmWalletConnectionError, setEvmWalletConnectionError] = useState<string | undefined>();
@@ -258,9 +254,9 @@ export const CustomConnectButton: React.FC<CustomConnectButtonProps> = ({
             return;
           }
 
-          setEvmWalletIcons((current) => (
-            current[walletKey] ? current : { ...current, [walletKey]: src }
-          ));
+          setEvmWalletIcons((current) =>
+            current[walletKey] ? current : { ...current, [walletKey]: src },
+          );
         })
         .catch(() => {
           // Logo loading is cosmetic; keep the text row usable if RainbowKit changes an asset.
@@ -284,7 +280,8 @@ export const CustomConnectButton: React.FC<CustomConnectButtonProps> = ({
         return;
       }
 
-      void provider.prepareConnect({ networkKey: getDefaultNetworkKey() })
+      void provider
+        .prepareConnect({ networkKey: getDefaultNetworkKey() })
         .catch(() => {
           // Keep the row connectable; the connect action reports actionable Ledger guidance.
         })
@@ -329,13 +326,7 @@ export const CustomConnectButton: React.FC<CustomConnectButtonProps> = ({
 
   return (
     <ConnectButton.Custom>
-      {({
-        account,
-        chain,
-        openChainModal,
-        authenticationStatus,
-        mounted,
-      }) => {
+      {({ account, chain, openChainModal, authenticationStatus, mounted }) => {
         const ready = mounted && authenticationStatus !== 'loading';
         const connected =
           ready &&
@@ -360,14 +351,11 @@ export const CustomConnectButton: React.FC<CustomConnectButtonProps> = ({
         const hasNativeWalletProviders = Boolean(nativeFilecoin?.providers.length);
         const evmConnectors = getVisibleEvmConnectors(connectors);
         const hasEvmConnectors = evmConnectors.length > 0;
-        const isConnectingWallet = Boolean(
-          connectingNativeProviderId || connectingEvmConnectorUid,
-        );
-        const connectionError =
-          nativeFilecoin?.connectionError ?? evmWalletConnectionError;
+        const isConnectingWallet = Boolean(connectingNativeProviderId || connectingEvmConnectorUid);
+        const connectionError = nativeFilecoin?.connectionError ?? evmWalletConnectionError;
 
         const handleNativeConnect = async (provider: NativeFilecoinWalletProvider) => {
-          if (!nativeFilecoin) {
+          if (disabled || !nativeFilecoin) {
             return;
           }
 
@@ -383,7 +371,7 @@ export const CustomConnectButton: React.FC<CustomConnectButtonProps> = ({
         };
 
         const handleNativeNetworkSwitch = async (networkKey: SendFilNetworkKey) => {
-          if (!nativeFilecoin || !nativeConnectedSender) {
+          if (disabled || !nativeFilecoin || !nativeConnectedSender) {
             return;
           }
 
@@ -413,6 +401,10 @@ export const CustomConnectButton: React.FC<CustomConnectButtonProps> = ({
         };
 
         const handleEvmConnect = async (connector: Connector) => {
+          if (disabled) {
+            return;
+          }
+
           const walletLabel = getEvmWalletLabel(connector);
 
           setEvmWalletConnectionError(undefined);
@@ -424,9 +416,7 @@ export const CustomConnectButton: React.FC<CustomConnectButtonProps> = ({
             setShowWalletChooser(false);
           } catch (error) {
             const message =
-              error instanceof Error
-                ? error.message
-                : `Failed to connect ${walletLabel}.`;
+              error instanceof Error ? error.message : `Failed to connect ${walletLabel}.`;
 
             setEvmWalletConnectionError(message);
           } finally {
@@ -472,7 +462,7 @@ export const CustomConnectButton: React.FC<CustomConnectButtonProps> = ({
                               className: 'h-8 w-8 rounded-lg object-contain',
                             }
                           }
-                          disabled={isConnectingWallet || isPreparing}
+                          disabled={disabled || isConnectingWallet || isPreparing}
                           isConnecting={isConnecting}
                           onClick={() => handleNativeConnect(provider)}
                         />
@@ -488,7 +478,7 @@ export const CustomConnectButton: React.FC<CustomConnectButtonProps> = ({
                           key={walletKey}
                           label={getEvmWalletLabel(connector)}
                           logo={getEvmWalletLogo(connector, evmWalletIcons[walletKey])}
-                          disabled={isConnectingWallet}
+                          disabled={disabled || isConnectingWallet}
                           isConnecting={connectingEvmConnectorUid === connector.uid}
                           onClick={() => handleEvmConnect(connector)}
                         />
@@ -510,7 +500,8 @@ export const CustomConnectButton: React.FC<CustomConnectButtonProps> = ({
           <button
             type="button"
             onClick={() => setShowWalletChooser(true)}
-            className={`w-full rounded-full bg-[#1f69ff] px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-[#1857d4] ${primaryActionShadow}`}
+            disabled={disabled}
+            className={`w-full rounded-full bg-[#1f69ff] px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-[#1857d4] disabled:cursor-not-allowed disabled:opacity-60 ${primaryActionShadow}`}
           >
             Connect Wallet
           </button>
@@ -528,7 +519,8 @@ export const CustomConnectButton: React.FC<CustomConnectButtonProps> = ({
               <button
                 type="button"
                 onClick={() => setShowNativeNetworkChooser(true)}
-                className="w-full rounded-full border border-slate-900 bg-slate-900 px-4 py-3 text-left text-sm font-semibold text-white transition-colors hover:bg-slate-800"
+                disabled={disabled}
+                className="w-full rounded-full border border-slate-900 bg-slate-900 px-4 py-3 text-left text-sm font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <div className="flex items-center justify-between gap-3">
                   <span>{nativeConnectedSender.network.walletLabel}</span>
@@ -566,7 +558,8 @@ export const CustomConnectButton: React.FC<CustomConnectButtonProps> = ({
               <button
                 type="button"
                 onClick={openChainModal}
-                className={`w-full rounded-full border px-4 py-3 text-left text-sm font-semibold transition-colors ${
+                disabled={disabled}
+                className={`w-full rounded-full border px-4 py-3 text-left text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
                   isWrongNetwork
                     ? 'border-red-200 bg-red-50 text-red-800 hover:bg-red-100'
                     : 'border-slate-900 bg-slate-900 text-white hover:bg-slate-800'
@@ -594,7 +587,9 @@ export const CustomConnectButton: React.FC<CustomConnectButtonProps> = ({
                 title={senderDisplayAddress}
               >
                 <div className="font-mono text-base font-semibold">{displayAddress}</div>
-                <div className="mt-1 text-sm text-blue-100">{account.displayBalance || '0 FIL'}</div>
+                <div className="mt-1 text-sm text-blue-100">
+                  {account.displayBalance || '0 FIL'}
+                </div>
               </button>
             </div>
           );
@@ -620,174 +615,187 @@ export const CustomConnectButton: React.FC<CustomConnectButtonProps> = ({
 
             {showWalletChooser && renderModalPortal(renderWalletChooser())}
 
-            {showNativeNetworkChooser && nativeConnectedSender && renderModalPortal(
-              <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 px-4">
-                <div className="relative w-full max-w-sm rounded-[24px] bg-white p-6 shadow-2xl">
-                  <button
-                    type="button"
-                    onClick={() => setShowNativeNetworkChooser(false)}
-                    className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-xl text-slate-500 transition-colors hover:bg-slate-200 hover:text-slate-900"
-                    aria-label="Close"
-                  >
-                    ×
-                  </button>
+            {showNativeNetworkChooser &&
+              nativeConnectedSender &&
+              renderModalPortal(
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 px-4">
+                  <div className="relative w-full max-w-sm rounded-[24px] bg-white p-6 shadow-2xl">
+                    <button
+                      type="button"
+                      onClick={() => setShowNativeNetworkChooser(false)}
+                      className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-xl text-slate-500 transition-colors hover:bg-slate-200 hover:text-slate-900"
+                      aria-label="Close"
+                    >
+                      ×
+                    </button>
 
-                  <div className="pr-10">
-                    <h3 className="text-lg font-semibold text-slate-950">Switch Network</h3>
+                    <div className="pr-10">
+                      <h3 className="text-lg font-semibold text-slate-950">Switch Network</h3>
+                    </div>
+
+                    <div className="mt-5 space-y-2">
+                      {nativeNetworkOptions.map((network) => {
+                        const isCurrent = network.key === nativeConnectedSender.networkKey;
+                        const isSwitching = switchingNativeNetworkKey === network.key;
+
+                        return (
+                          <button
+                            key={network.key}
+                            type="button"
+                            onClick={() => {
+                              void handleNativeNetworkSwitch(network.key);
+                            }}
+                            disabled={disabled || Boolean(switchingNativeNetworkKey) || isCurrent}
+                            className={`flex w-full items-center justify-between gap-4 rounded-xl border px-4 py-3 text-left transition-colors disabled:cursor-not-allowed ${
+                              isCurrent
+                                ? 'border-blue-200 bg-blue-50 text-blue-900'
+                                : 'border-slate-200 bg-white text-slate-950 hover:border-blue-200 hover:bg-blue-50'
+                            }`}
+                          >
+                            <span className="font-semibold">
+                              {isSwitching ? `${network.walletLabel}...` : network.walletLabel}
+                            </span>
+                            {isCurrent ? (
+                              <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-700">
+                                Current
+                              </span>
+                            ) : null}
+                          </button>
+                        );
+                      })}
+
+                      {connectionError && (
+                        <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                          {connectionError}
+                        </div>
+                      )}
+                    </div>
                   </div>
+                </div>,
+              )}
 
-                  <div className="mt-5 space-y-2">
-                    {nativeNetworkOptions.map((network) => {
-                      const isCurrent = network.key === nativeConnectedSender.networkKey;
-                      const isSwitching = switchingNativeNetworkKey === network.key;
+            {showAccountModal &&
+              nativeConnectedSender &&
+              renderModalPortal(
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 px-4">
+                  <div className="relative w-full max-w-sm rounded-[24px] bg-white p-6 shadow-2xl">
+                    <button
+                      type="button"
+                      onClick={() => setShowAccountModal(false)}
+                      className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-xl text-slate-500 transition-colors hover:bg-slate-200 hover:text-slate-900"
+                      aria-label="Close"
+                    >
+                      ×
+                    </button>
 
-                      return (
+                    <div className="text-center">
+                      <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-[#1f69ff] text-lg font-semibold text-white">
+                        FIL
+                      </div>
+
+                      <h3 className="break-all font-mono text-base font-semibold text-slate-950">
+                        {nativeConnectedSender.address}
+                      </h3>
+                      <p className="mt-2 text-sm text-slate-500">
+                        {nativeConnectedSender.provider.name}
+                      </p>
+                      <p className="mt-2 text-sm text-slate-500">
+                        {nativeConnectedSender.network.walletLabel}
+                      </p>
+                      <p className="mt-2 text-sm text-slate-500">
+                        {nativeFilecoin?.balanceLabel ?? 'Balance unavailable'}
+                      </p>
+
+                      <div className="mt-6 flex gap-3">
                         <button
-                          key={network.key}
                           type="button"
                           onClick={() => {
-                            void handleNativeNetworkSwitch(network.key);
+                            copyToClipboard(nativeConnectedSender.address);
+                            setShowAccountModal(false);
                           }}
-                          disabled={Boolean(switchingNativeNetworkKey) || isCurrent}
-                          className={`flex w-full items-center justify-between gap-4 rounded-xl border px-4 py-3 text-left transition-colors disabled:cursor-not-allowed ${
-                            isCurrent
-                              ? 'border-blue-200 bg-blue-50 text-blue-900'
-                              : 'border-slate-200 bg-white text-slate-950 hover:border-blue-200 hover:bg-blue-50'
-                          }`}
+                          className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:bg-slate-100"
                         >
-                          <span className="font-semibold">
-                            {isSwitching ? `${network.walletLabel}...` : network.walletLabel}
-                          </span>
-                          {isCurrent ? (
-                            <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-700">
-                              Current
-                            </span>
-                          ) : null}
+                          Copy Address
                         </button>
-                      );
-                    })}
 
-                    {connectionError && (
-                      <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                        {connectionError}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void nativeFilecoin?.onDisconnect();
+                            setShowNativeNetworkChooser(false);
+                            setShowAccountModal(false);
+                          }}
+                          disabled={disabled}
+                          className="flex-1 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          Disconnect
+                        </button>
                       </div>
-                    )}
-                  </div>
-                </div>
-              </div>,
-            )}
-
-            {showAccountModal && nativeConnectedSender && renderModalPortal(
-              <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 px-4">
-                <div className="relative w-full max-w-sm rounded-[24px] bg-white p-6 shadow-2xl">
-                  <button
-                    type="button"
-                    onClick={() => setShowAccountModal(false)}
-                    className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-xl text-slate-500 transition-colors hover:bg-slate-200 hover:text-slate-900"
-                    aria-label="Close"
-                  >
-                    ×
-                  </button>
-
-                  <div className="text-center">
-                    <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-[#1f69ff] text-lg font-semibold text-white">
-                      FIL
-                    </div>
-
-                    <h3 className="break-all font-mono text-base font-semibold text-slate-950">
-                      {nativeConnectedSender.address}
-                    </h3>
-                    <p className="mt-2 text-sm text-slate-500">
-                      {nativeConnectedSender.provider.name}
-                    </p>
-                    <p className="mt-2 text-sm text-slate-500">
-                      {nativeConnectedSender.network.walletLabel}
-                    </p>
-                    <p className="mt-2 text-sm text-slate-500">
-                      {nativeFilecoin?.balanceLabel ?? 'Balance unavailable'}
-                    </p>
-
-                    <div className="mt-6 flex gap-3">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          copyToClipboard(nativeConnectedSender.address);
-                          setShowAccountModal(false);
-                        }}
-                        className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:bg-slate-100"
-                      >
-                        Copy Address
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          void nativeFilecoin?.onDisconnect();
-                          setShowNativeNetworkChooser(false);
-                          setShowAccountModal(false);
-                        }}
-                        className="flex-1 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800"
-                      >
-                        Disconnect
-                      </button>
                     </div>
                   </div>
-                </div>
-              </div>,
-            )}
+                </div>,
+              )}
 
-            {showAccountModal && !nativeConnectedSender && account && renderModalPortal(
-              <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 px-4">
-                <div className="relative w-full max-w-sm rounded-[24px] bg-white p-6 shadow-2xl">
-                  <button
-                    type="button"
-                    onClick={() => setShowAccountModal(false)}
-                    className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-xl text-slate-500 transition-colors hover:bg-slate-200 hover:text-slate-900"
-                    aria-label="Close"
-                  >
-                    ×
-                  </button>
+            {showAccountModal &&
+              !nativeConnectedSender &&
+              account &&
+              renderModalPortal(
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 px-4">
+                  <div className="relative w-full max-w-sm rounded-[24px] bg-white p-6 shadow-2xl">
+                    <button
+                      type="button"
+                      onClick={() => setShowAccountModal(false)}
+                      className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-xl text-slate-500 transition-colors hover:bg-slate-200 hover:text-slate-900"
+                      aria-label="Close"
+                    >
+                      ×
+                    </button>
 
-                  <div className="text-center">
-                    <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-[#1f69ff] text-2xl text-white">
-                      ƒ
-                    </div>
+                    <div className="text-center">
+                      <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-[#1f69ff] text-2xl text-white">
+                        ƒ
+                      </div>
 
-                    <h3 className="font-mono text-base font-semibold text-slate-950">
-                      {senderDisplayAddress ?? account.address}
-                    </h3>
-                    <p className="mt-2 text-sm text-slate-500">{networkLabel}</p>
-                    <p className="mt-2 text-sm text-slate-500">
-                      {account.displayBalance || '0 FIL'}
-                    </p>
+                      <h3 className="font-mono text-base font-semibold text-slate-950">
+                        {senderDisplayAddress ?? account.address}
+                      </h3>
+                      <p className="mt-2 text-sm text-slate-500">{networkLabel}</p>
+                      <p className="mt-2 text-sm text-slate-500">
+                        {account.displayBalance || '0 FIL'}
+                      </p>
 
-                    <div className="mt-6 flex gap-3">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          copyToClipboard(senderDisplayAddress ?? account.address);
-                          setShowAccountModal(false);
-                        }}
-                        className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:bg-slate-100"
-                      >
-                        Copy Address
-                      </button>
+                      <div className="mt-6 flex gap-3">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            copyToClipboard(senderDisplayAddress ?? account.address);
+                            setShowAccountModal(false);
+                          }}
+                          className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:bg-slate-100"
+                        >
+                          Copy Address
+                        </button>
 
-                      <button
-                        type="button"
-                        onClick={() => {
-                          disconnect();
-                          setShowAccountModal(false);
-                        }}
-                        className="flex-1 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800"
-                      >
-                        Disconnect
-                      </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (disabled) {
+                              return;
+                            }
+
+                            disconnect();
+                            setShowAccountModal(false);
+                          }}
+                          disabled={disabled}
+                          className="flex-1 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          Disconnect
+                        </button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              </div>,
-            )}
+                </div>,
+              )}
           </div>
         );
       }}

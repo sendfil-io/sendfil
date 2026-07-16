@@ -320,7 +320,7 @@ describe('INV-RPC-001 contract recipient guard', () => {
     ) as HTMLButtonElement;
 
     expect(container.textContent).toContain(
-      'Could not verify EVM recipients for deployed contract code: RPC unavailable',
+      'Could not verify whether 0x or f4 recipients are contract addresses: RPC unavailable',
     );
     expect(sendButton.disabled).toBe(true);
 

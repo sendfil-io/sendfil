@@ -9,10 +9,7 @@ import {
   getSenderWalletTypeLabel,
   type BatchConfiguration,
 } from '../lib/batchConfiguration';
-import {
-  ERROR_MODE_COPY,
-  type BatchExecutionError,
-} from '../lib/transaction/errorHandling';
+import { ERROR_MODE_COPY, type BatchExecutionError } from '../lib/transaction/errorHandling';
 import { getFilfoxMessageUrl } from '../lib/networks';
 
 export type TransactionState = 'review' | 'signing' | 'pending' | 'confirmed' | 'failed';
@@ -28,6 +25,7 @@ export interface ReviewTransactionModalProps {
   isOpen: boolean;
   onClose: () => void;
   onConfirm: () => Promise<void>;
+  onRecheckTransaction?: () => Promise<void>;
 
   // Recipient data
   recipients: Array<{ address: string; amount: number }>;
@@ -47,6 +45,21 @@ export interface ReviewTransactionModalProps {
   // Wallet state
   walletBalance: number; // in FIL
   insufficientBalance: boolean;
+  fundingMode?: 'single-signer' | 'native-multisig';
+  fundingSourceLabel?: string;
+  fundingSourceAddress?: string;
+  connectedSignerAddress?: string;
+  multisigThreshold?: number;
+  multisigSignerCount?: number;
+  multisigProposalOutcome?: {
+    kind: 'queued' | 'applied-success';
+    transactionId: number;
+  };
+  signerGasBalance?: number;
+  submissionSummary?: {
+    recipientCount: number;
+    totalValueAttoFil: string;
+  };
 
   // Transaction state
   transactionState: TransactionState;
@@ -67,6 +80,17 @@ function formatFil(amount: number): string {
   return amount.toLocaleString(undefined, { maximumFractionDigits: 2 }) + ' FIL';
 }
 
+function formatExactAttoFil(attoFil: string): string {
+  const value = BigInt(attoFil);
+  const whole = value / 10n ** 18n;
+  const fraction = (value % 10n ** 18n)
+    .toString()
+    .padStart(18, '0')
+    .replace(/0+$/, '');
+
+  return `${whole.toString()}${fraction ? `.${fraction}` : ''} FIL`;
+}
+
 // Truncate addresses for display
 function truncateAddress(address: string): string {
   if (address.length <= 16) return address;
@@ -78,10 +102,37 @@ function attoFilToNanoFil(attoFil: string): number {
   return Number(BigInt(attoFil)) / 1e9;
 }
 
+function TechnicalErrorDetails({
+  details,
+  testId,
+}: {
+  details?: string;
+  testId: string;
+}) {
+  if (!details?.trim()) {
+    return null;
+  }
+
+  return (
+    <details
+      className="mt-3 w-full rounded-lg border border-current/15 bg-white/60 px-3 py-2 text-left"
+      data-testid={testId}
+    >
+      <summary className="cursor-pointer text-xs font-semibold">
+        Technical details
+      </summary>
+      <code className="mt-2 block whitespace-pre-wrap break-all text-xs leading-5 opacity-80">
+        {details}
+      </code>
+    </details>
+  );
+}
+
 export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
   isOpen,
   onClose,
   onConfirm,
+  onRecheckTransaction,
   recipients,
   validationErrors,
   validationWarnings,
@@ -93,6 +144,15 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
   gasEstimationError,
   walletBalance,
   insufficientBalance,
+  fundingMode = 'single-signer',
+  fundingSourceLabel = 'wallet',
+  fundingSourceAddress,
+  connectedSignerAddress,
+  multisigThreshold,
+  multisigSignerCount,
+  multisigProposalOutcome,
+  signerGasBalance,
+  submissionSummary,
   transactionState,
   transactionHash,
   transactionError,
@@ -107,13 +167,15 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
   const [hasAcknowledgedDuplicateRecipients, setHasAcknowledgedDuplicateRecipients] =
     useState(false);
   const modalRef = useRef<HTMLDivElement>(null);
-  const getFilfoxUrl = useCallback(
-    (hash: string) => getFilfoxMessageUrl(hash, chainId),
-    [chainId],
-  );
+  const previouslyFocusedElement = useRef<HTMLElement | null>(null);
+  const getFilfoxUrl = useCallback((hash: string) => getFilfoxMessageUrl(hash, chainId), [chainId]);
 
   // Calculate totals
   const estimatedNetworkFee = gasEstimate?.estimatedFeeInFil || 0;
+  const fundingRequiredTotal =
+    fundingMode === 'native-multisig'
+      ? recipientTotal + feeTotal
+      : recipientTotal + feeTotal + estimatedNetworkFee;
   const grandTotal = recipientTotal + feeTotal + estimatedNetworkFee;
   const duplicateRecipientWarnings = getDuplicateRecipientWarnings(validationWarnings);
   const otherValidationWarnings = validationWarnings.filter(
@@ -123,8 +185,7 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
   const requiresDuplicateConfirmation = duplicateRecipientWarnings.length > 0;
   const isAtomicMode = batchConfiguration.errorHandling === 'ATOMIC';
   const errorModeCopy = ERROR_MODE_COPY[batchConfiguration.errorHandling];
-  const hasBlockingAtomicPreflightError =
-    isAtomicMode && Boolean(gasEstimationError);
+  const hasBlockingAtomicPreflightError = isAtomicMode && Boolean(gasEstimationError);
 
   // Send button should be disabled when:
   const isSendDisabled =
@@ -136,32 +197,71 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
     isEstimatingGas ||
     transactionState !== 'review';
 
-  // Handle keyboard events
+  // Keep focus and page scroll inside the modal for its full open lifecycle.
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && transactionState === 'review') {
+    if (!isOpen) {
+      return;
+    }
+
+    previouslyFocusedElement.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    modalRef.current?.focus();
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+
+      if (previouslyFocusedElement.current?.isConnected) {
+        previouslyFocusedElement.current.focus();
+      }
+    };
+  }, [isOpen]);
+
+  // Handle Escape and cycle Tab focus without allowing it behind the dialog.
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && transactionState === 'review') {
         onClose();
+        return;
+      }
+
+      if (event.key !== 'Tab' || !modalRef.current) {
+        return;
+      }
+
+      const focusableElements = Array.from(
+        modalRef.current.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])',
+        ),
+      );
+
+      if (focusableElements.length === 0) {
+        event.preventDefault();
+        modalRef.current.focus();
+        return;
+      }
+
+      const first = focusableElements[0]!;
+      const last = focusableElements[focusableElements.length - 1]!;
+      const activeElement = document.activeElement;
+
+      if (event.shiftKey && (activeElement === first || activeElement === modalRef.current)) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && activeElement === last) {
+        event.preventDefault();
+        first.focus();
       }
     };
 
-    if (isOpen) {
-      document.addEventListener('keydown', handleKeyDown);
-      // Prevent body scroll when modal is open
-      document.body.style.overflow = 'hidden';
-    }
-
-    return () => {
-      document.removeEventListener('keydown', handleKeyDown);
-      document.body.style.overflow = 'unset';
-    };
-  }, [isOpen, transactionState, onClose]);
-
-  // Focus trap
-  useEffect(() => {
-    if (isOpen && modalRef.current) {
-      modalRef.current.focus();
-    }
-  }, [isOpen]);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose, transactionState]);
 
   useEffect(() => {
     setHasAcknowledgedDuplicateRecipients(false);
@@ -174,11 +274,10 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
     <>
       {/* Errors Section - Always prominent when present */}
       {validationErrors.length > 0 && (
-        <div className="mb-4 bg-red-50 border border-red-200 rounded-md p-4">
+        <div className="mb-4 bg-red-50 border border-red-200 rounded-md p-4" role="alert">
           <h4 className="font-semibold text-red-800 mb-2 flex items-center gap-2">
             <span>⚠</span>
-            {validationErrors.length} {validationErrors.length === 1 ? 'row has' : 'rows have'}{' '}
-            errors
+            {validationErrors.length} blocking {validationErrors.length === 1 ? 'issue' : 'issues'}
           </h4>
           <ul className="text-sm text-red-700 space-y-1 max-h-32 overflow-y-auto">
             {validationErrors.map((error, index) => (
@@ -241,8 +340,19 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
             Insufficient Balance
           </h4>
           <p className="text-sm text-red-700 mt-1">
-            Your wallet balance ({formatFil(walletBalance)}) is less than the required amount (
-            {formatFil(grandTotal)}).
+            {fundingMode === 'native-multisig'
+              ? `${fundingSourceLabel} spendable balance (${formatFil(
+                  walletBalance,
+                )}) must cover ${formatFil(
+                  fundingRequiredTotal,
+                )}, and the connected signer must cover the estimated gas${
+                  signerGasBalance !== undefined
+                    ? ` (${formatFil(signerGasBalance)} available)`
+                    : ''
+                }.`
+              : `Your wallet balance (${formatFil(
+                  walletBalance,
+                )}) is less than the required amount (${formatFil(grandTotal)}).`}
           </p>
         </div>
       )}
@@ -252,9 +362,9 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
           className="mb-4 rounded-md border border-blue-200 bg-blue-50 p-4"
           data-testid="contract-recipient-checking"
         >
-          <h4 className="font-semibold text-blue-900">Checking EVM recipients</h4>
+          <h4 className="font-semibold text-blue-900">Checking 0x and f4 recipients</h4>
           <p className="mt-1 text-sm text-blue-800">
-            SendFIL is verifying that 0x and f4 recipients do not have deployed contract code.
+            SendFIL is checking that those recipients are wallet addresses, not contracts.
           </p>
         </div>
       )}
@@ -267,9 +377,7 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
               : 'border-amber-200 bg-amber-50'
           }`}
           data-testid={
-            hasBlockingAtomicPreflightError
-              ? 'atomic-preflight-error'
-              : 'gas-estimation-error'
+            hasBlockingAtomicPreflightError ? 'atomic-preflight-error' : 'gas-estimation-error'
           }
         >
           <h4
@@ -295,6 +403,10 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
               {gasEstimationError.hint}
             </p>
           )}
+          <TechnicalErrorDetails
+            details={gasEstimationError.details}
+            testId="gas-estimation-technical-details"
+          />
         </div>
       )}
 
@@ -333,6 +445,44 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
               </p>
             </div>
           </div>
+          {fundingMode === 'native-multisig' && (
+            <div
+              className="mt-4 border-t border-slate-200 pt-4"
+              data-testid="multisig-review-identity"
+            >
+              <p className="text-xs font-medium uppercase tracking-[0.16em] text-slate-400">
+                Funding multisig
+              </p>
+              <p className="mt-1 text-sm font-semibold text-slate-900">{fundingSourceLabel}</p>
+              <code className="mt-1 block break-all text-xs text-slate-600">
+                {fundingSourceAddress ?? fundingSourceLabel}
+              </code>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-[0.16em] text-slate-400">
+                    Connected signer
+                  </p>
+                  <code className="mt-1 block break-all text-xs text-slate-700">
+                    {connectedSignerAddress ?? 'Unavailable'}
+                  </code>
+                </div>
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-[0.16em] text-slate-400">
+                    Approval threshold
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-slate-900">
+                    {multisigThreshold !== undefined && multisigSignerCount !== undefined
+                      ? `${multisigThreshold} of ${multisigSignerCount} signers`
+                      : 'Unavailable'}
+                  </p>
+                </div>
+              </div>
+              <p className="mt-3 text-xs leading-5 text-slate-500">
+                Proposing adds the connected signer&apos;s approval. The batch executes only when
+                the actor&apos;s approval threshold is reached.
+              </p>
+            </div>
+          )}
         </div>
 
         <div className="flex justify-between items-center">
@@ -382,9 +532,17 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
 
         <div className="border-t border-gray-200 pt-3">
           <div className="flex justify-between items-center">
-            <span className="font-semibold">Grand Total:</span>
-            <span className="font-bold text-xl">{formatFil(grandTotal)}</span>
+            <span className="font-semibold">
+              {fundingMode === 'native-multisig' ? 'Multisig required:' : 'Grand Total:'}
+            </span>
+            <span className="font-bold text-xl">{formatFil(fundingRequiredTotal)}</span>
           </div>
+          {fundingMode === 'native-multisig' && (
+            <div className="mt-2 flex justify-between text-sm text-gray-600">
+              <span>Signer gas required:</span>
+              <span>{formatFil(estimatedNetworkFee)}</span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -426,7 +584,9 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
         >
           <span className="flex items-center gap-2">
             {validationErrors.length > 0 ? (
-              <span className="text-yellow-600">{recipients.length} recipients currently valid</span>
+              <span className="text-yellow-600">
+                {recipients.length} recipients currently valid
+              </span>
             ) : (
               <span className="text-green-600">✓ {recipients.length} recipients validated</span>
             )}
@@ -463,15 +623,43 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
         </div>
       </div>
       <h3 className="text-lg font-semibold mb-2">Awaiting Signature</h3>
-      <p className="text-gray-600 text-center">Please confirm the transaction in your wallet...</p>
+      <p className="text-gray-600 text-center">
+        Please confirm the {fundingMode === 'native-multisig' ? 'proposal' : 'transaction'} in your
+        wallet...
+      </p>
     </div>
   );
+
+  const renderStoredSubmissionDetails = () =>
+    submissionSummary ? (
+      <div
+        className="mb-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-center text-sm text-slate-700"
+        data-testid="stored-submission-details"
+      >
+        <p className="font-semibold text-slate-900">
+          {getExecutionMethodLabel(batchConfiguration.executionMethod)} ·{' '}
+          {getErrorHandlingLabel(batchConfiguration.errorHandling)}
+        </p>
+        <p className="mt-1">
+          {submissionSummary.recipientCount}{' '}
+          {submissionSummary.recipientCount === 1 ? 'payment' : 'payments'} ·{' '}
+          {formatExactAttoFil(submissionSummary.totalValueAttoFil)} total
+        </p>
+      </div>
+    ) : null;
 
   const renderPendingState = () => (
     <div className="flex flex-col items-center py-8">
       <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-500 mb-4" />
-      <h3 className="text-lg font-semibold mb-2">Transaction Pending</h3>
-      <p className="text-gray-600 text-center mb-4">Your batch is being processed...</p>
+      <h3 className="text-lg font-semibold mb-2">
+        {fundingMode === 'native-multisig' ? 'Proposal Pending' : 'Transaction Pending'}
+      </h3>
+      <p className="text-gray-600 text-center mb-4">
+        {fundingMode === 'native-multisig'
+          ? 'Your multisig proposal is being processed...'
+          : 'Your batch is being processed...'}
+      </p>
+      {renderStoredSubmissionDetails()}
       {transactionHash && (
         <a
           href={getFilfoxUrl(transactionHash)}
@@ -490,14 +678,27 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
       <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mb-4">
         <span className="text-3xl">✅</span>
       </div>
-      <h3 className="text-lg font-semibold text-green-800 mb-2">Transaction Confirmed</h3>
+      <h3 className="text-lg font-semibold text-green-800 mb-2">
+        {fundingMode === 'native-multisig' ? 'Proposal Confirmed' : 'Transaction Confirmed'}
+      </h3>
       <p className="text-gray-600 text-center mb-4">
-        {isAtomicMode
-          ? `Successfully finalized ${formatFil(
-              recipientTotal,
-            )} to ${recipients.length} recipients in one atomic batch.`
-          : `Successfully sent ${formatFil(recipientTotal)} to ${recipients.length} recipients.`}
+        {fundingMode === 'native-multisig'
+          ? multisigProposalOutcome?.kind === 'queued'
+            ? `Proposal #${multisigProposalOutcome.transactionId} is confirmed and awaiting additional approvals.`
+            : multisigProposalOutcome?.kind === 'applied-success'
+              ? `Proposal #${multisigProposalOutcome.transactionId} reached threshold and its batch call completed on-chain.`
+              : 'The multisig proposal message was confirmed. Check its approval state before taking another action.'
+          : isAtomicMode
+            ? submissionSummary
+              ? `The stored atomic batch for ${submissionSummary.recipientCount} recipients was confirmed on-chain.`
+              : `Successfully finalized ${formatFil(
+                  recipientTotal,
+                )} to ${recipients.length} recipients in one atomic batch.`
+            : submissionSummary
+              ? `The stored batch for ${submissionSummary.recipientCount} recipients was confirmed on-chain.`
+              : `Successfully sent ${formatFil(recipientTotal)} to ${recipients.length} recipients.`}
       </p>
+      {renderStoredSubmissionDetails()}
       {transactionHash && (
         <a
           href={getFilfoxUrl(transactionHash)}
@@ -516,13 +717,37 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
       <div className="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center mb-4">
         <span className="text-3xl">❌</span>
       </div>
-      <h3 className="text-lg font-semibold text-red-800 mb-2">Transaction Failed</h3>
+      <h3 className="text-lg font-semibold text-red-800 mb-2">
+        {transactionError?.title ??
+          (fundingMode === 'native-multisig' ? 'Proposal Failed' : 'Transaction Failed')}
+      </h3>
       <p className="text-gray-600 text-center mb-4">
         {transactionError?.message || 'An error occurred while processing your transaction.'}
       </p>
-      <p className="text-sm text-gray-500 text-center mb-2">{errorModeCopy.failureSummary}</p>
+      <p className="text-sm text-gray-500 text-center mb-2">
+        {fundingMode === 'native-multisig'
+          ? transactionHash
+            ? 'Do not assume the batch executed successfully. Inspect the proposal message CID before retrying.'
+            : 'No multisig proposal was submitted, so the batch did not execute.'
+          : errorModeCopy.failureSummary}
+      </p>
+      {renderStoredSubmissionDetails()}
       {transactionError?.hint && (
         <p className="text-sm text-gray-500 text-center">{transactionError.hint}</p>
+      )}
+      <TechnicalErrorDetails
+        details={transactionError?.details}
+        testId="transaction-error-technical-details"
+      />
+      {transactionHash && (
+        <a
+          href={getFilfoxUrl(transactionHash)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-4 inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+        >
+          Inspect on Filfox ↗
+        </a>
       )}
     </div>
   );
@@ -567,7 +792,7 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
                   : 'bg-blue-500 hover:bg-blue-600 text-white'
               }`}
             >
-              Send
+              {fundingMode === 'native-multisig' ? 'Propose batch' : 'Send'}
             </button>
           </>
         );
@@ -611,13 +836,26 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
             >
               Close
             </button>
-            <button
-              type="button"
-              onClick={onConfirm}
-              className="px-6 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-md transition-colors"
-            >
-              Try Again
-            </button>
+            {transactionError?.recoverable !== false && (
+              <button
+                type="button"
+                onClick={onConfirm}
+                className="px-6 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-md transition-colors"
+              >
+                Try Again
+              </button>
+            )}
+            {transactionError?.recoverable === false &&
+              transactionHash &&
+              onRecheckTransaction && (
+                <button
+                  type="button"
+                  onClick={() => void onRecheckTransaction()}
+                  className="px-6 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-md transition-colors"
+                >
+                  Check status again
+                </button>
+              )}
           </>
         );
       default:
@@ -679,7 +917,13 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
             </p>
             <p className="mt-1 text-sm font-semibold text-slate-900">{networkLabel}</p>
           </div>
-          {renderContent()}
+          <div
+            role={transactionState === 'review' ? undefined : 'status'}
+            aria-live={transactionState === 'review' ? undefined : 'polite'}
+            aria-atomic={transactionState === 'review' ? undefined : true}
+          >
+            {renderContent()}
+          </div>
         </div>
 
         {/* Footer */}
