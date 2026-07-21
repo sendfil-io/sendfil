@@ -39,6 +39,10 @@ const THINBATCH_MAINNET_DEFAULT =
 const THINBATCH_CALIBRATION_DEFAULT =
   '0x67fE9e377CD2F554629E266Ba91F53AA652EAdEB' as const;
 
+const RETIRED_MAINNET_LOTUS_RPC_URLS = new Set([
+  'https://rpc.node.glif.io/rpc/v1',
+]);
+
 const LEGACY_ENV_WARNINGS = new Set<string>();
 
 const NETWORK_METADATA: Record<
@@ -93,6 +97,38 @@ export const SUPPORTED_WAGMI_CHAINS = [filecoin, filecoinCalibration] as const;
 function readEnv(name: string): string | undefined {
   const value = (import.meta.env as Record<string, string | undefined>)[name];
   return value && value.length > 0 ? value : undefined;
+}
+
+function normalizeRpcUrl(url: string): string {
+  const trimmed = url.trim();
+
+  try {
+    const parsed = new URL(trimmed);
+    parsed.hash = '';
+    parsed.pathname = parsed.pathname.replace(/\/+$/, '') || '/';
+    return parsed.toString();
+  } catch {
+    return trimmed.replace(/\/+$/, '');
+  }
+}
+
+function resolveConfiguredLotusFallback(
+  key: SendFilNetworkKey,
+  primary: string,
+  configuredFallback: string | undefined,
+): string {
+  if (!configuredFallback) {
+    return primary;
+  }
+
+  if (
+    key === 'mainnet' &&
+    RETIRED_MAINNET_LOTUS_RPC_URLS.has(normalizeRpcUrl(configuredFallback))
+  ) {
+    return primary;
+  }
+
+  return configuredFallback;
 }
 
 function warnLegacyEnvUsage(legacyEnvName: string, replacementEnvName: string): void {
@@ -263,13 +299,14 @@ export function resolveLotusRpcConfig(key: SendFilNetworkKey): {
       isMainnet ? 'VITE_LOTUS_RPC_URL_MAINNET' : 'VITE_LOTUS_RPC_URL_CALIBRATION',
       isMainnet ? 'VITE_GLIF_RPC_URL_PRIMARY' : undefined,
     ) ?? NETWORK_METADATA[key].defaultLotusRpcUrl;
-  const fallback =
+  const configuredFallback =
     readEnvWithLegacy(
       isMainnet
         ? 'VITE_LOTUS_RPC_FALLBACK_MAINNET'
         : 'VITE_LOTUS_RPC_FALLBACK_CALIBRATION',
       isMainnet ? 'VITE_GLIF_RPC_URL_FALLBACK' : undefined,
-    ) ?? primary;
+    );
+  const fallback = resolveConfiguredLotusFallback(key, primary, configuredFallback);
   const stateReadFallback =
     readEnv(
       isMainnet

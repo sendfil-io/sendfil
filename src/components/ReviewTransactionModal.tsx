@@ -10,6 +10,7 @@ import {
   type BatchConfiguration,
 } from '../lib/batchConfiguration';
 import { ERROR_MODE_COPY, type BatchExecutionError } from '../lib/transaction/errorHandling';
+import { isCanonicalFilecoinMessageCid } from '../lib/DataProvider/filecoinMessageCid';
 import { getFilfoxMessageUrl } from '../lib/networks';
 
 export type TransactionState = 'review' | 'signing' | 'pending' | 'confirmed' | 'failed';
@@ -727,9 +728,12 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
       <p className="text-sm text-gray-500 text-center mb-2">
         {fundingMode === 'native-multisig'
           ? transactionHash
-            ? 'Do not assume the batch executed successfully. Inspect the proposal message CID before retrying.'
+            ? 'Do not assume the batch executed successfully. Inspect the proposal message CID before taking another action.'
             : 'No multisig proposal was submitted, so the batch did not execute.'
-          : errorModeCopy.failureSummary}
+          : isCanonicalFilecoinMessageCid(transactionHash) &&
+              transactionError?.recoverable === false
+            ? 'The original transaction may still execute. Do not submit another transaction while its status is unresolved.'
+            : errorModeCopy.failureSummary}
       </p>
       {renderStoredSubmissionDetails()}
       {transactionError?.hint && (
