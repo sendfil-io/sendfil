@@ -723,30 +723,15 @@ export function useExecuteNativeBatch({
                 );
                 lockedCid = submission.cid;
               } catch (cause) {
-                if (!isNativeFilecoinSubmissionUncertainError(cause)) {
-                  if (persistedCid) {
-                    const cleanupError = removeNativeSubmissionRecord(
-                      executionIdentity,
-                      persistedCid,
-                      storage,
-                    );
-
-                    if (cleanupError) {
-                      throw createNativeSubmissionStorageError(
-                        cleanupError,
-                        errorMode,
-                      );
-                    }
-
-                    setSubmissionSnapshot(undefined);
-                    setTxHash(undefined);
-                  }
-
+                if (persistedCid) {
+                  lockedCid = persistedCid;
+                  lockedSubmissionWasUncertain = true;
+                } else if (isNativeFilecoinSubmissionUncertainError(cause)) {
+                  lockedCid = cause.cid;
+                  lockedSubmissionWasUncertain = true;
+                } else {
                   throw cause;
                 }
-
-                lockedCid = cause.cid;
-                lockedSubmissionWasUncertain = true;
               }
 
               if (!persistedCid) {

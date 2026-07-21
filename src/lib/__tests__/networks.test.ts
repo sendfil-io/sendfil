@@ -99,13 +99,29 @@ describe('networks', () => {
     });
   });
 
-  it('keeps an independent Mainnet state-read fallback when deployment fallback config is broken', () => {
-    vi.stubEnv('VITE_LOTUS_RPC_FALLBACK_MAINNET', 'https://rpc.node.glif.io/rpc/v1');
+  it('replaces URL-equivalent variants of the retired Mainnet fallback', () => {
+    vi.stubEnv('VITE_LOTUS_RPC_URL_MAINNET', 'https://api.node.glif.io/rpc/v1');
+    vi.stubEnv(
+      'VITE_LOTUS_RPC_FALLBACK_MAINNET',
+      'HTTPS://RPC.NODE.GLIF.IO:443/rpc/v1///',
+    );
     vi.stubEnv('VITE_LOTUS_RPC_STATE_READ_FALLBACK_MAINNET', '');
 
     expect(resolveLotusRpcConfig('mainnet')).toMatchObject({
-      fallback: 'https://rpc.node.glif.io/rpc/v1',
+      primary: 'https://api.node.glif.io/rpc/v1',
+      fallback: 'https://api.node.glif.io/rpc/v1',
       stateReadFallback: 'https://rpc.ankr.com/filecoin',
+    });
+  });
+
+  it('replaces the retired legacy Mainnet fallback when the current env is absent', () => {
+    vi.stubEnv('VITE_LOTUS_RPC_URL_MAINNET', 'https://api.node.glif.io/rpc/v1');
+    vi.stubEnv('VITE_LOTUS_RPC_FALLBACK_MAINNET', '');
+    vi.stubEnv('VITE_GLIF_RPC_URL_FALLBACK', 'https://rpc.node.glif.io/rpc/v1/');
+
+    expect(resolveLotusRpcConfig('mainnet')).toMatchObject({
+      primary: 'https://api.node.glif.io/rpc/v1',
+      fallback: 'https://api.node.glif.io/rpc/v1',
     });
   });
 

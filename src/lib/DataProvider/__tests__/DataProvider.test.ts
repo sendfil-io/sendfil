@@ -4,6 +4,7 @@ import { setupServer } from 'msw/node';
 const PRIMARY = 'http://primary';
 const FALLBACK = 'http://fallback';
 const STATE_READ_FALLBACK = 'http://state-read-fallback';
+const RETIRED_MAINNET_FALLBACK = 'https://rpc.node.glif.io/rpc/v1';
 const CALIBRATION_PRIMARY = 'http://calibration-primary';
 const CALIBRATION_FALLBACK = 'http://calibration-fallback';
 
@@ -698,6 +699,62 @@ describe('DataProvider', () => {
     await expect(
       callRpc('Filecoin.MpoolPush', [{ Message: {}, Signature: {} }], 'mainnet'),
     ).rejects.toThrow('transport error');
+    expect(stateReadFallbackRequests).toBe(0);
+  });
+
+  it('routes reads around a retired configured fallback to the independent read lane', async () => {
+    vi.stubEnv('VITE_LOTUS_RPC_FALLBACK_MAINNET', RETIRED_MAINNET_FALLBACK);
+    vi.stubEnv(
+      'VITE_LOTUS_RPC_STATE_READ_FALLBACK_MAINNET',
+      STATE_READ_FALLBACK,
+    );
+    let retiredFallbackRequests = 0;
+    let stateReadFallbackRequests = 0;
+
+    server.use(
+      http.post(PRIMARY, () => HttpResponse.text('unavailable', { status: 503 })),
+      http.post(RETIRED_MAINNET_FALLBACK, () => {
+        retiredFallbackRequests += 1;
+        return HttpResponse.error();
+      }),
+      http.post(STATE_READ_FALLBACK, ({ request }) => {
+        stateReadFallbackRequests += 1;
+        return jsonRpcResult(request, { Balance: '500000000000000000' });
+      }),
+    );
+
+    await expect(
+      callRpc('Filecoin.StateReadState', ['f03810106', []], 'mainnet'),
+    ).resolves.toMatchObject({ Balance: '500000000000000000' });
+    expect(retiredFallbackRequests).toBe(0);
+    expect(stateReadFallbackRequests).toBe(1);
+  });
+
+  it('never submits MpoolPush to a retired fallback or the read-only lane', async () => {
+    vi.stubEnv('VITE_LOTUS_RPC_FALLBACK_MAINNET', RETIRED_MAINNET_FALLBACK);
+    vi.stubEnv(
+      'VITE_LOTUS_RPC_STATE_READ_FALLBACK_MAINNET',
+      STATE_READ_FALLBACK,
+    );
+    let retiredFallbackRequests = 0;
+    let stateReadFallbackRequests = 0;
+
+    server.use(
+      http.post(PRIMARY, () => HttpResponse.error()),
+      http.post(RETIRED_MAINNET_FALLBACK, () => {
+        retiredFallbackRequests += 1;
+        return HttpResponse.error();
+      }),
+      http.post(STATE_READ_FALLBACK, () => {
+        stateReadFallbackRequests += 1;
+        return HttpResponse.error();
+      }),
+    );
+
+    await expect(
+      callRpc('Filecoin.MpoolPush', [{ Message: {}, Signature: {} }], 'mainnet'),
+    ).rejects.toThrow('transport error');
+    expect(retiredFallbackRequests).toBe(0);
     expect(stateReadFallbackRequests).toBe(0);
   });
 
