@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { useConnect, useDisconnect, type Connector } from 'wagmi';
@@ -19,6 +19,8 @@ import {
 import { truncateAddress } from '../utils/addressConverter';
 import ledgerLLogo from '../assets/ledger-l-logo.svg';
 import metamaskFoxLogo from '../assets/metamask-fox.png';
+import { TERMS_LAST_UPDATED } from '../legal/termsAcceptance';
+import TermsOfServiceLink from './TermsOfServiceLink';
 
 const E2E_MOCK_WALLET_ENABLED = import.meta.env.VITE_E2E_MOCK_WALLET === 'true';
 
@@ -40,7 +42,10 @@ interface NativeWalletConnectionProps {
 
 export interface CustomConnectButtonProps {
   disabled?: boolean;
+  hasAcceptedTerms: boolean;
   nativeFilecoin?: NativeWalletConnectionProps;
+  onAcceptTerms: () => void;
+  onOpenTerms: () => void;
 }
 
 const nativeWalletLogos: Record<string, { alt: string; className: string; src: string }> = {
@@ -209,7 +214,10 @@ function renderModalPortal(content: React.ReactNode): React.ReactNode {
 
 export const CustomConnectButton: React.FC<CustomConnectButtonProps> = ({
   disabled = false,
+  hasAcceptedTerms,
   nativeFilecoin,
+  onAcceptTerms,
+  onOpenTerms,
 }) => {
   const [showAccountModal, setShowAccountModal] = useState(false);
   const [showNativeNetworkChooser, setShowNativeNetworkChooser] = useState(false);
@@ -223,6 +231,8 @@ export const CustomConnectButton: React.FC<CustomConnectButtonProps> = ({
     useState<SendFilNetworkKey | null>(null);
   const [evmWalletConnectionError, setEvmWalletConnectionError] = useState<string | undefined>();
   const [evmWalletIcons, setEvmWalletIcons] = useState<Record<string, string>>({});
+  const [hasAcknowledgedTermsForConnection, setHasAcknowledgedTermsForConnection] = useState(false);
+  const walletChooserRef = useRef<HTMLDivElement>(null);
   const { connectAsync, connectors } = useConnect();
   const { disconnect } = useDisconnect();
   const mockNetwork =
@@ -307,6 +317,72 @@ export const CustomConnectButton: React.FC<CustomConnectButtonProps> = ({
     };
   }, [nativeFilecoin?.providers, preparedNativeProviderIds, showWalletChooser]);
 
+  React.useEffect(() => {
+    if (!showWalletChooser) {
+      return undefined;
+    }
+
+    const previouslyFocusedElement =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    walletChooserRef.current?.focus();
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const chooser = walletChooserRef.current;
+
+      if (!chooser || !chooser.contains(document.activeElement)) {
+        return;
+      }
+
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setShowWalletChooser(false);
+        setHasAcknowledgedTermsForConnection(false);
+        return;
+      }
+
+      if (event.key !== 'Tab') {
+        return;
+      }
+
+      const focusableElements = Array.from(
+        chooser.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      );
+
+      if (focusableElements.length === 0) {
+        event.preventDefault();
+        chooser.focus();
+        return;
+      }
+
+      const first = focusableElements[0]!;
+      const last = focusableElements[focusableElements.length - 1]!;
+      const activeElement = document.activeElement;
+
+      if (event.shiftKey && (activeElement === first || activeElement === chooser)) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = previousOverflow;
+
+      if (previouslyFocusedElement?.isConnected) {
+        previouslyFocusedElement.focus();
+      }
+    };
+  }, [showWalletChooser]);
+
   if (E2E_MOCK_WALLET_ENABLED) {
     return (
       <div className="space-y-3">
@@ -353,9 +429,15 @@ export const CustomConnectButton: React.FC<CustomConnectButtonProps> = ({
         const hasEvmConnectors = evmConnectors.length > 0;
         const isConnectingWallet = Boolean(connectingNativeProviderId || connectingEvmConnectorUid);
         const connectionError = nativeFilecoin?.connectionError ?? evmWalletConnectionError;
+        const canConnectUnderCurrentTerms = hasAcceptedTerms || hasAcknowledgedTermsForConnection;
+
+        const closeWalletChooser = () => {
+          setShowWalletChooser(false);
+          setHasAcknowledgedTermsForConnection(false);
+        };
 
         const handleNativeConnect = async (provider: NativeFilecoinWalletProvider) => {
-          if (disabled || !nativeFilecoin) {
+          if (disabled || !nativeFilecoin || !canConnectUnderCurrentTerms) {
             return;
           }
 
@@ -363,8 +445,9 @@ export const CustomConnectButton: React.FC<CustomConnectButtonProps> = ({
           setConnectingNativeProviderId(provider.metadata.id);
 
           try {
+            onAcceptTerms();
             await nativeFilecoin.onConnect(provider, getDefaultNetworkKey());
-            setShowWalletChooser(false);
+            closeWalletChooser();
           } finally {
             setConnectingNativeProviderId(null);
           }
@@ -401,7 +484,7 @@ export const CustomConnectButton: React.FC<CustomConnectButtonProps> = ({
         };
 
         const handleEvmConnect = async (connector: Connector) => {
-          if (disabled) {
+          if (disabled || !canConnectUnderCurrentTerms) {
             return;
           }
 
@@ -412,8 +495,9 @@ export const CustomConnectButton: React.FC<CustomConnectButtonProps> = ({
           setConnectingEvmConnectorUid(connector.uid);
 
           try {
+            onAcceptTerms();
             await connectAsync({ connector });
-            setShowWalletChooser(false);
+            closeWalletChooser();
           } catch (error) {
             const message =
               error instanceof Error ? error.message : `Failed to connect ${walletLabel}.`;
@@ -427,10 +511,17 @@ export const CustomConnectButton: React.FC<CustomConnectButtonProps> = ({
         const renderWalletChooser = () => {
           return (
             <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/55 px-4 py-6 sm:items-center">
-              <div className="relative max-h-[calc(100vh-3rem)] w-full max-w-md overflow-y-auto rounded-[24px] bg-white p-6 shadow-2xl">
+              <div
+                ref={walletChooserRef}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="wallet-chooser-title"
+                tabIndex={-1}
+                className="relative max-h-[calc(100vh-3rem)] w-full max-w-md overflow-y-auto rounded-[24px] bg-white p-6 shadow-2xl"
+              >
                 <button
                   type="button"
-                  onClick={() => setShowWalletChooser(false)}
+                  onClick={closeWalletChooser}
                   className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-xl text-slate-500 transition-colors hover:bg-slate-200 hover:text-slate-900"
                   aria-label="Close"
                 >
@@ -438,7 +529,50 @@ export const CustomConnectButton: React.FC<CustomConnectButtonProps> = ({
                 </button>
 
                 <div className="pr-10">
-                  <h3 className="text-lg font-semibold text-slate-950">Connect a Wallet</h3>
+                  <h3 id="wallet-chooser-title" className="text-lg font-semibold text-slate-950">
+                    Connect a Wallet
+                  </h3>
+                </div>
+
+                <div className="mt-5 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3">
+                  {hasAcceptedTerms ? (
+                    <p className="text-sm leading-6 text-blue-950">
+                      By selecting a wallet and connecting, you agree to the{' '}
+                      <TermsOfServiceLink
+                        onOpen={onOpenTerms}
+                        className="font-semibold underline underline-offset-2"
+                      />
+                      .
+                    </p>
+                  ) : (
+                    <div className="flex items-start gap-3">
+                      <input
+                        id="wallet-terms-acknowledgment"
+                        type="checkbox"
+                        checked={hasAcknowledgedTermsForConnection}
+                        onChange={(event) =>
+                          setHasAcknowledgedTermsForConnection(event.target.checked)
+                        }
+                        aria-label={`I have read and agree to the Terms of Service effective ${TERMS_LAST_UPDATED}`}
+                        data-testid="wallet-terms-acknowledgment"
+                        className="mt-1 h-4 w-4 shrink-0 rounded border-blue-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      <p className="text-sm leading-6 text-blue-950">
+                        <label htmlFor="wallet-terms-acknowledgment">
+                          I have read and agree to the{' '}
+                        </label>
+                        <TermsOfServiceLink
+                          onOpen={onOpenTerms}
+                          className="font-semibold underline underline-offset-2"
+                        />
+                        , effective {TERMS_LAST_UPDATED}.
+                      </p>
+                    </div>
+                  )}
+                  <p className="mt-2 text-xs leading-5 text-blue-800">
+                    Connecting shares public wallet and network information. It does not authorize a
+                    FIL transfer; a separate wallet approval is required.
+                  </p>
                 </div>
 
                 <div className="mt-5 space-y-2">
@@ -462,7 +596,12 @@ export const CustomConnectButton: React.FC<CustomConnectButtonProps> = ({
                               className: 'h-8 w-8 rounded-lg object-contain',
                             }
                           }
-                          disabled={disabled || isConnectingWallet || isPreparing}
+                          disabled={
+                            disabled ||
+                            isConnectingWallet ||
+                            isPreparing ||
+                            !canConnectUnderCurrentTerms
+                          }
                           isConnecting={isConnecting}
                           onClick={() => handleNativeConnect(provider)}
                         />
@@ -478,7 +617,7 @@ export const CustomConnectButton: React.FC<CustomConnectButtonProps> = ({
                           key={walletKey}
                           label={getEvmWalletLabel(connector)}
                           logo={getEvmWalletLogo(connector, evmWalletIcons[walletKey])}
-                          disabled={disabled || isConnectingWallet}
+                          disabled={disabled || isConnectingWallet || !canConnectUnderCurrentTerms}
                           isConnecting={connectingEvmConnectorUid === connector.uid}
                           onClick={() => handleEvmConnect(connector)}
                         />
@@ -499,7 +638,10 @@ export const CustomConnectButton: React.FC<CustomConnectButtonProps> = ({
         const renderDisconnectedState = () => (
           <button
             type="button"
-            onClick={() => setShowWalletChooser(true)}
+            onClick={() => {
+              setHasAcknowledgedTermsForConnection(false);
+              setShowWalletChooser(true);
+            }}
             disabled={disabled}
             className={`w-full rounded-full bg-[#1f69ff] px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-[#1857d4] disabled:cursor-not-allowed disabled:opacity-60 ${primaryActionShadow}`}
           >

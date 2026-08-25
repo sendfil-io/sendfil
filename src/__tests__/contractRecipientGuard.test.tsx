@@ -5,6 +5,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { CoinType, newActorAddress, newSecp256k1Address } from '@glif/filecoin-address';
 import { getAddress } from 'viem';
 import App from '../App';
+import { recordCurrentTermsAcceptance } from '../legal/termsAcceptance';
 import { toF4 } from '../utils/toF4';
 import type { RecipientValidationResult } from '../utils/recipientValidation';
 
@@ -156,6 +157,7 @@ describe('INV-RPC-001 contract recipient guard', () => {
     dom = new JSDOM('<!doctype html><html><body></body></html>', {
       url: 'http://localhost',
     });
+    recordCurrentTermsAcceptance(dom.window.localStorage);
 
     vi.stubGlobal('window', dom.window);
     vi.stubGlobal('document', dom.window.document);

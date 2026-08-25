@@ -4,6 +4,7 @@ import { JSDOM } from 'jsdom';
 import { createRoot, type Root } from 'react-dom/client';
 import { getAddress } from 'viem';
 import App from '../App';
+import { recordCurrentTermsAcceptance } from '../legal/termsAcceptance';
 import {
   validateRecipientRows,
   type RecipientValidationResult,
@@ -152,6 +153,7 @@ describe('INV-NET-001 wrong network gating', () => {
     dom = new JSDOM('<!doctype html><html><body></body></html>', {
       url: 'http://localhost',
     });
+    recordCurrentTermsAcceptance(dom.window.localStorage);
 
     vi.stubGlobal('window', dom.window);
     vi.stubGlobal('document', dom.window.document);
@@ -374,6 +376,7 @@ describe('INV-EXEC-001 review and submit alignment', () => {
     dom = new JSDOM('<!doctype html><html><body></body></html>', {
       url: 'http://localhost',
     });
+    recordCurrentTermsAcceptance(dom.window.localStorage);
 
     vi.stubGlobal('window', dom.window);
     vi.stubGlobal('document', dom.window.document);

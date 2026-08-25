@@ -9,6 +9,9 @@ import ReviewTransactionModal, {
 } from './components/ReviewTransactionModal';
 import { MultisigFundingPanel } from './components/multisig/MultisigFundingPanel';
 import UnavailableCapabilityModal from './components/UnavailableCapabilityModal';
+import TermsAcceptanceNotice from './components/TermsAcceptanceNotice';
+import TermsOfServiceLink from './components/TermsOfServiceLink';
+import TermsOfServiceModal from './components/TermsOfServiceModal';
 import { useBalance, usePublicClient } from 'wagmi';
 import { formatUnits } from 'viem';
 import { validateNoEvmContractRecipients } from './utils/contractRecipientGuard';
@@ -55,6 +58,10 @@ import {
   type NativeFilecoinConnectedSender,
   type NativeFilecoinWalletProvider,
 } from './lib/senders';
+import {
+  hasAcceptedCurrentTerms as readCurrentTermsAcceptance,
+  recordCurrentTermsAcceptance,
+} from './legal/termsAcceptance';
 
 interface Recipient {
   address: string;
@@ -103,6 +110,41 @@ const E2E_MOCK_CHAIN_ID =
 
 function createEmptyRecipients(count = 3): Recipient[] {
   return Array.from({ length: count }, () => ({ address: '', amount: '' }));
+}
+
+function getTermsAcceptanceStorage(): Storage | undefined {
+  if (typeof window === 'undefined') {
+    return undefined;
+  }
+
+  try {
+    return window.localStorage;
+  } catch {
+    return undefined;
+  }
+}
+
+function isTermsQueryOpen(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).get('terms') === '1'
+  );
+}
+
+function updateTermsQuery(isOpen: boolean): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  const url = new URL(window.location.href);
+
+  if (isOpen) {
+    url.searchParams.set('terms', '1');
+  } else {
+    url.searchParams.delete('terms');
+  }
+
+  window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
 }
 
 function createEmptyManualInteractions(count = 3): ManualRecipientInteraction[] {
@@ -366,7 +408,13 @@ function ConfigurationChoiceGroup({
   );
 }
 
-function SocialLinks({ className = '' }: { className?: string }) {
+function SocialLinks({
+  className = '',
+  onOpenTerms,
+}: {
+  className?: string;
+  onOpenTerms: () => void;
+}) {
   return (
     <div
       className={`flex items-center justify-center gap-2 text-sm text-slate-500 ${className}`.trim()}
@@ -390,11 +438,43 @@ function SocialLinks({ className = '' }: { className?: string }) {
       >
         GitHub
       </a>
+      <span className="text-slate-300" aria-hidden="true">
+        |
+      </span>
+      <TermsOfServiceLink
+        onOpen={onOpenTerms}
+        className="font-medium transition-colors hover:text-slate-900"
+      >
+        Terms
+      </TermsOfServiceLink>
     </div>
   );
 }
 
 export default function App() {
+  const [isTermsModalOpen, setIsTermsModalOpen] = React.useState(isTermsQueryOpen);
+  const [hasAcceptedCurrentTerms, setHasAcceptedCurrentTerms] = React.useState(() =>
+    readCurrentTermsAcceptance(getTermsAcceptanceStorage()),
+  );
+  const openTerms = React.useCallback(() => {
+    updateTermsQuery(true);
+    setIsTermsModalOpen(true);
+  }, []);
+  const closeTerms = React.useCallback(() => {
+    updateTermsQuery(false);
+    setIsTermsModalOpen(false);
+  }, []);
+  const acceptCurrentTerms = React.useCallback(() => {
+    recordCurrentTermsAcceptance(getTermsAcceptanceStorage());
+    setHasAcceptedCurrentTerms(true);
+  }, []);
+
+  React.useEffect(() => {
+    const handlePopState = () => setIsTermsModalOpen(isTermsQueryOpen());
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
   const e2eMockWallet = React.useMemo(
     () => ({
       enabled: E2E_MOCK_WALLET_ENABLED,
@@ -884,6 +964,10 @@ export default function App() {
 
   const handleCreateMultisig = React.useCallback(
     async (values: CreateMultisigFormValues): Promise<CreateMultisigResult> => {
+      if (!hasAcceptedCurrentTerms) {
+        throw new Error('Accept the current Terms of Service before creating a multisig.');
+      }
+
       if (
         nativeIdentityActionLockRef.current ||
         multisigCreateInvocationRef.current ||
@@ -905,11 +989,15 @@ export default function App() {
         nativeWalletMutationUnsafeRef.current = false;
       }
     },
-    [createMultisig],
+    [createMultisig, hasAcceptedCurrentTerms],
   );
 
   const runMultisigProposalAction = React.useCallback(
     async <T,>(action: () => Promise<T>): Promise<T> => {
+      if (!hasAcceptedCurrentTerms) {
+        throw new Error('Accept the current Terms of Service before submitting this action.');
+      }
+
       if (
         nativeIdentityActionLockRef.current ||
         multisigCreateInvocationRef.current ||
@@ -931,7 +1019,7 @@ export default function App() {
         nativeWalletMutationUnsafeRef.current = false;
       }
     },
-    [],
+    [hasAcceptedCurrentTerms],
   );
 
   const handleApproveMultisigProposal = React.useCallback(
@@ -1338,18 +1426,17 @@ export default function App() {
       !isNativeRecoveryNavigationLocked,
   );
   const reviewDisabled =
-    canOpenCreateRecovery
+    canOpenCreateRecovery || canInspectLockedNativeBatch
       ? false
       : (isUsingNativeFundingPath &&
           (isMultisigCreateActionInFlight || isMultisigProposalActionInFlight)) ||
         isNativeWalletTransitionInFlight ||
-        (canInspectLockedNativeBatch
-          ? false
-          : (isUsingNativeFundingPath && isNativeIdentityActionLocked) ||
-            !isConnected ||
-            !canUseLiveSendPath ||
-            isNetworkMismatch ||
-            !hasReviewableRows);
+        !hasAcceptedCurrentTerms ||
+        (isUsingNativeFundingPath && isNativeIdentityActionLocked) ||
+        !isConnected ||
+        !canUseLiveSendPath ||
+        isNetworkMismatch ||
+        !hasReviewableRows;
   const transactionState: TransactionState =
     executionState === 'idle'
       ? 'review'
@@ -1444,6 +1531,10 @@ export default function App() {
       return 'Connect a wallet to review transaction';
     }
 
+    if (!hasAcceptedCurrentTerms) {
+      return 'Accept the Terms of Service before continuing.';
+    }
+
     if (isNetworkMismatch) {
       return `Switch to ${getSupportedNetworkListLabel()} before continuing.`;
     }
@@ -1483,6 +1574,7 @@ export default function App() {
     inputMode,
     canUseLiveSendPath,
     isConnected,
+    hasAcceptedCurrentTerms,
     isUsingNativeFundingPath,
     isNativeSubmissionRecoveryContextReady,
     isMultisigCreateActionInFlight,
@@ -1550,7 +1642,7 @@ export default function App() {
     }
 
     if (
-    isNativeSubmissionRecoveryRequired &&
+      isNativeSubmissionRecoveryRequired &&
       isUsingNativeFundingPath &&
       !isNativeSubmissionRecoveryContextReady
     ) {
@@ -1579,6 +1671,7 @@ export default function App() {
 
     if (
       !isConnected ||
+      !hasAcceptedCurrentTerms ||
       !canUseLiveSendPath ||
       !address ||
       isNativeWalletTransitionInFlight ||
@@ -1766,6 +1859,7 @@ export default function App() {
       nativeBatchInvocationRef.current ||
       nativeWalletTransitionRef.current ||
       !isConnected ||
+      !hasAcceptedCurrentTerms ||
       !canUseLiveSendPath ||
       !address ||
       isNetworkMismatch ||
@@ -1891,6 +1985,9 @@ f1cj...,3.3`;
 
           <CustomConnectButton
             disabled={isNativeRecoveryNavigationLocked}
+            hasAcceptedTerms={hasAcceptedCurrentTerms}
+            onAcceptTerms={acceptCurrentTerms}
+            onOpenTerms={openTerms}
             nativeFilecoin={{
               providers: nativeFilecoinProviders,
               connectedSender: activeNativeSender,
@@ -1901,6 +1998,10 @@ f1cj...,3.3`;
               onClearConnectionError: () => setNativeWalletConnectionError(undefined),
             }}
           />
+
+          {isConnected && !hasAcceptedCurrentTerms && (
+            <TermsAcceptanceNotice onAccept={acceptCurrentTerms} onOpenTerms={openTerms} />
+          )}
 
           {lockedNativeSubmissionSnapshot && nativeSubmissionNetwork && (
             <div
@@ -2074,6 +2175,7 @@ f1cj...,3.3`;
             {batchConfiguration.senderWalletType === 'MULTI_SIG' && (
               <MultisigFundingPanel
                 enabled={Boolean(activeNativeSender)}
+                canSubmitTransactions={hasAcceptedCurrentTerms}
                 isExternallyLocked={
                   isNativeActiveMutationOrSubmissionLocked || isNativeWalletTransitionInFlight
                 }
@@ -2109,7 +2211,7 @@ f1cj...,3.3`;
           </div>
 
           <div className="mt-auto hidden pt-8 lg:block">
-            <SocialLinks />
+            <SocialLinks onOpenTerms={openTerms} />
           </div>
         </aside>
 
@@ -2552,11 +2654,13 @@ f1cj...,3.3`;
                                       ? 'Wallet Update In Progress'
                                       : !isConnected
                                         ? 'Connect Wallet to Review'
-                                        : isNetworkMismatch
-                                          ? 'Switch Network to Review'
-                                          : !canUseLiveSendPath
-                                            ? 'Sender Not Available'
-                                            : `Review Batch${draftRecipientCount > 0 ? ` (${draftRecipientCount})` : ''}`}
+                                        : !hasAcceptedCurrentTerms
+                                          ? 'Accept Terms to Review'
+                                          : isNetworkMismatch
+                                            ? 'Switch Network to Review'
+                                            : !canUseLiveSendPath
+                                              ? 'Sender Not Available'
+                                              : `Review Batch${draftRecipientCount > 0 ? ` (${draftRecipientCount})` : ''}`}
                   </button>
                 </div>
               </div>
@@ -2565,7 +2669,7 @@ f1cj...,3.3`;
         </main>
 
         <footer className="border-t border-slate-200/80 bg-white/90 px-5 py-6 backdrop-blur lg:hidden">
-          <SocialLinks />
+          <SocialLinks onOpenTerms={openTerms} />
         </footer>
       </div>
 
@@ -2659,6 +2763,8 @@ f1cj...,3.3`;
         description={unavailableCapabilityNotice?.description ?? ''}
         onClose={() => setUnavailableCapabilityNotice(null)}
       />
+
+      <TermsOfServiceModal isOpen={isTermsModalOpen} onClose={closeTerms} />
     </div>
   );
 }

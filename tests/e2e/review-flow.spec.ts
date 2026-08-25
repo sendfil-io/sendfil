@@ -1,8 +1,24 @@
 import { expect, test, type Page } from '@playwright/test';
+import { TERMS_ACCEPTANCE_STORAGE_KEY, TERMS_VERSION } from '../../src/legal/termsAcceptance';
 import { E2E_ATOMIC_REVERT_ADDRESS } from '../../src/lib/transaction/mockAdapter';
 
 const DUPLICATE_ADDRESS = '0x1234567890abcdef1234567890abcdef12345678';
 const UNIQUE_ADDRESS = '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd';
+
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(
+    ({ storageKey, version }) => {
+      window.localStorage.setItem(
+        storageKey,
+        JSON.stringify({
+          acceptedAt: '2026-08-25T00:00:00.000Z',
+          version,
+        }),
+      );
+    },
+    { storageKey: TERMS_ACCEPTANCE_STORAGE_KEY, version: TERMS_VERSION },
+  );
+});
 
 async function openManualInput(page: Page) {
   await page.goto('/');
