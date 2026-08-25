@@ -141,7 +141,9 @@ export function TermsOfServiceContent() {
           <p>
             Connecting a wallet may disclose its public address, selected account, network,
             balances, capabilities, and related public blockchain information to the Service and
-            relevant wallet or infrastructure providers.{' '}
+            relevant wallet or infrastructure providers. Review and estimation may also send
+            recipient addresses, amounts, and complete encoded transaction instructions to wallets
+            and RPC or Lotus providers before you sign.{' '}
             <strong>Connecting does not itself move FIL.</strong> An on-chain action occurs only
             after the required wallet signature or approval and network submission.
           </p>
@@ -234,9 +236,11 @@ export function TermsOfServiceContent() {
           </p>
           <p>
             SendFIL may include a service or platform fee (<strong>“SendFIL Fee”</strong>) where
-            enabled. The review screen will attempt to show the aggregate SendFIL Fee before you
+            enabled. Where enabled, the review screen shows the aggregate SendFIL Fee before you
             sign. By signing, you authorize that displayed fee along with the recipient transfers
-            and applicable Network Fees. We may change or waive the SendFIL Fee prospectively.
+            and applicable Network Fees. We may change or waive the SendFIL Fee prospectively. Any
+            changed SendFIL Fee applies only to a later transaction and will be shown before
+            signing. If a fee is not displayed, do not sign the transaction.
           </p>
           <p>
             Except where required by law or expressly agreed by SendFIL in writing, SendFIL Fees are
@@ -265,10 +269,13 @@ export function TermsOfServiceContent() {
             ability of a recipient to credit the transfer.
           </p>
           <p>
-            CSV files are currently parsed in your browser rather than uploaded to a SendFIL
-            application server. Do not include unnecessary personal, confidential, regulated, or
-            sensitive information in a CSV. Recipient addresses and amounts included in a submitted
-            transaction may become permanently public.
+            CSV files are currently parsed in your browser rather than uploaded as files to a
+            SendFIL application server. Recipient addresses, amounts, and transaction data derived
+            from a CSV may nevertheless be sent to wallets, wallet-connection services, RPC or Lotus
+            providers, contracts, actors, and public networks for validation, estimation,
+            submission, and status checks. Do not include unnecessary personal, confidential,
+            regulated, or sensitive information in a CSV. Recipient addresses and amounts included
+            in a submitted transaction may become permanently public.
           </p>
         </LegalSection>
 
@@ -333,7 +340,7 @@ export function TermsOfServiceContent() {
 
         <LegalSection number={10} title="Privacy and local data">
           <p>
-            SendFIL currently operates without a SendFIL application server or database, but
+            The current application code includes no SendFIL application API or database, but
             delivery and use of the Service necessarily involve network requests. SendFIL and
             providers used to host or connect the Service may receive or process IP addresses,
             browser or device information, public wallet addresses, network state, transaction
@@ -345,8 +352,19 @@ export function TermsOfServiceContent() {
             The Service uses browser storage for limited local functionality, which may include the
             current Terms-acceptance version and timestamp, saved multisig labels and addresses, and
             safety records for unresolved native Filecoin submissions. Safety records may include a
-            signer or multisig address, network, transaction CID, recipient count, and aggregate
-            value. SendFIL does not store private keys or recovery phrases.
+            signer or multisig address, provider identifier, network, transaction CID, action or
+            proposal identifier, execution method or mode, recipient count, aggregate value,
+            warning or error information, and timestamps. Wallet and wallet-connection libraries
+            may separately use browser storage, including local storage or IndexedDB, for connector
+            state, account and network metadata, sessions, pairings, and cryptographic session
+            material. SendFIL application code does not store your private keys or recovery phrases.
+          </p>
+          <p>
+            The current application code can emit transaction-status and error telemetry to your
+            browser console and a same-page browser event. No first-party external analytics
+            transport is configured in this repository, but wallets, connection services,
+            infrastructure providers, browser extensions, injected scripts, or a production hosting
+            environment may process related activity independently.
           </p>
           <p>
             Public blockchain data can be viewed, copied, indexed, analyzed, and retained by anyone
@@ -384,10 +402,13 @@ export function TermsOfServiceContent() {
             <li>encourage, assist, or enable anyone else to do any of the foregoing.</li>
           </LegalList>
           <p>
-            You represent that you are not a person with whom SendFIL is prohibited from dealing
-            under applicable sanctions law and that your use will not cause SendFIL or another
-            person to violate such law. The absence of screening, blocking, or a warning in the
-            interface does not mean a transaction is lawful.
+            You represent that neither you nor any person for whose benefit you use the Service is a
+            person with whom SendFIL is prohibited from dealing under applicable sanctions law.
+            Where U.S. sanctions apply, this includes an entity owned, directly or indirectly, 50%
+            or more in the aggregate by one or more blocked persons. You further represent that your
+            use will not cause SendFIL or another person to violate applicable sanctions law. The
+            absence of screening, blocking, or a warning in the interface does not mean a
+            transaction is lawful.
           </p>
         </LegalSection>
 
@@ -451,10 +472,12 @@ export function TermsOfServiceContent() {
           <p>
             We may revise these Terms prospectively. We will post the revised Terms, update the
             effective date, and provide any notice required by law. If a revision materially affects
-            your rights or obligations, we will require affirmative acceptance before another wallet
-            connection or on-chain action. Changes do not apply retroactively unless required by law
-            or expressly agreed. If you do not agree to revised Terms, stop using the Service. You
-            may retain read-only access to available recovery and transaction-status information.
+            your rights or obligations, we will require affirmative acceptance before you initiate
+            another wallet connection through the Service or submit another on-chain action. A
+            previously connected wallet may reconnect automatically before that in-app acceptance
+            gate. Changes do not apply retroactively unless required by law or expressly agreed. If
+            you do not agree to revised Terms, stop using the Service. You may retain read-only
+            access to available recovery and transaction-status information.
           </p>
           <p>
             Suspension or termination of the hosted Service does not affect public blockchain
@@ -555,9 +578,14 @@ export function TermsOfServiceContent() {
 
         <LegalSection number={20} title="Contact">
           <p>
-            Questions about these Terms may be directed to SendFIL, LLC through the contact method
-            published on the Service. Do not send private keys, recovery phrases, confidential CSV
-            files, or other wallet credentials in any support or legal communication.
+            Questions about these Terms, privacy inquiries, and other non-litigation correspondence
+            may be sent to SendFIL, LLC at{' '}
+            <a className="font-medium text-blue-700 hover:underline" href="mailto:sendfil@proton.me">
+              sendfil@proton.me
+            </a>
+            . This contact does not alter any method of service of process required by applicable
+            law. Do not send private keys, recovery phrases, confidential CSV files, or other wallet
+            credentials in any support or legal communication.
           </p>
         </LegalSection>
       </div>

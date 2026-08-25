@@ -116,6 +116,9 @@ describe('TermsOfServiceModal', () => {
     expect(dialog?.textContent).toContain('16. Disclaimers');
     expect(dialog?.textContent).toContain('17. Limitation of liability');
     expect(dialog?.textContent).toContain('20. Contact');
+    expect(
+      dialog?.querySelector<HTMLAnchorElement>('a[href="mailto:sendfil@proton.me"]')?.textContent,
+    ).toContain('sendfil@proton.me');
   });
 
   it('closes on Escape and restores focus to the element that opened it', () => {
