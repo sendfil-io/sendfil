@@ -19,6 +19,7 @@ export default function TermsOfServiceModal({ isOpen, onClose }: TermsOfServiceM
     previouslyFocusedElement.current =
       document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const previousOverflow = document.body.style.overflow;
+    document.body.classList.add('terms-modal-open');
     document.body.style.overflow = 'hidden';
     modalRef.current?.focus();
 
@@ -77,6 +78,7 @@ export default function TermsOfServiceModal({ isOpen, onClose }: TermsOfServiceM
 
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
+      document.body.classList.remove('terms-modal-open');
       document.body.style.overflow = previousOverflow;
 
       backgroundDialogs.forEach(
@@ -104,8 +106,12 @@ export default function TermsOfServiceModal({ isOpen, onClose }: TermsOfServiceM
   }
 
   const content = (
-    <div className="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-slate-950/65 px-4 py-4 sm:py-8">
+    <div
+      id="terms-print-root"
+      className="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-slate-950/65 px-4 py-4 sm:py-8"
+    >
       <div
+        id="terms-print-dialog"
         ref={modalRef}
         tabIndex={-1}
         role="dialog"
@@ -113,7 +119,7 @@ export default function TermsOfServiceModal({ isOpen, onClose }: TermsOfServiceM
         aria-labelledby="terms-modal-title"
         className="flex max-h-[calc(100vh-2rem)] w-full max-w-5xl flex-col overflow-hidden rounded-[28px] bg-white shadow-2xl sm:max-h-[calc(100vh-4rem)]"
       >
-        <div className="flex items-center justify-between border-b border-slate-200 bg-white px-5 py-4 sm:px-7">
+        <div className="terms-print-chrome flex items-center justify-between border-b border-slate-200 bg-white px-5 py-4 sm:px-7">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">Legal</p>
             <h2 id="terms-modal-title" className="mt-1 text-xl font-semibold text-slate-950">
@@ -130,21 +136,30 @@ export default function TermsOfServiceModal({ isOpen, onClose }: TermsOfServiceM
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-5 py-6 sm:px-8 sm:py-8">
+        <div id="terms-print-content" className="flex-1 overflow-y-auto px-5 py-6 sm:px-8 sm:py-8">
           <TermsOfServiceContent />
         </div>
 
-        <div className="flex items-center justify-between gap-4 border-t border-slate-200 bg-slate-50 px-5 py-4 sm:px-7">
+        <div className="terms-print-chrome flex items-center justify-between gap-4 border-t border-slate-200 bg-slate-50 px-5 py-4 sm:px-7">
           <p className="hidden text-xs text-slate-500 sm:block">
             Keep a copy of the Terms that apply when you use SendFIL.
           </p>
-          <button
-            type="button"
-            onClick={onClose}
-            className="ml-auto rounded-full bg-slate-900 px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-slate-800"
-          >
-            Close
-          </button>
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => window.print()}
+              className="rounded-full border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-100"
+            >
+              Print or save
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-full bg-slate-900 px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-slate-800"
+            >
+              Close
+            </button>
+          </div>
         </div>
       </div>
     </div>

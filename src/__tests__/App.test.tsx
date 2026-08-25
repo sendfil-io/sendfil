@@ -613,6 +613,12 @@ describe('App confirm flow', () => {
     expect(reviewButton.disabled).toBe(true);
     expect(container.textContent).toContain('Accept the Terms of Service before continuing.');
     expect(container.textContent).toContain(`effective ${TERMS_LAST_UPDATED}`);
+    expect(container.textContent).toContain(
+      'Confirm that you are an invited Louisiana business user participating only in the fee-free Calibration beta',
+    );
+    expect(getElementByTestId(container, 'accept-terms-button').textContent).toContain(
+      'I confirm my eligibility and agree to the Terms of Service',
+    );
 
     click(getElementByTestId(container, 'accept-terms-button'));
 

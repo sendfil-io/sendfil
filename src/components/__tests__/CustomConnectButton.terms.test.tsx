@@ -177,11 +177,11 @@ describe('CustomConnectButton Terms gating', () => {
     expect(document.activeElement).toBe(chooser);
     expect(document.body.style.overflow).toBe('hidden');
     expect(termsCheckbox.getAttribute('aria-label')).toBe(
-      `I have read and agree to the Terms of Service effective ${TERMS_LAST_UPDATED}`,
+      `I confirm I am an invited Louisiana business user participating only in the fee-free Calibration beta and agree to the Terms of Service effective ${TERMS_LAST_UPDATED}`,
     );
     expect(walletButton.disabled).toBe(true);
     expect(document.body.textContent).toContain(
-      `I have read and agree to the Terms of Service, effective ${TERMS_LAST_UPDATED}.`,
+      `I confirm that I am an invited Louisiana business user participating only in the fee-free Calibration beta, and I have read and agree to the Terms of Service, effective ${TERMS_LAST_UPDATED}.`,
     );
 
     if (!termsLink) {
@@ -303,7 +303,10 @@ describe('CustomConnectButton Terms gating', () => {
 
     expect(document.querySelector('[data-testid="wallet-terms-acknowledgment"]')).toBeNull();
     expect(document.body.textContent).toContain(
-      'By selecting a wallet and connecting, you agree to the Terms of Service.',
+      'Invited Louisiana businesses • Calibration beta only.',
+    );
+    expect(document.body.textContent).toContain(
+      'By selecting a wallet and connecting, you reaffirm the Terms of Service.',
     );
     expect(getButton('MetaMask').disabled).toBe(false);
   });

@@ -40,3 +40,60 @@
 .read-the-docs {
   color: #888;
 }
+
+@media print {
+  html,
+  body {
+    height: auto !important;
+    overflow: visible !important;
+    background: #fff !important;
+  }
+
+  body.terms-modal-open > * {
+    display: none !important;
+  }
+
+  body.terms-modal-open > #terms-print-root {
+    position: static !important;
+    inset: auto !important;
+    z-index: auto !important;
+    display: block !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    background: #fff !important;
+  }
+
+  #terms-print-dialog {
+    display: block !important;
+    width: 100% !important;
+    max-width: none !important;
+    max-height: none !important;
+    overflow: visible !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+  }
+
+  #terms-print-content {
+    overflow: visible !important;
+    padding: 0 !important;
+  }
+
+  #terms-print-content article {
+    max-width: none !important;
+  }
+
+  #terms-print-content h2,
+  #terms-print-content h3 {
+    break-after: avoid-page;
+  }
+
+  #terms-print-content p,
+  #terms-print-content li {
+    orphans: 3;
+    widows: 3;
+  }
+
+  .terms-print-chrome {
+    display: none !important;
+  }
+}

@@ -17,7 +17,8 @@ export default function TermsAcceptanceNotice({
     >
       <p className="font-semibold">Accept the Terms to continue</p>
       <p className="mt-1 leading-5 text-blue-900">
-        Your wallet is connected. Review the{' '}
+        Your wallet is connected. Confirm that you are an invited Louisiana business user
+        participating only in the fee-free Calibration beta, then review the{' '}
         <TermsOfServiceLink
           onOpen={onOpenTerms}
           className="font-semibold underline underline-offset-2"
@@ -30,7 +31,7 @@ export default function TermsAcceptanceNotice({
         data-testid="accept-terms-button"
         className="mt-3 w-full rounded-full bg-[#1f69ff] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1857d4]"
       >
-        I agree to the Terms of Service
+        I confirm my eligibility and agree to the Terms of Service
       </button>
       <p className="mt-2 text-xs leading-5 text-blue-800">
         Connecting shares public wallet and network information. It does not authorize a FIL

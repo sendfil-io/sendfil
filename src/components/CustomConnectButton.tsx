@@ -536,14 +536,19 @@ export const CustomConnectButton: React.FC<CustomConnectButtonProps> = ({
 
                 <div className="mt-5 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3">
                   {hasAcceptedTerms ? (
-                    <p className="text-sm leading-6 text-blue-950">
-                      By selecting a wallet and connecting, you agree to the{' '}
-                      <TermsOfServiceLink
-                        onOpen={onOpenTerms}
-                        className="font-semibold underline underline-offset-2"
-                      />
-                      .
-                    </p>
+                    <div className="text-sm leading-6 text-blue-950">
+                      <p className="font-semibold">
+                        Invited Louisiana businesses • Calibration beta only.
+                      </p>
+                      <p>
+                        By selecting a wallet and connecting, you reaffirm the{' '}
+                        <TermsOfServiceLink
+                          onOpen={onOpenTerms}
+                          className="font-semibold underline underline-offset-2"
+                        />
+                        .
+                      </p>
+                    </div>
                   ) : (
                     <div className="flex items-start gap-3">
                       <input
@@ -553,13 +558,14 @@ export const CustomConnectButton: React.FC<CustomConnectButtonProps> = ({
                         onChange={(event) =>
                           setHasAcknowledgedTermsForConnection(event.target.checked)
                         }
-                        aria-label={`I have read and agree to the Terms of Service effective ${TERMS_LAST_UPDATED}`}
+                        aria-label={`I confirm I am an invited Louisiana business user participating only in the fee-free Calibration beta and agree to the Terms of Service effective ${TERMS_LAST_UPDATED}`}
                         data-testid="wallet-terms-acknowledgment"
                         className="mt-1 h-4 w-4 shrink-0 rounded border-blue-300 text-blue-600 focus:ring-blue-500"
                       />
                       <p className="text-sm leading-6 text-blue-950">
                         <label htmlFor="wallet-terms-acknowledgment">
-                          I have read and agree to the{' '}
+                          I confirm that I am an invited Louisiana business user participating only
+                          in the fee-free Calibration beta, and I have read and agree to the{' '}
                         </label>
                         <TermsOfServiceLink
                           onOpen={onOpenTerms}

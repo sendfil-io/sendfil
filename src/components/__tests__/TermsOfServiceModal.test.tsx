@@ -3,7 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { JSDOM } from 'jsdom';
 import { createRoot, type Root } from 'react-dom/client';
 import TermsOfServiceModal from '../TermsOfServiceModal';
-import { TERMS_LAST_UPDATED } from '../../legal/termsAcceptance';
+import {
+  TERMS_CONTENT_LAST_UPDATED,
+  TERMS_CONTENT_VERSION,
+} from '../../legal/TermsOfServiceContent';
+import { TERMS_LAST_UPDATED, TERMS_VERSION } from '../../legal/termsAcceptance';
 
 function TermsModalHarness({ onClose }: { onClose: () => void }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -97,6 +101,9 @@ describe('TermsOfServiceModal', () => {
   });
 
   it('renders an accessible dialog with the effective date and material SendFIL terms', () => {
+    expect(TERMS_CONTENT_VERSION).toBe(TERMS_VERSION);
+    expect(TERMS_CONTENT_LAST_UPDATED).toBe(TERMS_LAST_UPDATED);
+
     act(() => {
       root.render(<TermsOfServiceModal isOpen onClose={vi.fn()} />);
     });
@@ -109,16 +116,36 @@ describe('TermsOfServiceModal', () => {
     expect(dialog?.getAttribute('aria-modal')).toBe('true');
     expect(title?.textContent).toBe('SendFIL Terms of Service');
     expect(dialog?.textContent).toContain(`Effective and last updated ${TERMS_LAST_UPDATED}`);
+    expect(dialog?.textContent).toContain('Initial Louisiana Calibration beta only.');
+    expect(dialog?.textContent).toContain('“Valid Invitation”');
+    expect(dialog?.textContent).toContain('Mainnet and every other network or jurisdiction');
+    expect(dialog?.textContent).toContain('State of Louisiana');
     expect(dialog?.textContent).toContain('SendFIL is a non-custodial interface');
     expect(dialog?.textContent).toContain('Connecting does not itself move FIL.');
     expect(dialog?.textContent).toContain('Multicall3');
     expect(dialog?.textContent).toContain('ThinBatch');
+    expect(dialog?.textContent).toContain('SendFIL does not receive Network Fees.');
     expect(dialog?.textContent).toContain('16. Disclaimers');
     expect(dialog?.textContent).toContain('17. Limitation of liability');
     expect(dialog?.textContent).toContain('20. Contact');
     expect(
       dialog?.querySelector<HTMLAnchorElement>('a[href="mailto:sendfil@proton.me"]')?.textContent,
     ).toContain('sendfil@proton.me');
+  });
+
+  it('lets the user print or save a retainable copy', () => {
+    const print = vi.spyOn(window, 'print').mockImplementation(() => undefined);
+
+    act(() => {
+      root.render(<TermsOfServiceModal isOpen onClose={vi.fn()} />);
+    });
+
+    click(getButton('Print or save'));
+
+    expect(print).toHaveBeenCalledTimes(1);
+    expect(document.getElementById('terms-print-root')).toBeInstanceOf(HTMLElement);
+    expect(document.getElementById('terms-print-dialog')).toBeInstanceOf(HTMLElement);
+    expect(document.getElementById('terms-print-content')?.textContent).toContain('20. Contact');
   });
 
   it('closes on Escape and restores focus to the element that opened it', () => {
@@ -136,6 +163,7 @@ describe('TermsOfServiceModal', () => {
 
     expect(dialog).not.toBeNull();
     expect(document.activeElement).toBe(dialog);
+    expect(document.body.classList.contains('terms-modal-open')).toBe(true);
     expect(document.body.style.overflow).toBe('hidden');
 
     act(() => {
@@ -150,6 +178,7 @@ describe('TermsOfServiceModal', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(document.querySelector('[role="dialog"]')).toBeNull();
     expect(document.activeElement).toBe(trigger);
+    expect(document.body.classList.contains('terms-modal-open')).toBe(false);
     expect(document.body.style.overflow).toBe('');
   });
 

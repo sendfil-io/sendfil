@@ -18,12 +18,27 @@ determine whether SendFIL, LLC is licensed, exempt, or compliant in any jurisdic
 - Effective date: August 25, 2026 is the requested initial Terms date. Change the version and date
   together if publication occurs later.
 - Acceptance evidence: browser-wide acceptance is approved for the initial client-only release.
-  Another person using the same browser profile may inherit that acceptance.
-- Disputes: use SendFIL, LLC's formation state for governing law and forum, with a carveout for
-  non-waivable consumer rights. The formation state is still needed before drafting the clause.
+  The stored record contains only a Terms version and timestamp; it is not bound to a wallet,
+  person, organization, state, or jurisdiction, and another person using the same browser profile
+  may inherit it.
+- Disputes: SendFIL, LLC was reported to be formed in Louisiana. The draft now selects Louisiana
+  law and courts, without inventing an unknown parish and with non-waivable-rights carveouts.
 - Arbitration: omit mandatory arbitration and a class-action waiver from the initial release.
 - Amount precision: do not accept the current decimal-rounding risk by disclaimer. Preserve exact
   attoFIL values before claiming support for amounts with up to 18 decimal places.
+- Proposed market—not current behavior: the most conservative immediate posture is a closed,
+  fee-free Calibration-only beta while federal and Louisiana classifications are obtained. “Closed”
+  requires an access gate that enforces the Terms definition of a current, non-transferable written
+  invitation issued directly by SendFIL to the named person or organization; fee-free requires
+  disabling the SendFIL fee. The first real-value market should be limited to business use in
+  Louisiana only after a written OFI determination or an issued license, if required, informed by
+  qualified Louisiana regulatory counsel. Expansion should use a U.S. state allowlist that adds
+  states only after clearance.
+- Eligibility evidence: the draft Terms and wallet flow collect an invited Louisiana-business,
+  fee-free Calibration-only representation. The current app does not verify invitation, identity,
+  business status, recipient location, user location, or state, and it still exposes Mainnet. Do not
+  describe the proposed scope as implemented or deploy the Terms until separate product controls
+  make the access, network, fee, and jurisdiction behavior match.
 
 ## Verified current data map
 
@@ -39,7 +54,7 @@ determine whether SendFIL, LLC is licensed, exempt, or compliant in any jurisdic
 | RPC and Lotus traffic | Default configuration uses GLIF for Mainnet and Calibration; Ankr can act as a Mainnet read-only fallback. Deployment configuration may replace these endpoints. | Providers can receive IP and request metadata, public addresses, code/balance/state queries, full unsigned transaction data during estimation, signed native messages during submission, hashes or CIDs, and status requests. Provider retention is not established in this repository. |
 | App telemetry | Batch status and error events are written to the browser console and emitted as a same-page custom event. | No first-party external analytics transport is configured in this repository. Browser extensions, injected scripts, wallets, infrastructure, or production hosting may independently process related activity. |
 | Support and privacy email | Information voluntarily sent to `sendfil@proton.me`. | Processed through Proton and retained according to SendFIL's still-to-be-defined support/legal retention process and Proton's applicable practices. Users must not send wallet secrets or confidential CSV files. |
-| Hosting and delivery logs | Public response headers checked August 25, 2026 identify Cloudflare as the current edge provider and enable Cloudflare network-error reporting. The repository does not identify the origin host or the account's exact DNS, WAF, logging, cookie, and security configuration. | Cloudflare and any origin host may process IP addresses, device/browser data, request paths, security identifiers, network-error reports, and logs. Account access, fields, retention, locations, and subprocessors still require production verification. |
+| Hosting and delivery logs | Public response headers checked August 25, 2026 identify Cloudflare as the current edge provider and advertise a Cloudflare Network Error Logging endpoint. A supported browser may send sampled reports; the header does not prove a report was sent. The repository does not identify the origin host or the account's exact DNS, WAF, logging, cookie, and security configuration. | Cloudflare and any origin host may process ordinary request and security data separately from NEL. NEL can include the affected URL and referrer, method, timing, failure phase, protocol, server IP, status or error, and sampling data; Cloudflare says it derives ASN, country, and metro and drops the client IP after NEL request processing. Account access, fields, retention, locations, and subprocessors still require production verification. |
 
 No SendFIL application API, application database, advertising tag, third-party script tag, cookie
 code, or first-party external analytics SDK was identified in the current repository. This is a
@@ -47,30 +62,73 @@ code-scoped finding, not a promise about the production host or third-party wall
 
 ## Privacy launch work
 
-Before a broad launch:
+Before any invited beta or production use, and promptly for any already-public page:
 
-1. Publish a separate Privacy Notice linked beside the Terms and from the wallet flow. Identify the
-   controller, entity address, `sendfil@proton.me`, effective date, data categories and sources,
+1. Publish a separate Privacy Notice linked conspicuously beside the Terms and from the wallet flow.
+   It must cover every visitor whose data is processed, including an ineligible, out-of-state,
+   foreign, personal-use, or underage visitor whose hosting data is received before assent. Identify
+   the controller, entity address, `sendfil@proton.me`, effective date, data categories and sources,
    purposes and legal bases, recipients, international transfers, retention, rights, appeals,
-   security, children, and blockchain-deletion limits.
+   security, children, and blockchain-deletion limits. The wallet flow should say the user
+   “acknowledges” the notice, not that general Terms assent supplies privacy consent.
 2. Inventory the Cloudflare account and identify the origin host, DNS, WAF, network-error reporting,
    logs, cookies, security identifiers, retention periods, processing locations, subprocessors, and
    applicable contract or DPA.
 3. Freeze and inventory the production WalletConnect/Reown, RPC, Lotus, wallet, explorer, and
    support-email providers. Record which party is acting as controller or processor and link the
    applicable notices.
-4. Set retention periods for hosting/security logs, support messages, saved multisigs, Terms
-   evidence, unresolved safety records, and WalletConnect sessions.
+4. Set category-specific retention periods for data SendFIL controls, including CSV/manual draft
+   memory, local diagnostics, support messages, privacy-request and verification records, saved
+   multisigs, Terms evidence, and unresolved safety records. Document provider retention schedules
+   and deletion limits for hosting/security and NEL records, Wagmi and WalletConnect records, RPC
+   records, and other provider copies. Disclose that public-chain data may remain available
+   indefinitely. If the CCPA applies, retain required request and response records for at least its
+   prescribed period.
 5. Explain how browser data can be cleared while warning users not to clear unresolved native
    submission records before reconciliation.
 6. Add consent before introducing any future nonessential analytics, advertising, or browser
    storage that requires consent in a served jurisdiction.
 7. Test the deployed site—not only the source—for cookies, network requests, security headers,
    content-security policy, referrer policy, permissions policy, and third-party scripts.
+8. Complete a CalOPPA disclosure review, including the review/correction process, material-change
+   notice, Do Not Track response, effective date, and whether other parties may collect personally
+   identifiable information over time and across services. CalOPPA has no CCPA-style revenue or
+   volume threshold.
+9. Complete a current CCPA applicability worksheet covering revenue; the annual number of consumers
+   or households whose personal information the business buys, sells, or shares (including whether
+   that number reaches 100,000); whether at least 50% of annual revenue comes from selling or sharing
+   personal information; affiliates and common branding; and any voluntary certification. If it
+   applies, publish the required preceding-twelve-month categories, sources, purposes, business
+   disclosures, and request methods.
+10. Verify vendor contracts and live configuration before claiming no sale, sharing, targeted
+    advertising, or financial incentive; document how a legally valid Global Privacy Control or
+    other required opt-out signal will be treated.
+11. Design state-specific request verification, authorized-agent, correction, deletion, portability,
+    opt-out, and appeal handling before promising those rights.
+12. Treat public wallet addresses and transaction data as pseudonymous rather than necessarily
+    anonymous when they can be linked to a person, household, or device. Do not overstate the
+    credential finding: SendFIL application code does not store wallet private keys or recovery
+    phrases, while WalletConnect may store protocol cryptographic session material locally.
 
 Applicability of state and international privacy laws depends on the entity, users, targeting,
 data, and statutory thresholds. Do not claim that a privacy law does or does not apply without that
 analysis.
+
+Louisiana Act 502 of 2026, the Louisiana Data Privacy Act, takes effect January 1, 2027. It applies
+to a person or entity doing business in Louisiana only after specified revenue, data-volume, or
+sale-revenue thresholds are met. Its Louisiana-specific consumer definition excludes an individual
+acting in a commercial or employment context; do not generalize that exclusion to another state's
+law. Business-only positioning may narrow its consumer-rights scope but does not replace a separate
+notice, a threshold analysis, security and retention work, or other applicable law. Hosting data can
+also be processed before a visitor makes the business-use representation. If the Act applies,
+implement its request and appeal mechanisms, data minimization, security, processor contracts, and
+other duties. More generally, do not treat acceptance of the Terms as privacy consent under any law
+that requires separate, specific, or purpose-limited consent.
+
+Separately, assess Louisiana R.S. 51:3074, which addresses reasonable security, destruction, and
+Louisiana-resident breach notice for covered computerized personal information. The repository may
+not currently handle every element of its covered-data definition, but support messages, hosting
+records, and future operations must be mapped before making that conclusion.
 
 ## Sanctions and export-controls work
 
@@ -107,6 +165,25 @@ Do not state that SendFIL “is not a money transmitter.” Preserve the current
 no-SendFIL-relay architecture, and re-review before adding relaying, recovery discretion, gas
 sponsorship, admin keys, or other operational control.
 
+For Louisiana specifically, R.S. 6:1382 defines control in transaction terms as unilateral power to
+execute or indefinitely prevent a virtual-currency transaction, which makes user-controlled keys a
+relevant favorable fact. R.S. 6:1383 nevertheless applies the Act to covered activity with or for a
+Louisiana resident and contains fact-specific exemptions. Because SendFIL's Mainnet configuration
+charges a fee, do not rely on the no-compensation exemption. Have counsel and OFI assess whether the
+actual transaction-building, validation, contract, and fee facts satisfy or fall outside the
+connectivity or another exemption. Business-only use is not itself an exemption from the VCBA,
+FinCEN, OFAC, LUTPA, or every state privacy law. Louisiana Act 923 of 2026 repealed the VCBA's sunset
+provisions effective August 1, 2026, so do not rely on an older July 2027 sunset note.
+
+If OFI concludes that a license is required, do not launch the covered Mainnet activity until the
+license is issued and all applicable licensee obligations are operational. If and when SendFIL is a
+licensee, implement every applicable R.S. 6:1393.1 duty, as amended. Required resident disclosures
+are separate from other information, clear, conspicuous, acknowledged, and accompanied by
+applicable transaction disclosures and receipts; general Terms are not a substitute. Louisiana Act
+482 of 2026 amended statutory disclosure and receipt language effective August 1, 2026, including
+contact, transaction, fee, and refund provisions. Counsel must reconcile the enacted amendments
+with the codified page and the facts of any proposed activity.
+
 ## Consumer-protection work
 
 The draft now places fees, full recipient addresses, execution method, Partial-mode consequences,
@@ -133,6 +210,11 @@ international transfers, and crypto-asset regulation. For the EEA, counsel shoul
 review whether the product activity could be characterized as a transfer service under MiCA and
 whether GDPR Article 3 applies based on offering or monitoring activity.
 
+The draft's Louisiana-only restriction is a contractual eligibility rule, not proof of geographic
+exclusion. Before any later U.S.-only or state-allowlist expansion, align marketing and support with
+that scope and implement a counsel-approved allowlist and proportionate controls. Do not describe
+the current site as geoblocked, location-verified, or available throughout the United States.
+
 ## Primary research anchors
 
 - [FinCEN FIN-2019-G001](https://www.fincen.gov/system/files/2019-05/FinCEN%20CVC%20Guidance%20FINAL.pdf)
@@ -143,6 +225,15 @@ whether GDPR Article 3 applies based on offering or monitoring activity.
 - [FTC Act enforcement authority](https://www.ftc.gov/about-ftc/mission/enforcement-authority)
 - [California Privacy Protection Agency CCPA FAQ](https://cppa.ca.gov/faq)
 - [California Business and Professions Code §§ 22575–22577](https://leginfo.legislature.ca.gov/faces/codes_displayText.xhtml?chapter=22.&division=8.&lawCode=BPC&part=&title=)
+- [Cloudflare Network Error Logging](https://developers.cloudflare.com/network-error-logging/)
 - [GDPR Articles 3 and 13](https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32016R0679)
 - [MiCA Regulation](https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32023R1114)
 - [Rome I Regulation, Article 6](https://eur-lex.europa.eu/eli/reg/2008/593/oj)
+- [Louisiana Virtual Currency Businesses Act definitions](https://www.legis.la.gov/legis/Law.aspx?d=1187463)
+- [Louisiana Virtual Currency Businesses Act applicability](https://www.legis.la.gov/legis/Law.aspx?d=1187464)
+- [Louisiana OFI Virtual Currency Business Activity](https://ofi.la.gov/non-depository/virtual-currency-business-activity/)
+- [Louisiana R.S. 6:1393.1 required disclosures](https://www.legis.la.gov/legis/law.aspx?d=1336388)
+- [Louisiana Act 482 of 2026](https://legis.la.gov/Legis/ViewDocument.aspx?d=1480178)
+- [Louisiana Act 923 of 2026](https://legis.la.gov/Legis/ViewDocument.aspx?d=1481806)
+- [Louisiana Act 502 of 2026](https://www.legis.la.gov/Legis/ViewDocument.aspx?d=1480202)
+- [Louisiana R.S. 51:3074](https://legis.la.gov/Legis/Law.aspx?d=322030&p=y)
