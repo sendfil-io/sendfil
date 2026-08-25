@@ -987,10 +987,12 @@ describe('useExecuteMultisigProposal', () => {
     expect(latestHook?.submissionSnapshot).toBeUndefined();
   });
 
-  it('removes a proposal CID lock after a definitive post-signing RPC rejection', async () => {
+  it('keeps a proposal CID locked when the provider throws a plain post-CID error', async () => {
     const sender = getNativeSender();
     const provider = getProvider(10n ** 21n);
     const storage = dom.window.localStorage;
+    const confirmation = createDeferred<TransactionStatus>();
+    const pollMessageStatus = vi.fn(() => confirmation.promise);
 
     vi.mocked(provider.signAndSubmitMessage!).mockImplementation(
       async (_message, options) => {
@@ -1008,19 +1010,44 @@ describe('useExecuteMultisigProposal', () => {
       network: getNetworkConfig('calibration'),
       rpc: getRpc(),
       storage,
-      pollMessageStatus: vi.fn(),
+      pollMessageStatus,
     });
+
+    let first!: Promise<string>;
+    await act(async () => {
+      first = latestHook!.executeBatch(recipients, 'ATOMIC');
+      await expect(first).resolves.toBe(CID);
+    });
+
+    expect(readNativeSubmissionRecords(storage).records).toEqual([
+      expect.objectContaining({ cid: CID, identity: getStoredProposal().identity }),
+    ]);
+    expect(latestHook?.isIdentityLocked).toBe(true);
+    expect(latestHook?.isWalletMutationUnsafe).toBe(false);
+    expect(latestHook?.txHash).toBe(CID);
+    expect(latestHook?.submissionSnapshot).toMatchObject({ cid: CID });
+    expect(pollMessageStatus).toHaveBeenCalledWith(CID, 60, 5000, 'calibration');
+
+    expect(latestHook!.executeBatch(recipients, 'ATOMIC')).toBe(first);
+    expect(provider.signAndSubmitMessage).toHaveBeenCalledTimes(1);
 
     await act(async () => {
-      await expect(latestHook!.executeBatch(recipients, 'ATOMIC')).rejects.toMatchObject({
-        category: 'RPC_FAILURE',
+      confirmation.resolve({
+        cid: CID,
+        status: 'failed',
+        error: 'confirmation is still unavailable',
       });
+      await confirmation.promise;
+      await Promise.resolve();
     });
 
-    expect(readNativeSubmissionRecords(storage).records).toEqual([]);
-    expect(latestHook?.isIdentityLocked).toBe(false);
-    expect(latestHook?.isWalletMutationUnsafe).toBe(false);
-    expect(latestHook?.txHash).toBeUndefined();
-    expect(latestHook?.submissionSnapshot).toBeUndefined();
+    expect(latestHook?.state).toBe('failed');
+    expect(latestHook?.error).toMatchObject({
+      title: 'Multisig proposal confirmation is uncertain',
+      recoverable: false,
+    });
+    expect(readNativeSubmissionRecords(storage).records).toHaveLength(1);
+    expect(latestHook!.executeBatch(recipients, 'ATOMIC')).toBe(first);
+    expect(provider.signAndSubmitMessage).toHaveBeenCalledTimes(1);
   });
 });

@@ -476,6 +476,40 @@ describe('ReviewTransactionModal', () => {
     ).toBe(false);
   });
 
+  it('presents a known-CID native uncertainty as recheck-only', () => {
+    const props = getBaseProps();
+    props.transactionState = 'failed';
+    props.transactionHash =
+      'bafy2bzacebcodbmrjkfrr63lms3wevg2nmceh2666bd3x76lwtsa7iygj7beo';
+    props.onRecheckTransaction = vi.fn().mockResolvedValue(undefined);
+    props.transactionError = new BatchExecutionError({
+      category: 'RPC_FAILURE',
+      title: 'Native batch confirmation is uncertain',
+      message:
+        'SendFIL could not prove that the batch reached a terminal on-chain result.',
+      errorMode: 'ATOMIC',
+      stage: 'confirmation',
+      recoverable: false,
+    });
+
+    act(() => {
+      root.render(<ReviewTransactionModal {...props} />);
+    });
+
+    expect(container.textContent).toContain(
+      'The original transaction may still execute. Do not submit another transaction while its status is unresolved.',
+    );
+    expect(container.textContent).not.toContain(
+      'No transfers are finalized if any internal call fails.',
+    );
+    expect(
+      Array.from(container.querySelectorAll('button')).some(
+        (button) => button.textContent?.trim() === 'Try Again',
+      ),
+    ).toBe(false);
+    expect(getButton(container, 'Check status again')).toBeDefined();
+  });
+
   it('traps keyboard focus and restores the previously focused control on close', () => {
     const outsideButton = document.createElement('button');
     outsideButton.textContent = 'Outside';

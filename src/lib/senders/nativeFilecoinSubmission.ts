@@ -1,7 +1,6 @@
 import { Buffer as BrowserBuffer } from 'buffer';
 import { Message } from 'iso-filecoin/message';
 import { lotusCid } from 'iso-filecoin/utils';
-import { submitTransaction } from '../DataProvider';
 import { RpcProviderError } from '../DataProvider/RpcProviderError';
 import type { SignedMessage } from '../DataProvider/types';
 import type { SendFilNetworkKey } from '../networks';
@@ -197,11 +196,11 @@ function isAmbiguousMpoolFailure(error: unknown): boolean {
 export async function submitSignedNativeFilecoinMessage(
   signedMessage: SignedMessage,
   networkKey: SendFilNetworkKey,
-  submit: SubmitSignedMessage = submitTransaction,
-  options: NativeFilecoinSubmissionOptions = {},
+  submit: SubmitSignedMessage,
+  options: NativeFilecoinSubmissionOptions,
 ): Promise<NativeFilecoinSendResult> {
   const cid = computeSignedMessageCid(signedMessage);
-  await options.onCidComputed?.(cid);
+  await options.onCidComputed(cid);
   let response: { '/': string };
 
   try {

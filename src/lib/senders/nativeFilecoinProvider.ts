@@ -1,4 +1,4 @@
-import { getBalance } from '../DataProvider';
+import { getBalance, submitTransaction } from '../DataProvider';
 import type { FilecoinMessage, SignedMessage } from '../DataProvider/types';
 import {
   getDefaultNetworkKey,
@@ -275,7 +275,7 @@ function createIsoWalletProvider({
       return submitSignedNativeFilecoinMessage(
         signedMessage,
         account.networkKey,
-        undefined,
+        submitTransaction,
         submissionOptions,
       );
     },

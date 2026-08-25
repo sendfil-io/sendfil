@@ -833,29 +833,13 @@ export function useExecuteMultisigProposal({
                 );
                 lockedCid = submission.cid;
               } catch (cause) {
-                if (!isNativeFilecoinSubmissionUncertainError(cause)) {
-                  if (persistedCid) {
-                    const cleanupError = removeNativeSubmissionRecord(
-                      executionIdentity,
-                      persistedCid,
-                      storage,
-                    );
-
-                    if (cleanupError) {
-                      throw createMultisigSubmissionStorageError(
-                        cleanupError,
-                        errorMode,
-                      );
-                    }
-
-                    setSubmissionSnapshot(undefined);
-                    setTxHash(undefined);
-                  }
-
+                if (persistedCid) {
+                  lockedCid = persistedCid;
+                } else if (isNativeFilecoinSubmissionUncertainError(cause)) {
+                  lockedCid = cause.cid;
+                } else {
                   throw cause;
                 }
-
-                lockedCid = cause.cid;
               }
 
               if (!persistedCid) {

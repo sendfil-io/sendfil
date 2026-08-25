@@ -4,7 +4,6 @@ import type {
   SendFilNetworkConfig,
   SendFilNetworkKey,
 } from '../networks';
-import type { PreparedBatchExecution } from '../transaction/batchExecution';
 
 export type ConnectedSenderKind = 'evm' | 'native-filecoin';
 export type SenderProviderKind = 'evm-wallet' | 'native-filecoin-wallet';
@@ -74,17 +73,17 @@ export type NativeFilecoinProviderSupportStatus =
   | 'not-detected'
   | 'not-supported';
 
-export interface NativeFilecoinBatchSigningRequest {
-  sender: NativeFilecoinConnectedSender;
-  preparedBatch: PreparedBatchExecution;
-}
-
 export interface NativeFilecoinSendResult {
   cid: string;
 }
 
 export interface NativeFilecoinSubmissionOptions {
-  onCidComputed?: (cid: string) => void | Promise<void>;
+  /**
+   * Must complete before the provider dispatches Filecoin.MpoolPush. Live
+   * callers use this boundary to persist the exact signed-message CID and
+   * block a second signature if the RPC response becomes ambiguous.
+   */
+  onCidComputed: (cid: string) => void | Promise<void>;
 }
 
 export interface NativeFilecoinWalletProvider {
@@ -97,9 +96,6 @@ export interface NativeFilecoinWalletProvider {
   checkSupport?: () => Promise<NativeFilecoinProviderSupportStatus>;
   signAndSubmitMessage?: (
     message: FilecoinMessage,
-    options?: NativeFilecoinSubmissionOptions,
-  ) => Promise<NativeFilecoinSendResult>;
-  signAndSubmitBatch?: (
-    request: NativeFilecoinBatchSigningRequest,
+    options: NativeFilecoinSubmissionOptions,
   ) => Promise<NativeFilecoinSendResult>;
 }

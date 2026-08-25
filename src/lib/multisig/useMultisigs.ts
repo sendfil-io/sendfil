@@ -1126,21 +1126,18 @@ export function useMultisigs({
                 throw error;
               }
 
-              if (!isNativeFilecoinSubmissionUncertainError(error)) {
-                if (cid) {
-                  const safetyState = uncertainCreateIdentities.current.get(actionIdentity);
-                  const persistenceError = safetyState
-                    ? clearCreateSafetyState(safetyState)
-                    : undefined;
-                  cid = undefined;
-
-                  if (persistenceError) {
-                    throw new Error(
-                      `${error instanceof Error ? error.message : 'Multisig submission failed.'} ${persistenceError}`,
-                    );
-                  }
+              if (cid) {
+                if (!safetyLockPersisted) {
+                  persistComputedCid(cid, false);
                 }
+                submissionUncertaintyDetail =
+                  error instanceof Error
+                    ? error.message
+                    : 'The wallet provider failed after computing the signed message CID.';
+                return;
+              }
 
+              if (!isNativeFilecoinSubmissionUncertainError(error)) {
                 throw error;
               }
 
@@ -1247,9 +1244,6 @@ export function useMultisigs({
           );
         }
 
-        const safetyState = uncertainCreateIdentities.current.get(actionIdentity);
-        const safetyClearError = safetyState ? clearCreateSafetyState(safetyState) : undefined;
-
         const saveResult = saveMultisigResult(
           {
             address: robustAddress,
@@ -1260,6 +1254,10 @@ export function useMultisigs({
           storage,
         );
         const savedItem = saveResult.multisigs.find((item) => item.address === robustAddress);
+        const actorSavedDurably = Boolean(savedItem && saveResult.persisted);
+        const safetyState = uncertainCreateIdentities.current.get(actionIdentity);
+        const safetyClearError =
+          actorSavedDurably && safetyState ? clearCreateSafetyState(safetyState) : undefined;
         const isCurrentCreateIdentity = currentCreateIdentityRef.current === actionIdentity;
         let result: CreateMultisigResult;
 
@@ -1276,7 +1274,7 @@ export function useMultisigs({
             createdAddress: robustAddress,
             warning:
               `The multisig was created at ${robustAddress}, but it was not saved locally. ${saveResult.error}` +
-              (safetyClearError ? ` ${safetyClearError}` : ''),
+              ' Its recovery lock was retained; restore storage and recheck this CID instead of creating another multisig.',
           };
         } else {
           if (isCurrentCreateIdentity) {
@@ -1296,12 +1294,10 @@ export function useMultisigs({
             cid,
             outcome: 'confirmed',
             createdAddress: robustAddress,
-            savedMultisig: savedItem,
-            warning: savedItem
+            savedMultisig: actorSavedDurably ? savedItem : undefined,
+            warning: actorSavedDurably
               ? safetyClearError
-              : `The multisig was created at ${robustAddress}, but SendFIL could not find it in local storage. Save this address manually.${
-                  safetyClearError ? ` ${safetyClearError}` : ''
-                }`,
+              : `The multisig was created at ${robustAddress}, but SendFIL could not verify that it was saved durably. Its recovery lock was retained; restore storage and recheck this CID instead of creating another multisig.`,
           };
         }
 
@@ -1486,13 +1482,16 @@ export function useMultisigs({
         storage,
       );
       const savedItem = saveResult.multisigs.find((item) => item.address === robustAddress);
-      const persistenceError = clearCreateSafetyState(uncertainState);
+      const actorSavedDurably = Boolean(savedItem && saveResult.persisted);
+      const persistenceError = actorSavedDurably
+        ? clearCreateSafetyState(uncertainState)
+        : undefined;
       const warningParts = [
         saveResult.error
-          ? `The multisig was created at ${robustAddress}, but it was not saved locally. ${saveResult.error}`
-          : savedItem
+          ? `The multisig was created at ${robustAddress}, but it was not saved locally. ${saveResult.error} Its recovery lock was retained; restore storage and recheck this CID instead of creating another multisig.`
+          : actorSavedDurably
             ? undefined
-            : `The multisig was created at ${robustAddress}, but SendFIL could not find it in local storage. Save this address manually.`,
+            : `The multisig was created at ${robustAddress}, but SendFIL could not verify that it was saved durably. Its recovery lock was retained; restore storage and recheck this CID instead of creating another multisig.`,
         persistenceError,
       ].filter(Boolean);
 
@@ -1772,21 +1771,18 @@ export function useMultisigs({
                 throw error;
               }
 
-              if (!isNativeFilecoinSubmissionUncertainError(error)) {
-                if (cid) {
-                  const safetyState = uncertainProposalActionIdentities.current.get(actionIdentity);
-                  const persistenceError = safetyState
-                    ? clearProposalSafetyState(safetyState)
-                    : undefined;
-                  cid = undefined;
-
-                  if (persistenceError) {
-                    throw new Error(
-                      `${error instanceof Error ? error.message : `Failed to submit multisig ${action}.`} ${persistenceError}`,
-                    );
-                  }
+              if (cid) {
+                if (!safetyLockPersisted) {
+                  persistComputedCid(cid, false);
                 }
+                submissionUncertaintyDetail =
+                  error instanceof Error
+                    ? error.message
+                    : `The wallet provider failed after computing the signed multisig ${action} CID.`;
+                return;
+              }
 
+              if (!isNativeFilecoinSubmissionUncertainError(error)) {
                 throw error;
               }
 

@@ -652,17 +652,17 @@ describe('useExecuteNativeBatch', () => {
     expect(pollMessageStatus).not.toHaveBeenCalled();
   });
 
-  it('removes a pre-push CID lock after a definitive RPC rejection', async () => {
+  it('keeps a computed CID locked when the provider throws a plain post-CID error', async () => {
     const sender = getNativeSender();
     const provider = getProvider(10n ** 30n);
     const storage = dom.window.localStorage;
+    const confirmation = createDeferred<TransactionStatus>();
+    const pollMessageStatus = vi.fn(() => confirmation.promise);
 
     vi.mocked(provider.signAndSubmitMessage!).mockImplementation(
       async (_message, options) => {
         await options?.onCidComputed?.(CID);
-        throw new Error(
-          'Lotus RPC Filecoin.MpoolPush rejected the signed message: invalid nonce',
-        );
+        throw new TypeError('Failed to fetch after Filecoin.MpoolPush');
       },
     );
 
@@ -671,20 +671,45 @@ describe('useExecuteNativeBatch', () => {
       provider,
       rpc: getRpc(),
       storage,
-      pollMessageStatus: vi.fn(),
+      pollMessageStatus,
     });
+
+    let first!: Promise<string>;
+    await act(async () => {
+      first = latestHook!.executeBatch(recipients, 'ATOMIC');
+      await expect(first).resolves.toBe(CID);
+    });
+
+    expect(readNativeSubmissionRecords(storage).records).toEqual([
+      expect.objectContaining({ cid: CID, identity: getStoredNativeBatch().identity }),
+    ]);
+    expect(latestHook?.isIdentityLocked).toBe(true);
+    expect(latestHook?.isWalletMutationUnsafe).toBe(false);
+    expect(latestHook?.txHash).toBe(CID);
+    expect(latestHook?.submissionSnapshot).toMatchObject({ cid: CID });
+    expect(pollMessageStatus).toHaveBeenCalledWith(CID, 60, 5000, 'calibration');
+
+    expect(latestHook!.executeBatch(recipients, 'ATOMIC')).toBe(first);
+    expect(provider.signAndSubmitMessage).toHaveBeenCalledTimes(1);
 
     await act(async () => {
-      await expect(latestHook!.executeBatch(recipients, 'ATOMIC')).rejects.toMatchObject({
-        category: 'RPC_FAILURE',
+      confirmation.resolve({
+        cid: CID,
+        status: 'failed',
+        error: 'confirmation is still unavailable',
       });
+      await confirmation.promise;
+      await Promise.resolve();
     });
 
-    expect(readNativeSubmissionRecords(storage).records).toEqual([]);
-    expect(latestHook?.isIdentityLocked).toBe(false);
-    expect(latestHook?.isWalletMutationUnsafe).toBe(false);
-    expect(latestHook?.txHash).toBeUndefined();
-    expect(latestHook?.submissionSnapshot).toBeUndefined();
+    expect(latestHook?.state).toBe('failed');
+    expect(latestHook?.error).toMatchObject({
+      title: 'Native batch confirmation is uncertain',
+      recoverable: false,
+    });
+    expect(readNativeSubmissionRecords(storage).records).toHaveLength(1);
+    expect(latestHook!.executeBatch(recipients, 'ATOMIC')).toBe(first);
+    expect(provider.signAndSubmitMessage).toHaveBeenCalledTimes(1);
   });
 
   it('rechecks an in-memory CID when the post-Mpool fallback storage write failed', async () => {

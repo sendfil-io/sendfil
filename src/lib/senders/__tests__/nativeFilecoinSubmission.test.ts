@@ -75,6 +75,10 @@ const DELEGATED_SIGNED_MESSAGE: SignedMessage = {
 const DELEGATED_SIGNED_MESSAGE_CID =
   'bafy2bzacebpekbxp7qyk4xx5r7es3t77sqcgdq5c7osfow4ayvbyyafwl4sxk';
 
+const PERSIST_LOCAL_CID = {
+  onCidComputed: () => undefined,
+};
+
 // Immutable vectors above come from Filecoin Mainnet block
 // bafy2bzacedpk7crcxfy5y4eyy34hqduvuliwjcblm3gervekqkjucfgknb7e2 via
 // Filecoin.ChainGetBlockMessages. Lotus defines the CID and CBOR behavior here:
@@ -111,7 +115,12 @@ describe('native Filecoin MpoolPush uncertainty', () => {
     const submit = vi.fn(async () => ({ '/': SECP_SIGNED_MESSAGE_CID }));
 
     await expect(
-      submitSignedNativeFilecoinMessage(SECP_SIGNED_MESSAGE, 'mainnet', submit),
+      submitSignedNativeFilecoinMessage(
+        SECP_SIGNED_MESSAGE,
+        'mainnet',
+        submit,
+        PERSIST_LOCAL_CID,
+      ),
     ).resolves.toEqual({ cid: SECP_SIGNED_MESSAGE_CID });
     expect(submit).toHaveBeenCalledWith(SECP_SIGNED_MESSAGE, 'mainnet');
   });
@@ -158,6 +167,20 @@ describe('native Filecoin MpoolPush uncertainty', () => {
     expect(submit).not.toHaveBeenCalled();
   });
 
+  it('fails closed before MpoolPush when the required CID callback is missing', async () => {
+    const submit = vi.fn(async () => ({ '/': SECP_SIGNED_MESSAGE_CID }));
+
+    await expect(
+      submitSignedNativeFilecoinMessage(
+        SECP_SIGNED_MESSAGE,
+        'mainnet',
+        submit,
+        undefined as never,
+      ),
+    ).rejects.toThrow();
+    expect(submit).not.toHaveBeenCalled();
+  });
+
   it('retains the deterministic CID when a node may accept the message but loses its response', async () => {
     const transportFailure = new RpcProviderError('response lost', {
       method: 'Filecoin.MpoolPush',
@@ -175,6 +198,7 @@ describe('native Filecoin MpoolPush uncertainty', () => {
       SECP_SIGNED_MESSAGE,
       'mainnet',
       submit,
+      PERSIST_LOCAL_CID,
     );
 
     await expect(submission).rejects.toMatchObject({
@@ -216,7 +240,12 @@ describe('native Filecoin MpoolPush uncertainty', () => {
     });
 
     await expect(
-      submitSignedNativeFilecoinMessage(SECP_SIGNED_MESSAGE, 'mainnet', submit),
+      submitSignedNativeFilecoinMessage(
+        SECP_SIGNED_MESSAGE,
+        'mainnet',
+        submit,
+        PERSIST_LOCAL_CID,
+      ),
     ).rejects.toMatchObject({
       name: 'NativeFilecoinSubmissionUncertainError',
       cid: SECP_SIGNED_MESSAGE_CID,
@@ -239,7 +268,12 @@ describe('native Filecoin MpoolPush uncertainty', () => {
     });
 
     await expect(
-      submitSignedNativeFilecoinMessage(SECP_SIGNED_MESSAGE, 'mainnet', submit),
+      submitSignedNativeFilecoinMessage(
+        SECP_SIGNED_MESSAGE,
+        'mainnet',
+        submit,
+        PERSIST_LOCAL_CID,
+      ),
     ).rejects.toMatchObject({
       name: 'NativeFilecoinSubmissionUncertainError',
       cid: SECP_SIGNED_MESSAGE_CID,
@@ -262,7 +296,12 @@ describe('native Filecoin MpoolPush uncertainty', () => {
     });
 
     await expect(
-      submitSignedNativeFilecoinMessage(SECP_SIGNED_MESSAGE, 'mainnet', submit),
+      submitSignedNativeFilecoinMessage(
+        SECP_SIGNED_MESSAGE,
+        'mainnet',
+        submit,
+        PERSIST_LOCAL_CID,
+      ),
     ).rejects.toBe(rejected);
   });
 
@@ -282,7 +321,12 @@ describe('native Filecoin MpoolPush uncertainty', () => {
     });
 
     await expect(
-      submitSignedNativeFilecoinMessage(SECP_SIGNED_MESSAGE, 'mainnet', submit),
+      submitSignedNativeFilecoinMessage(
+        SECP_SIGNED_MESSAGE,
+        'mainnet',
+        submit,
+        PERSIST_LOCAL_CID,
+      ),
     ).rejects.toMatchObject({
       name: 'NativeFilecoinSubmissionUncertainError',
       cid: SECP_SIGNED_MESSAGE_CID,
@@ -298,6 +342,7 @@ describe('native Filecoin MpoolPush uncertainty', () => {
       SECP_SIGNED_MESSAGE,
       'mainnet',
       submit,
+      PERSIST_LOCAL_CID,
     );
 
     await expect(submission).rejects.toEqual(

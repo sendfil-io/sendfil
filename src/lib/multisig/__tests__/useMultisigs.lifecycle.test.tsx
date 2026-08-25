@@ -20,7 +20,7 @@ import type { FilecoinMessage, TransactionStatus } from '../../DataProvider/type
 import { createTestLockManager } from '../../senders/__tests__/testLockManager';
 import type { MultisigActorState, MultisigPendingProposal, NativeMultisigAddress } from '../types';
 import { bytesToParamsBase64 } from '../actorParams';
-import { readSavedMultisigs, saveMultisig } from '../storage';
+import { MULTISIG_STORAGE_KEY, readSavedMultisigs, saveMultisig } from '../storage';
 import {
   MULTISIG_UNCERTAIN_ACTION_STORAGE_KEY,
   readUncertainMultisigActions,
@@ -1061,6 +1061,135 @@ describe('useMultisigs selection lifecycle', () => {
   });
 
   it.each([
+    ['Error', () => new Error('wallet provider failed after broadcast')],
+    ['TypeError', () => new TypeError('Failed to fetch after broadcast')],
+  ])(
+    'retains and reconciles a computed Create CID after a plain %s',
+    async (_errorName, createError) => {
+      const provider = createProvider();
+      vi.mocked(provider.signAndSubmitMessage!).mockImplementation(async (_message, options) => {
+        await options?.onCidComputed?.(CID);
+        throw createError();
+      });
+      moduleMocks.preflightCreateMultisig.mockResolvedValue({
+        estimatedMessage: { To: 't01' } as FilecoinMessage,
+        gasEstimate: { estimatedFee: 1n },
+      });
+      const pollMessageStatus = vi.fn(
+        async (): Promise<TransactionStatus> => ({
+          cid: CID,
+          status: 'failed',
+          error: 'confirmation RPC timed out',
+        }),
+      );
+
+      await renderHook({
+        ...currentOptions,
+        provider,
+        pollMessageStatus,
+      });
+
+      let result!: CreateMultisigResult;
+      await act(async () => {
+        result = await latestHook!.createMultisig({
+          signers: [SIGNER_A],
+          threshold: 1,
+          initialDepositFil: '0',
+        });
+      });
+
+      expect(result).toMatchObject({
+        outcome: 'uncertain',
+        cid: CID,
+        warning: expect.stringContaining('after broadcast'),
+      });
+      expect(pollMessageStatus).toHaveBeenCalledWith(CID, 60, 5000, 'calibration');
+      expect(readUncertainMultisigActions(storage).creates).toMatchObject([
+        { status: 'uncertain', cid: CID, signerAddress: SIGNER_A },
+      ]);
+      expect(latestHook?.isCreateRetryBlocked).toBe(true);
+
+      await expect(
+        latestHook!.createMultisig({
+          signers: [SIGNER_A],
+          threshold: 1,
+          initialDepositFil: '0',
+        }),
+      ).rejects.toThrow('still has an uncertain result');
+      expect(provider.signAndSubmitMessage).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('retains the confirmed Create recovery lock when actor persistence fails', async () => {
+    const provider = createProvider();
+    const originalSetItem = storage.setItem.bind(storage);
+    vi.spyOn(storage, 'setItem').mockImplementation((key, value) => {
+      if (key === MULTISIG_STORAGE_KEY) {
+        throw new DOMException('simulated crash while saving actor', 'QuotaExceededError');
+      }
+
+      originalSetItem(key, value);
+    });
+    moduleMocks.preflightCreateMultisig.mockResolvedValue({
+      estimatedMessage: { To: 't01' } as FilecoinMessage,
+      gasEstimate: { estimatedFee: 1n },
+    });
+    const pollMessageStatus = vi.fn(
+      async (): Promise<TransactionStatus> => ({
+        cid: CID,
+        status: 'confirmed',
+        receipt: {
+          ExitCode: 0,
+          Return: createExecReturnBase64(),
+          GasUsed: 100,
+        },
+      }),
+    );
+
+    await renderHook({
+      ...currentOptions,
+      provider,
+      pollMessageStatus,
+    });
+
+    let result!: CreateMultisigResult;
+    await act(async () => {
+      result = await latestHook!.createMultisig({
+        signers: [SIGNER_A],
+        threshold: 1,
+        initialDepositFil: '0',
+      });
+    });
+
+    expect(result).toMatchObject({
+      outcome: 'confirmed',
+      cid: CID,
+      createdAddress: CREATED_MULTISIG,
+      warning: expect.stringContaining('recovery lock was retained'),
+    });
+    if (result.outcome !== 'confirmed') {
+      throw new Error('Expected confirmed multisig creation');
+    }
+    expect(result.savedMultisig).toBeUndefined();
+    expect(readSavedMultisigs('calibration', storage).map((item) => item.address)).not.toContain(
+      CREATED_MULTISIG,
+    );
+    expect(readUncertainMultisigActions(storage).creates).toMatchObject([
+      { status: 'uncertain', cid: CID, signerAddress: SIGNER_A },
+    ]);
+    expect(latestHook?.isCreateRetryBlocked).toBe(true);
+
+    await expect(
+      latestHook!.createMultisig({
+        signers: [SIGNER_A],
+        threshold: 1,
+        initialDepositFil: '0',
+      }),
+    ).rejects.toThrow('still has an uncertain result');
+    expect(provider.signAndSubmitMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
     {
       label: 'a different signer',
       sender: () => createSender(SIGNER_B),
@@ -1755,6 +1884,85 @@ describe('useMultisigs selection lifecycle', () => {
     expect(latestHook?.isProposalRetryBlocked).toBe(false);
     expect(readUncertainMultisigActions(storage).proposals).toEqual([]);
   });
+
+  it.each([
+    {
+      action: 'approve' as const,
+      createError: () => new Error('approval provider failed after broadcast'),
+    },
+    {
+      action: 'cancel' as const,
+      createError: () => new TypeError('cancellation fetch failed after broadcast'),
+    },
+  ])(
+    'retains and reconciles a computed CID when $action throws a plain provider error',
+    async ({ action, createError }) => {
+      const proposal: MultisigPendingProposal =
+        action === 'approve'
+          ? createProposal()
+          : {
+              ...createProposal(),
+              proposer: 't01001',
+              proposerIdAddress: 't01001',
+              approvals: ['t01001'],
+              approvalIdAddresses: ['t01001'],
+              connectedSignerHasApproved: true,
+              canApprove: false,
+              canCancel: true,
+            };
+      const provider = createProvider();
+      vi.mocked(provider.signAndSubmitMessage!).mockImplementation(async (_message, options) => {
+        await options?.onCidComputed?.(CID);
+        throw createError();
+      });
+      moduleMocks.loadActorState.mockResolvedValue(createActorState(MULTISIG_A));
+      moduleMocks.loadPendingProposals.mockResolvedValue([proposal]);
+      moduleMocks.preflightProposalAction.mockResolvedValue({
+        estimatedMessage: {} as FilecoinMessage,
+        gasEstimate: { estimatedFee: 1n },
+      });
+      const pollMessageStatus = vi.fn(
+        async (): Promise<TransactionStatus> => ({
+          cid: CID,
+          status: 'failed',
+          error: 'confirmation RPC timed out',
+        }),
+      );
+
+      await renderHook({
+        ...currentOptions,
+        provider,
+        pollMessageStatus,
+      });
+
+      act(() => latestHook!.selectMultisig(MULTISIG_A));
+      await flushAsyncWork();
+      const submitAction = () =>
+        action === 'approve'
+          ? latestHook!.approveProposal(proposal)
+          : latestHook!.cancelProposal(proposal);
+
+      await act(async () => {
+        await expect(submitAction()).resolves.toBe(CID);
+      });
+      await flushAsyncWork();
+
+      expect(pollMessageStatus).toHaveBeenCalledWith(CID, 60, 5000, 'calibration');
+      expect(latestHook?.proposalActionState).toMatchObject({
+        action,
+        status: 'uncertain',
+        cid: CID,
+        error: expect.stringContaining('after broadcast'),
+      });
+      expect(readUncertainMultisigActions(storage).proposals).toMatchObject([
+        { action, status: 'uncertain', cid: CID, multisigAddress: MULTISIG_A },
+      ]);
+      expect(latestHook?.isProposalRetryBlocked).toBe(true);
+
+      await expect(submitAction()).rejects.toThrow('still has an uncertain result');
+      expect(provider.signAndSubmitMessage).toHaveBeenCalledTimes(1);
+    },
+  );
 
   it('blocks every multisig action for the signer while another actor has an uncertain CID', async () => {
     const proposal = createProposal();
