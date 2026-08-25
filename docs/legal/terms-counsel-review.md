@@ -63,9 +63,9 @@ qualified counsel. Complete this checklist before treating the draft as final pr
 ## Privacy and records
 
 - A code-scoped repository data-flow inventory was completed as of August 25, 2026; it is not a
-  complete production data map. Identify and audit the actual production host, CDN, DNS, WAF, logs,
-  cookies, security identifiers, retention, locations, and subprocessors; those facts are not
-  present in the repository.
+  complete production data map. Public response headers identify Cloudflare as the current edge
+  provider and enable Cloudflare network-error reporting. Audit the Cloudflare account, origin host,
+  DNS, WAF, logs, cookies, security identifiers, retention, locations, and subprocessors.
 - Publish a separate Privacy Notice before broad launch. Determine whether a cookie/storage notice,
   consent mechanism, data-processing contract, international-transfer mechanism, or local privacy
   representative is required for each intended market.

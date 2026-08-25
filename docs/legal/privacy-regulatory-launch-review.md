@@ -39,7 +39,7 @@ determine whether SendFIL, LLC is licensed, exempt, or compliant in any jurisdic
 | RPC and Lotus traffic | Default configuration uses GLIF for Mainnet and Calibration; Ankr can act as a Mainnet read-only fallback. Deployment configuration may replace these endpoints. | Providers can receive IP and request metadata, public addresses, code/balance/state queries, full unsigned transaction data during estimation, signed native messages during submission, hashes or CIDs, and status requests. Provider retention is not established in this repository. |
 | App telemetry | Batch status and error events are written to the browser console and emitted as a same-page custom event. | No first-party external analytics transport is configured in this repository. Browser extensions, injected scripts, wallets, infrastructure, or production hosting may independently process related activity. |
 | Support and privacy email | Information voluntarily sent to `sendfil@proton.me`. | Processed through Proton and retained according to SendFIL's still-to-be-defined support/legal retention process and Proton's applicable practices. Users must not send wallet secrets or confidential CSV files. |
-| Hosting and delivery logs | The repository does not identify the production host, CDN, DNS, WAF, or their exact logging and cookie behavior. | Production verification is required. These providers may process IP addresses, device/browser data, request paths, security identifiers, and logs. |
+| Hosting and delivery logs | Public response headers checked August 25, 2026 identify Cloudflare as the current edge provider and enable Cloudflare network-error reporting. The repository does not identify the origin host or the account's exact DNS, WAF, logging, cookie, and security configuration. | Cloudflare and any origin host may process IP addresses, device/browser data, request paths, security identifiers, network-error reports, and logs. Account access, fields, retention, locations, and subprocessors still require production verification. |
 
 No SendFIL application API, application database, advertising tag, third-party script tag, cookie
 code, or first-party external analytics SDK was identified in the current repository. This is a
@@ -53,8 +53,9 @@ Before a broad launch:
    controller, entity address, `sendfil@proton.me`, effective date, data categories and sources,
    purposes and legal bases, recipients, international transfers, retention, rights, appeals,
    security, children, and blockchain-deletion limits.
-2. Identify the actual production host, CDN, DNS, WAF, logs, cookies, security identifiers,
-   retention periods, processing locations, subprocessors, and applicable contract or DPA.
+2. Inventory the Cloudflare account and identify the origin host, DNS, WAF, network-error reporting,
+   logs, cookies, security identifiers, retention periods, processing locations, subprocessors, and
+   applicable contract or DPA.
 3. Freeze and inventory the production WalletConnect/Reown, RPC, Lotus, wallet, explorer, and
    support-email providers. Record which party is acting as controller or processor and link the
    applicable notices.
