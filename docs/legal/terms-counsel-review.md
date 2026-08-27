@@ -2,27 +2,32 @@
 
 The in-app Terms of Service are a product-specific first draft, not a substitute for advice from
 qualified counsel. Complete this checklist before treating the draft as final production terms.
+These repository review notes are not part of the user-facing Terms and are not confidential or
+privileged merely because they are intended for counsel review.
 
 > [!CAUTION]
 > **Do not merge or deploy this draft as production Terms** until SendFIL verifies its formation
 > documents and principal location, supplies a postal notice address, and counsel completes the
-> regulatory, market, and privacy review. SendFIL, LLC has been identified as a Louisiana LLC, and
-> the draft now selects Louisiana law and courts. The requested initial effective date is August
-> 25, 2026; change it if publication occurs later.
+> regulatory, market, and privacy review. The active draft names no governing state or exclusive
+> forum; that decision and the permitted launch geography remain unresolved. The active draft is
+> dated August 27, 2026; use the actual publication date before release.
 
 ## Entity, notice, and dispute terms
 
 - SendFIL, LLC was reported on August 25, 2026 to have been formed in Louisiana. Verify its exact
   name and status against the formation documents and identify the principal and postal notice
   addresses before publication.
-- `sendfil@proton.me` was supplied on August 25, 2026 and is now published for Terms questions,
+- `sendfil@proton.me` was supplied on August 25, 2026 and is listed in the draft for Terms questions,
   privacy inquiries, and non-litigation correspondence. Confirm that it is continuously monitored
   and adopt an internal response/escalation process. Add a postal notice address when one is
   available.
-- Product decision recorded August 25, 2026: the draft selects Louisiana law and state or federal
-  courts of competent jurisdiction located in Louisiana, with non-waivable-law and non-waivable-
-  forum carveouts. Counsel should confirm the rendered clause. It does not invent a parish because
-  the principal-office parish has not been supplied.
+- Revision requested August 27, 2026: remove Louisiana references from the active public Terms and
+  wallet copy. The complete prior governing-law/forum paragraph, including court-consent and
+  inconvenient-forum waivers, has been removed. No substitute state, country, or forum is selected.
+  Company formation, launch market, and contractual dispute rules are separate decisions. Counsel
+  must approve either a justified law/forum clause or deliberate omission before publication;
+  omitting the name does not make otherwise-applicable law disappear. Preserve non-waivable-rights
+  and liability carveouts regardless of the final selection.
 - Recommended initial arbitration position: do not add mandatory arbitration or a class-action
   waiver for the first release. Reconsider after counsel can design and operationally support the
   administrator, rules, venue, cost allocation, small-claims treatment, mass-arbitration handling,
@@ -36,18 +41,28 @@ qualified counsel. Complete this checklist before treating the draft as final pr
   beta while obtaining a written federal money-transmission analysis and Louisiana Office of
   Financial Institutions classification. Test assets and a closed beta reduce risk but do not
   eliminate privacy, sanctions, consumer-protection, contract, or security obligations.
-- First real-value market recommendation: business use in Louisiana only after a written OFI
-  determination or an issued license, if required, informed by a documented opinion from qualified
-  Louisiana regulatory counsel. Then expand through a U.S. state allowlist, adding states only after
-  clearance. “U.S.-only” does not itself resolve fifty-state money-transmission law.
-- This draft now limits its initial scope and assent representation to an invited, fee-free,
-  Louisiana-business Calibration beta. That is proposed legal scope, not current product behavior:
-  the app still exposes Mainnet and has no invitation, identity, business-status, recipient-location,
-  or Louisiana-location gate. Do not deploy these Terms until separate product work enforces the
-  access, network, fee, and jurisdiction limits and the rendered copy is updated to match. The
-  access gate must enforce the Terms definition of a current, non-transferable written invitation
-  issued directly by SendFIL to the named individual or organization and retain appropriate evidence
-  under the approved privacy and retention plan.
+- The August 25 draft proposed a Louisiana-business-only beta. Removing the public state name on
+  August 27 does not approve a substitute market or authorize new jurisdictions. Do not expand that
+  proposed boundary through an invitation without a separate, explicit market decision and the
+  required legal review. The first real-value market remains a separate pre-launch decision, not a
+  consequence of the LLC's formation state. Any Mainnet launch requires a fact-specific federal
+  analysis and applicable state determinations or issued licenses. “U.S.-only” does not itself
+  resolve fifty-state money-transmission law.
+- The active draft limits its scope and assent representation to an invited, fee-free Calibration
+  business beta. Geographic eligibility is defined by the participant's written invitation, not by
+  a named state in the generic Terms. Before acceptance, each invitation must identify the named
+  person or organization, the Terms version, and permitted jurisdictions for individual residence
+  and physical use, entity organization and principal place of business, representative location,
+  and beneficiaries/recipients. Missing geographic restrictions mean no valid invitation. Only its
+  eligibility/scope restrictions are incorporated; an invitation cannot change fees, networks,
+  substantive Terms, or authorize geographic expansion on its own.
+- This is proposed legal scope, not current product behavior: the app still exposes Mainnet and
+  has no invitation, identity, business-status, recipient-location, or geographic access gate. Do
+  not deploy or collect real assent until product controls enforce the approved access, network,
+  fee, and geographic scope. Retain the invitation restrictions, date/version, delivery before
+  assent, participant identity, and revocation status under an approved privacy/retention plan.
+  The existing browser acceptance record contains no invitation identifier or geographic scope and
+  is not evidence that these requirements were verified.
 - Do not treat Louisiana-only or business-only use as an automatic legal exemption. Louisiana's
   Virtual Currency Businesses Act expressly reaches covered activity with or on behalf of
   Louisiana residents. The current SendFIL fee weakens reliance on the no-compensation exemption.
@@ -135,13 +150,13 @@ qualified counsel. Complete this checklist before treating the draft as final pr
 - Have counsel review the exact rendered Terms and wallet/review copy, not only this Markdown
   checklist.
 - Verify that `TERMS_VERSION`, the displayed effective date, and the archived legal text all match.
-- August 25, 2026 is the requested initial effective date. Verify that publication actually occurs
-  on that date; otherwise update `TERMS_VERSION`, the displayed date, and the archived legal text
-  together immediately before release.
-- As of this draft, `origin/main` does not contain the Terms feature, so the Louisiana, eligibility,
-  liability, and forum edits remain part of the same unpublished `2026-08-25` version. If any prior
-  draft was made available for real assent outside an internal preview, issue a new version/date and
-  reject the earlier acceptance record instead of reusing this version.
+- The active revision is `2026-08-27`, displayed as August 27, 2026. Verify the actual publication
+  date before release; if later, update `TERMS_VERSION`, the displayed date, and the archived legal
+  text together. The date is not a claim that this draft has already been published.
+- Preserve the prior `2026-08-25` source unchanged, including its historical state-specific wording.
+  The new version rejects acceptance of that prior draft rather than silently changing the Terms
+  behind an existing acceptance record. Preserve any actually published/accepted copies and their
+  associated invitation restrictions.
 - The in-app Terms include a print/save control and a copy-request method, and the source now keeps
   each version as a date-labeled component under `src/legal/versions`. Preserve that immutable
   source version, the release commit, and a copy of the exact rendered text actually published;
@@ -172,7 +187,8 @@ These sources are research starting points, not conclusions about SendFIL's obli
   screening, controls, escalation, and recordkeeping where required.
 - [Louisiana Civil Code article 3540](https://www.legis.la.gov/legis/Law.aspx?d=110561)
   recognizes an express choice of law subject to the public policy of the otherwise-applicable
-  state. Counsel should confirm the Louisiana clause and its savings language for the launch market.
+  state. Counsel should evaluate a justified choice or deliberate omission; removing a state name
+  does not determine which law a court will apply.
 - [Louisiana Civil Code article 2004](https://www.legis.la.gov/legis/Law.aspx?d=109260) bars advance
   limitations for intentional or gross fault and for causing physical injury; confirm the Section 17
   savings language against the final protected-party list.

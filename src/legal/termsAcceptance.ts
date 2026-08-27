@@ -1,5 +1,5 @@
-export const TERMS_VERSION = '2026-08-25';
-export const TERMS_LAST_UPDATED = 'August 25, 2026';
+export const TERMS_VERSION = '2026-08-27';
+export const TERMS_LAST_UPDATED = 'August 27, 2026';
 export const TERMS_ACCEPTANCE_STORAGE_KEY = 'sendfil.terms-acceptance.v1';
 
 interface TermsAcceptanceRecord {

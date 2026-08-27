@@ -116,10 +116,15 @@ describe('TermsOfServiceModal', () => {
     expect(dialog?.getAttribute('aria-modal')).toBe('true');
     expect(title?.textContent).toBe('SendFIL Terms of Service');
     expect(dialog?.textContent).toContain(`Effective and last updated ${TERMS_LAST_UPDATED}`);
-    expect(dialog?.textContent).toContain('Initial Louisiana Calibration beta only.');
+    expect(dialog?.textContent).toContain('Initial invited Calibration beta only.');
     expect(dialog?.textContent).toContain('“Valid Invitation”');
-    expect(dialog?.textContent).toContain('Mainnet and every other network or jurisdiction');
-    expect(dialog?.textContent).toContain('State of Louisiana');
+    expect(dialog?.textContent).toContain('Mainnet and every other network are outside the Eligible Service');
+    expect(dialog?.textContent).toContain('be provided to you before you accept these Terms');
+    expect(dialog?.textContent).toContain('An invitation that omits those details is not valid.');
+    expect(dialog?.textContent).toContain('An invitation cannot accomplish that expansion on its own.');
+    expect(dialog?.textContent).toContain('fee-free');
+    expect(dialog?.textContent).not.toMatch(/Louisiana/i);
+    expect(dialog?.textContent).not.toContain('Governing law; forum.');
     expect(dialog?.textContent).toContain('SendFIL is a non-custodial interface');
     expect(dialog?.textContent).toContain('Connecting does not itself move FIL.');
     expect(dialog?.textContent).toContain('Multicall3');

@@ -23,7 +23,7 @@ describe('terms acceptance storage', () => {
   it('accepts only a parseable record for the current Terms version', () => {
     const storage = createStorage(
       JSON.stringify({
-        acceptedAt: '2026-08-25T14:30:00.000Z',
+        acceptedAt: '2026-08-27T14:30:00.000Z',
         version: TERMS_VERSION,
       }),
     );
@@ -36,6 +36,15 @@ describe('terms acceptance storage', () => {
     ['missing storage', undefined],
     ['missing record', createStorage()],
     ['malformed JSON', createStorage('{not-json')],
+    [
+      'the superseded August 25 draft',
+      createStorage(
+        JSON.stringify({
+          acceptedAt: '2026-08-25T14:30:00.000Z',
+          version: '2026-08-25',
+        }),
+      ),
+    ],
     [
       'an older Terms version',
       createStorage(
@@ -60,7 +69,7 @@ describe('terms acceptance storage', () => {
 
   it('writes the current version and an exact ISO acceptance timestamp', () => {
     const storage = createStorage();
-    const acceptedAt = new Date('2026-08-25T18:45:12.345Z');
+    const acceptedAt = new Date('2026-08-27T18:45:12.345Z');
 
     recordCurrentTermsAcceptance(storage, acceptedAt);
 

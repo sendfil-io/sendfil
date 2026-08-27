@@ -17,8 +17,9 @@ export default function TermsAcceptanceNotice({
     >
       <p className="font-semibold">Accept the Terms to continue</p>
       <p className="mt-1 leading-5 text-blue-900">
-        Your wallet is connected. Confirm that you are an invited Louisiana business user
-        participating only in the fee-free Calibration beta, then review the{' '}
+        Your wallet is connected. Confirm that you have a valid written beta invitation, meet its
+        eligibility and geographic restrictions, and will use only the fee-free Calibration beta
+        for business purposes. Review the{' '}
         <TermsOfServiceLink
           onOpen={onOpenTerms}
           className="font-semibold underline underline-offset-2"

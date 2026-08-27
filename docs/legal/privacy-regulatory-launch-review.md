@@ -1,44 +1,53 @@
 # SendFIL Privacy and Regulatory Launch Review
 
-Snapshot date: August 25, 2026
+Data-flow snapshot date: August 25, 2026. Drafting decisions revised August 27, 2026; infrastructure
+facts have not been independently re-audited for this wording revision.
 
 This is an engineering and product-risk review of the current repository. It records verified data
 flows, launch decisions, and questions for qualified counsel. It is not a legal opinion and does not
 determine whether SendFIL, LLC is licensed, exempt, or compliant in any jurisdiction.
+These repository notes are not part of the user-facing Terms and are not confidential or privileged
+merely because they are intended for counsel review.
 
 > [!CAUTION]
 > Terms language alone cannot resolve privacy, sanctions, money-transmission, consumer-protection,
-> or international-market obligations. Complete the operational and counsel items below before a
-> broad production launch.
+> or international-market obligations. Complete the applicable operational and counsel items below
+> before any external beta or production launch.
 
-## Decisions recorded on August 25, 2026
+## Decisions recorded through August 27, 2026
 
-- Contact: `sendfil@proton.me` is the published Terms and privacy contact. Keep it monitored and
+- Contact: `sendfil@proton.me` is the draft Terms and privacy contact. Keep it monitored and
   adopt a response, escalation, and retention process.
-- Effective date: August 25, 2026 is the requested initial Terms date. Change the version and date
-  together if publication occurs later.
+- Effective date: the active draft is now `2026-08-27`, displayed as August 27, 2026. Preserve the
+  prior source snapshot and require acceptance of the new version. Set the final version/date to
+  actual publication; the draft date is not evidence that publication has occurred.
 - Acceptance evidence: browser-wide acceptance is approved for the initial client-only release.
   The stored record contains only a Terms version and timestamp; it is not bound to a wallet,
   person, organization, state, or jurisdiction, and another person using the same browser profile
   may inherit it.
-- Disputes: SendFIL, LLC was reported to be formed in Louisiana. The draft now selects Louisiana
-  law and courts, without inventing an unknown parish and with non-waivable-rights carveouts.
+- Disputes: SendFIL, LLC was reported to be formed in Louisiana. At the user's request, the active
+  public Terms and wallet copy no longer name that state. The entire governing-law/forum clause
+  was removed; no substitute was selected. Counsel must approve a justified choice or deliberate
+  omission before publication. Formation and applicable-law facts remain relevant to this review.
 - Arbitration: omit mandatory arbitration and a class-action waiver from the initial release.
 - Amount precision: do not accept the current decimal-rounding risk by disclaimer. Preserve exact
   attoFIL values before claiming support for amounts with up to 18 decimal places.
-- Proposed market—not current behavior: the most conservative immediate posture is a closed,
-  fee-free Calibration-only beta while federal and Louisiana classifications are obtained. “Closed”
-  requires an access gate that enforces the Terms definition of a current, non-transferable written
-  invitation issued directly by SendFIL to the named person or organization; fee-free requires
-  disabling the SendFIL fee. The first real-value market should be limited to business use in
-  Louisiana only after a written OFI determination or an issued license, if required, informed by
-  qualified Louisiana regulatory counsel. Expansion should use a U.S. state allowlist that adds
-  states only after clearance.
-- Eligibility evidence: the draft Terms and wallet flow collect an invited Louisiana-business,
-  fee-free Calibration-only representation. The current app does not verify invitation, identity,
-  business status, recipient location, user location, or state, and it still exposes Mainnet. Do not
-  describe the proposed scope as implemented or deploy the Terms until separate product controls
-  make the access, network, fee, and jurisdiction behavior match.
+- Proposed market—not current behavior: preserve a closed, fee-free Calibration business beta
+  while federal and applicable state classifications are obtained. The earlier draft's
+  Louisiana-business boundary is not broadened by removing its name from public copy. No substitute
+  market is approved by this revision. A separately approved launch geography and legal review must
+  precede invitations, and any expansion beyond the prior proposed boundary requires an explicit
+  market decision. The first real-value market remains unresolved and requires applicable written
+  regulatory determinations or issued licenses, not only a new contract label.
+- Eligibility evidence: the public draft now requires a current, non-transferable written
+  invitation naming the participant, Terms version, permitted jurisdictions, and geographic
+  eligibility restrictions, delivered before assent. Retain those restrictions and delivery/version
+  records under the approved privacy plan. An invitation cannot override business-use, fee-free,
+  Calibration-only, or other substantive Terms, nor authorize geographic expansion by itself.
+  The current app does not verify invitation, identity, business status, beneficiary/recipient
+  location, or user geography, and it still exposes Mainnet. The browser acceptance record contains
+  no invitation identifier or scope. Do not describe the proposed controls as implemented or deploy
+  the Terms until access, network, fee, and jurisdiction behavior match.
 
 ## Verified current data map
 
@@ -210,10 +219,11 @@ international transfers, and crypto-asset regulation. For the EEA, counsel shoul
 review whether the product activity could be characterized as a transfer service under MiCA and
 whether GDPR Article 3 applies based on offering or monitoring activity.
 
-The draft's Louisiana-only restriction is a contractual eligibility rule, not proof of geographic
-exclusion. Before any later U.S.-only or state-allowlist expansion, align marketing and support with
-that scope and implement a counsel-approved allowlist and proportionate controls. Do not describe
-the current site as geoblocked, location-verified, or available throughout the United States.
+The geographic restrictions in a written invitation are contractual eligibility rules, not proof of
+geographic exclusion. Removing a state name from the generic Terms does not authorize another
+market. Before any later U.S.-only or state-allowlist expansion, align marketing and support with
+the approved scope and implement a counsel-approved allowlist and proportionate controls. Do not
+describe the current site as geoblocked, location-verified, or available throughout the United States.
 
 ## Primary research anchors
 

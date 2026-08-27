@@ -538,10 +538,13 @@ export const CustomConnectButton: React.FC<CustomConnectButtonProps> = ({
                   {hasAcceptedTerms ? (
                     <div className="text-sm leading-6 text-blue-950">
                       <p className="font-semibold">
-                        Invited Louisiana businesses • Calibration beta only.
+                        Invited business users • Calibration beta only.
                       </p>
                       <p>
-                        By selecting a wallet and connecting, you reaffirm the{' '}
+                        By selecting a wallet and connecting, you confirm that you have a valid
+                        written beta invitation, meet its eligibility and geographic restrictions,
+                        and will use only the fee-free Calibration beta for business purposes. You
+                        reaffirm the{' '}
                         <TermsOfServiceLink
                           onOpen={onOpenTerms}
                           className="font-semibold underline underline-offset-2"
@@ -558,14 +561,15 @@ export const CustomConnectButton: React.FC<CustomConnectButtonProps> = ({
                         onChange={(event) =>
                           setHasAcknowledgedTermsForConnection(event.target.checked)
                         }
-                        aria-label={`I confirm I am an invited Louisiana business user participating only in the fee-free Calibration beta and agree to the Terms of Service effective ${TERMS_LAST_UPDATED}`}
+                        aria-label={`I confirm that I have a valid written beta invitation and meet its eligibility and geographic restrictions. I will use only the fee-free Calibration beta for business purposes and agree to the Terms of Service effective ${TERMS_LAST_UPDATED}`}
                         data-testid="wallet-terms-acknowledgment"
                         className="mt-1 h-4 w-4 shrink-0 rounded border-blue-300 text-blue-600 focus:ring-blue-500"
                       />
                       <p className="text-sm leading-6 text-blue-950">
                         <label htmlFor="wallet-terms-acknowledgment">
-                          I confirm that I am an invited Louisiana business user participating only
-                          in the fee-free Calibration beta, and I have read and agree to the{' '}
+                          I confirm that I have a valid written beta invitation and meet its
+                          eligibility and geographic restrictions. I will use only the fee-free
+                          Calibration beta for business purposes and have read and agree to the{' '}
                         </label>
                         <TermsOfServiceLink
                           onOpen={onOpenTerms}

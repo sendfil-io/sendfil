@@ -614,7 +614,10 @@ describe('App confirm flow', () => {
     expect(container.textContent).toContain('Accept the Terms of Service before continuing.');
     expect(container.textContent).toContain(`effective ${TERMS_LAST_UPDATED}`);
     expect(container.textContent).toContain(
-      'Confirm that you are an invited Louisiana business user participating only in the fee-free Calibration beta',
+      'Confirm that you have a valid written beta invitation, meet its eligibility and geographic restrictions, and will use only the fee-free Calibration beta for business purposes.',
+    );
+    expect(getElementByTestId(container, 'terms-acceptance-notice').textContent).not.toMatch(
+      /Louisiana/i,
     );
     expect(getElementByTestId(container, 'accept-terms-button').textContent).toContain(
       'I confirm my eligibility and agree to the Terms of Service',

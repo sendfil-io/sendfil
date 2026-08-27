@@ -177,12 +177,14 @@ describe('CustomConnectButton Terms gating', () => {
     expect(document.activeElement).toBe(chooser);
     expect(document.body.style.overflow).toBe('hidden');
     expect(termsCheckbox.getAttribute('aria-label')).toBe(
-      `I confirm I am an invited Louisiana business user participating only in the fee-free Calibration beta and agree to the Terms of Service effective ${TERMS_LAST_UPDATED}`,
+      `I confirm that I have a valid written beta invitation and meet its eligibility and geographic restrictions. I will use only the fee-free Calibration beta for business purposes and agree to the Terms of Service effective ${TERMS_LAST_UPDATED}`,
     );
     expect(walletButton.disabled).toBe(true);
     expect(document.body.textContent).toContain(
-      `I confirm that I am an invited Louisiana business user participating only in the fee-free Calibration beta, and I have read and agree to the Terms of Service, effective ${TERMS_LAST_UPDATED}.`,
+      `I confirm that I have a valid written beta invitation and meet its eligibility and geographic restrictions. I will use only the fee-free Calibration beta for business purposes and have read and agree to the Terms of Service, effective ${TERMS_LAST_UPDATED}.`,
     );
+    expect(document.body.textContent).not.toMatch(/Louisiana/i);
+    expect(termsCheckbox.getAttribute('aria-label')).not.toMatch(/Louisiana/i);
 
     if (!termsLink) {
       throw new Error('Could not find the Terms of Service link');
@@ -303,11 +305,12 @@ describe('CustomConnectButton Terms gating', () => {
 
     expect(document.querySelector('[data-testid="wallet-terms-acknowledgment"]')).toBeNull();
     expect(document.body.textContent).toContain(
-      'Invited Louisiana businesses • Calibration beta only.',
+      'Invited business users • Calibration beta only.',
     );
     expect(document.body.textContent).toContain(
-      'By selecting a wallet and connecting, you reaffirm the Terms of Service.',
+      'By selecting a wallet and connecting, you confirm that you have a valid written beta invitation, meet its eligibility and geographic restrictions, and will use only the fee-free Calibration beta for business purposes. You reaffirm the Terms of Service.',
     );
+    expect(document.body.textContent).not.toMatch(/Louisiana/i);
     expect(getButton('MetaMask').disabled).toBe(false);
   });
 });
