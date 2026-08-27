@@ -152,6 +152,42 @@ describe('ReviewTransactionModal', () => {
     expect(container.textContent).toContain('Any failing transfer reverts the whole batch.');
   });
 
+  it('shows transaction amounts without summary rounding before authorization', () => {
+    const props = getBaseProps();
+    const firstAddress = `0x12345678${'a'.repeat(26)}abcdef`;
+    const secondAddress = `0x12345678${'b'.repeat(26)}abcdef`;
+    props.recipients = [
+      {
+        address: firstAddress,
+        amount: 0.1,
+      },
+      {
+        address: secondAddress,
+        amount: 0.2,
+      },
+    ];
+    props.recipientTotal = 0.1 + 0.2;
+    props.feeTotal = 0.000000000000000001;
+
+    act(() => {
+      root.render(<ReviewTransactionModal {...props} />);
+    });
+
+    expect(container.textContent).toContain('0.3 FIL');
+    expect(container.textContent).not.toContain('0.30000000000000004 FIL');
+    expect(container.textContent).toContain('0.000000000000000001 FIL');
+
+    const detailsButton = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('View details'),
+    ) as HTMLButtonElement;
+    click(detailsButton);
+
+    expect(container.textContent).toContain(firstAddress);
+    expect(container.textContent).toContain(secondAddress);
+    expect(container.textContent).toContain('0.1 FIL');
+    expect(container.textContent).toContain('0.2 FIL');
+  });
+
   it('shows the exact multisig actor, signer, and threshold before proposing', () => {
     const props = getBaseProps();
     const multisigAddress = 'f2abcdefghijklmnopqrstuvwxyz234567abcdefghijklmnopqrstuvwxyz234567';
@@ -297,6 +333,47 @@ describe('ReviewTransactionModal', () => {
     );
   });
 
+  it('explains ThinBatch Partial return and fee finality before send', () => {
+    const props = getBaseProps();
+    props.batchConfiguration = {
+      ...DEFAULT_BATCH_CONFIGURATION,
+      executionMethod: 'THINBATCH',
+      errorHandling: 'PARTIAL',
+    };
+
+    act(() => {
+      root.render(<ReviewTransactionModal {...props} />);
+    });
+
+    const disclosure = container.querySelector('[data-testid="partial-fee-disclosure"]');
+
+    expect(disclosure?.textContent).toContain(
+      'returns aggregate failed-payment value to the on-chain caller within the same transaction',
+    );
+    expect(disclosure?.textContent).toContain('If that return fails, the whole call reverts');
+    expect(disclosure?.textContent).toContain('including SendFIL fee payments');
+  });
+
+  it('does not claim every Partial payment succeeded after outer confirmation', () => {
+    const props = getBaseProps();
+    props.batchConfiguration = {
+      ...DEFAULT_BATCH_CONFIGURATION,
+      executionMethod: 'THINBATCH',
+      errorHandling: 'PARTIAL',
+    };
+    props.transactionState = 'confirmed';
+
+    act(() => {
+      root.render(<ReviewTransactionModal {...props} />);
+    });
+
+    expect(container.textContent).toContain('The ThinBatch transaction was confirmed on-chain.');
+    expect(container.textContent).toContain(
+      'Inspect its per-payment results and events before assuming every recipient was paid.',
+    );
+    expect(container.textContent).not.toContain('Successfully sent');
+  });
+
   it('blocks send when atomic preflight fails', () => {
     const props = getBaseProps();
     props.batchConfiguration = {
@@ -320,6 +397,9 @@ describe('ReviewTransactionModal', () => {
     });
 
     expect(container.textContent).toContain('Atomic batch would revert');
+    expect(container.textContent).toContain('Unavailable');
+    expect(container.textContent).toContain('Transfer value (network fee unavailable):');
+    expect(container.textContent).not.toContain('~ 0.01 FIL');
     expect(getButton(container, 'Send').disabled).toBe(true);
 
     const technicalDetails = container.querySelector(

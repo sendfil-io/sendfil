@@ -187,9 +187,7 @@ describe('MultisigFundingPanel interactions', () => {
     ) as HTMLButtonElement;
 
     expect(balance.textContent).toBe('0.5 FIL');
-    expect(balance.getAttribute('aria-label')).toBe(
-      `Balance for multisig ${ADDRESS}: 0.5 FIL`,
-    );
+    expect(balance.getAttribute('aria-label')).toBe(`Balance for multisig ${ADDRESS}: 0.5 FIL`);
     expect(balance.getAttribute('title')).toBe('Current multisig balance');
     expect(selectButton.getAttribute('aria-describedby')).toBe(balance.id);
   });
@@ -209,9 +207,9 @@ describe('MultisigFundingPanel interactions', () => {
     expect(container.querySelector('[data-testid="multisig-total-balance"]')?.textContent).toBe(
       '5 FIL',
     );
-    expect(
-      container.querySelector('[data-testid="multisig-available-balance"]')?.textContent,
-    ).toBe('2 FIL');
+    expect(container.querySelector('[data-testid="multisig-available-balance"]')?.textContent).toBe(
+      '2 FIL',
+    );
     expect(container.querySelector('[data-testid="multisig-locked-balance"]')?.textContent).toBe(
       '3 FIL',
     );
@@ -239,9 +237,7 @@ describe('MultisigFundingPanel interactions', () => {
     expect(signerRows[0]?.textContent).toContain('t1signer-a');
     expect(signerRows[1]?.textContent).toContain('t1signer-b');
     expect(signerRows[1]?.textContent).toContain('Connected');
-    expect(signerList.getAttribute('aria-label')).toBe(
-      `Signer addresses for multisig ${ADDRESS}`,
-    );
+    expect(signerList.getAttribute('aria-label')).toBe(`Signer addresses for multisig ${ADDRESS}`);
   });
 
   it.each([
@@ -450,9 +446,7 @@ describe('MultisigFundingPanel interactions', () => {
   it('explains when no proposal has per-signer approval status yet', () => {
     renderPanel({ pendingProposals: [] });
 
-    const emptyState = container.querySelector(
-      '[data-testid="no-pending-multisig-proposals"]',
-    );
+    const emptyState = container.querySelector('[data-testid="no-pending-multisig-proposals"]');
     expect(emptyState?.textContent).toContain('Pending proposals');
     expect(emptyState?.textContent).toContain(
       'No proposals are awaiting approval. Per-signer status appears for proposals that remain pending.',
@@ -489,8 +483,7 @@ describe('MultisigFundingPanel interactions', () => {
     });
 
     expect(
-      container.querySelector(`[data-testid="saved-multisig-balance-${ADDRESS}"]`)
-        ?.textContent,
+      container.querySelector(`[data-testid="saved-multisig-balance-${ADDRESS}"]`)?.textContent,
     ).toBe('2 FIL');
   });
 
@@ -683,6 +676,42 @@ describe('MultisigFundingPanel interactions', () => {
     expect(decoded?.textContent).toContain('1 FIL');
     expect(decoded?.textContent).toContain('0x1111111111111111111111111111111111111111');
     expect(decoded?.textContent).toContain('0.000000000000000001 FIL');
+    expect(decoded?.textContent).toContain('Recipient transfers');
+    expect(decoded?.textContent).toContain('Batch total');
+    expect(container.textContent).toContain(
+      "Approving adds this wallet's signer approval and may execute the complete batch immediately",
+    );
+  });
+
+  it('labels SendFIL fee payments and repeats the Partial-mode consequence before approval', () => {
+    const partialProposal = createProposal();
+    partialProposal.decodedBatch = {
+      ...partialProposal.decodedBatch!,
+      executionMethod: 'THINBATCH',
+      errorMode: 'PARTIAL',
+    };
+
+    renderPanel({
+      network: {
+        ...getNetworkConfig('calibration'),
+        feePolicy: {
+          enabled: true,
+          percent: 1,
+          split: 0.5,
+          recipientA: '0x1111111111111111111111111111111111111111',
+          recipientB: '0x2222222222222222222222222222222222222222',
+        },
+      },
+      pendingProposals: [partialProposal],
+    });
+
+    expect(
+      container.querySelector('[data-testid="proposal-7-fee-summary"]')?.textContent,
+    ).toContain('0.000000000000000001 FIL');
+    expect(container.textContent).toContain('SendFIL fee payment');
+    expect(
+      container.querySelector('[data-testid="proposal-7-partial-disclosure"]')?.textContent,
+    ).toContain('including SendFIL fee payments');
   });
 
   it('keeps actions locked and exposes the CID while confirmation is pending', () => {
@@ -884,7 +913,7 @@ describe('MultisigFundingPanel interactions', () => {
     expect(onSelect).toHaveBeenCalledWith(ADDRESS);
   });
 
-  it('does not freeze saved-actor selection for another signer\'s uncertain action', async () => {
+  it("does not freeze saved-actor selection for another signer's uncertain action", async () => {
     const onSelect = vi.fn();
     renderPanel({
       savedMultisigs: [
@@ -1041,6 +1070,44 @@ describe('MultisigFundingPanel interactions', () => {
     expect(onRefresh).toHaveBeenCalledTimes(1);
   });
 
+  it('blocks on-chain multisig actions before Terms acceptance but leaves reads available', async () => {
+    const onRefresh = vi.fn().mockResolvedValue(undefined);
+    renderPanel({ canSubmitTransactions: false, onRefresh });
+
+    const approve = container.querySelector(
+      'button[aria-label="Approve proposal #7"]',
+    ) as HTMLButtonElement;
+    const cancel = container.querySelector(
+      'button[aria-label="Cancel proposal #7"]',
+    ) as HTMLButtonElement;
+    const refresh = container.querySelector(
+      `button[aria-label="Refresh multisig ${ADDRESS}"]`,
+    ) as HTMLButtonElement;
+
+    expect(approve.disabled).toBe(true);
+    expect(cancel.disabled).toBe(true);
+    expect(refresh.disabled).toBe(false);
+
+    await act(async () => {
+      refresh.click();
+      await Promise.resolve();
+    });
+
+    expect(onRefresh).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      (
+        container.querySelector('[data-testid="multisig-mode-create"]') as HTMLButtonElement
+      ).click();
+      await Promise.resolve();
+    });
+
+    const create = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === 'Accept Terms to create',
+    ) as HTMLButtonElement;
+    expect(create.disabled).toBe(true);
+  });
+
   it('labels the approval threshold and initial deposit as separate create fields', async () => {
     renderPanel();
 
@@ -1105,9 +1172,7 @@ describe('MultisigFundingPanel interactions', () => {
       isCreateActionInFlight: true,
     });
 
-    expect(container.textContent).toContain(
-      'Approve multisig creation in your connected wallet.',
-    );
+    expect(container.textContent).toContain('Approve multisig creation in your connected wallet.');
     expect(
       Array.from(container.querySelectorAll('button')).find(
         (button) => button.textContent?.trim() === 'Approve in wallet…',

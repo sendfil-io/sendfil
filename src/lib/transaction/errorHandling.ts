@@ -40,11 +40,12 @@ export interface ErrorModeCopy {
 
 export const ERROR_MODE_COPY: Record<ErrorMode, ErrorModeCopy> = {
   PARTIAL: {
-    reviewSummary: 'ThinBatch refunds failed payments while successful transfers continue.',
+    reviewSummary:
+      'ThinBatch continues successful payments and returns failed-payment value in the same transaction.',
     reviewDetail:
-      'Failed payments are refunded while successful payments can continue.',
+      'After attempting each payment, ThinBatch returns aggregate failed-payment value to the on-chain caller. If that return fails, the whole call reverts.',
     failureSummary:
-      'Some transfers may already be finalized; failed payment value is refunded by ThinBatch unless the refund itself reverts.',
+      'If a Partial transaction succeeds, successful payments are final and failed-payment value is returned. If that return fails, the whole call reverts.',
     retryHint: 'Switch to Atomic if you need all-or-nothing delivery.',
   },
   ATOMIC: {

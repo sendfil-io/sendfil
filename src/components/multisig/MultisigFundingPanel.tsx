@@ -11,10 +11,12 @@ import type {
   NativeMultisigAddress,
   SavedMultisig,
 } from '../../lib/multisig';
+import { normalizeToEvmAddress } from '../../utils/addressEncoder';
 import { getProposalSignatureRows } from './signatureStatus';
 
 interface MultisigFundingPanelProps {
   enabled: boolean;
+  canSubmitTransactions?: boolean;
   isExternallyLocked?: boolean;
   isRecoveryNavigationLocked?: boolean;
   network?: SendFilNetworkConfig;
@@ -94,6 +96,32 @@ function truncateAddress(address: string): string {
   return `${address.slice(0, 8)}...${address.slice(-6)}`;
 }
 
+function getProposalFeePaymentIndexes(
+  proposal: MultisigPendingProposal,
+  network?: SendFilNetworkConfig,
+): Set<number> {
+  if (!proposal.isSendFilCompatible || !proposal.decodedBatch || !network?.feePolicy.enabled) {
+    return new Set();
+  }
+
+  const feeRecipientIdentities = new Set(
+    [network.feePolicy.recipientA, network.feePolicy.recipientB]
+      .filter((address): address is string => Boolean(address))
+      .map((address) => normalizeToEvmAddress(address)?.toLowerCase() ?? address.toLowerCase()),
+  );
+
+  return new Set(
+    proposal.decodedBatch.payments
+      .filter((payment) => {
+        const identity =
+          normalizeToEvmAddress(payment.recipient)?.toLowerCase() ??
+          payment.recipient.toLowerCase();
+        return feeRecipientIdentities.has(identity);
+      })
+      .map((payment) => payment.index),
+  );
+}
+
 function getConnectedWalletStatus(
   connectedSigner: NativeFilecoinConnectedSender | undefined,
   multisig: MultisigActorState,
@@ -141,6 +169,7 @@ function getCreateErrorMessage(error: unknown): string {
 
 export function MultisigFundingPanel({
   enabled,
+  canSubmitTransactions = true,
   isExternallyLocked = false,
   isRecoveryNavigationLocked,
   network,
@@ -190,7 +219,7 @@ export function MultisigFundingPanel({
     createDefaultCreateValues(connectedSignerAddress),
   );
   const canAddMultisig = Boolean(network);
-  const canCreateMultisig = enabled && Boolean(network && connectedSigner);
+  const canCreateMultisig = enabled && canSubmitTransactions && Boolean(network && connectedSigner);
   const currentCreateAction =
     createActionState &&
     connectedSignerAddress === createActionState.signerAddress &&
@@ -326,7 +355,7 @@ export function MultisigFundingPanel({
   };
 
   const handleCreate = async () => {
-    if (hasWalletActionInFlight || isCreateRetryBlocked) {
+    if (!canSubmitTransactions || hasWalletActionInFlight || isCreateRetryBlocked) {
       return;
     }
 
@@ -360,7 +389,7 @@ export function MultisigFundingPanel({
     action: 'approve' | 'cancel',
     acknowledgeDuplicatePayments = false,
   ) => {
-    if (hasWalletActionInFlight) {
+    if (!canSubmitTransactions || hasWalletActionInFlight) {
       return;
     }
 
@@ -1194,6 +1223,19 @@ export function MultisigFundingPanel({
                   }),
                 );
                 const hasAcknowledgedDuplicates = acknowledgedDuplicateProposals.has(proposal.id);
+                const feePaymentIndexes = getProposalFeePaymentIndexes(proposal, network);
+                const sendFilFeeAttoFil =
+                  proposal.decodedBatch?.payments.reduce(
+                    (total, payment) =>
+                      feePaymentIndexes.has(payment.index)
+                        ? total + BigInt(payment.amountAttoFil)
+                        : total,
+                    0n,
+                  ) ?? 0n;
+                const decodedBatchTotalAttoFil = proposal.decodedBatch
+                  ? BigInt(proposal.decodedBatch.totalValueAttoFil)
+                  : 0n;
+                const recipientPaymentTotalAttoFil = decodedBatchTotalAttoFil - sendFilFeeAttoFil;
                 const isThisApprovalPending =
                   (activeProposalAction?.proposalId === proposal.id &&
                     activeProposalAction.action === 'approve') ||
@@ -1207,12 +1249,16 @@ export function MultisigFundingPanel({
                     currentProposalAction?.proposalId === proposal.id &&
                     currentProposalAction.action === 'cancel');
                 const canApprove =
+                  canSubmitTransactions &&
                   proposal.canApprove &&
                   (!hasDuplicatePayments || hasAcknowledgedDuplicates) &&
                   !isProposalRetryBlocked &&
                   !hasWalletActionInFlight;
                 const canCancel =
-                  proposal.canCancel && !isProposalRetryBlocked && !hasWalletActionInFlight;
+                  canSubmitTransactions &&
+                  proposal.canCancel &&
+                  !isProposalRetryBlocked &&
+                  !hasWalletActionInFlight;
 
                 return (
                   <div
@@ -1276,6 +1322,34 @@ export function MultisigFundingPanel({
                           {proposal.decodedBatch.recipientCount === 1 ? 'payment' : 'payments'}
                         </p>
                         <div
+                          className="mt-2 space-y-1 rounded-lg border border-blue-100 bg-blue-50 px-2.5 py-2 text-xs"
+                          data-testid={`proposal-${proposal.id}-exact-totals`}
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="font-semibold text-blue-800">Recipient transfers</span>
+                            <span className="font-semibold tabular-nums text-blue-950">
+                              {formatExactFilFromAtto(recipientPaymentTotalAttoFil.toString())}
+                            </span>
+                          </div>
+                          {sendFilFeeAttoFil > 0n && (
+                            <div
+                              className="flex items-center justify-between gap-3"
+                              data-testid={`proposal-${proposal.id}-fee-summary`}
+                            >
+                              <span className="font-semibold text-blue-800">SendFIL fee</span>
+                              <span className="font-semibold tabular-nums text-blue-950">
+                                {formatExactFilFromAtto(sendFilFeeAttoFil.toString())}
+                              </span>
+                            </div>
+                          )}
+                          <div className="flex items-center justify-between gap-3 border-t border-blue-100 pt-1">
+                            <span className="font-semibold text-blue-900">Batch total</span>
+                            <span className="font-semibold tabular-nums text-blue-950">
+                              {formatExactFilFromAtto(decodedBatchTotalAttoFil.toString())}
+                            </span>
+                          </div>
+                        </div>
+                        <div
                           className="mt-2 max-h-48 space-y-2 overflow-y-auto pr-1"
                           role="list"
                           aria-label={`Decoded payments for proposal #${proposal.id}`}
@@ -1288,7 +1362,9 @@ export function MultisigFundingPanel({
                             >
                               <div className="flex items-start justify-between gap-2 text-xs">
                                 <span className="font-semibold text-slate-600">
-                                  Payment #{payment.index + 1}
+                                  {feePaymentIndexes.has(payment.index)
+                                    ? 'SendFIL fee payment'
+                                    : `Payment #${payment.index + 1}`}
                                 </span>
                                 <span className="shrink-0 font-semibold text-slate-900">
                                   {formatExactFilFromAtto(payment.amountAttoFil)}
@@ -1300,6 +1376,24 @@ export function MultisigFundingPanel({
                             </div>
                           ))}
                         </div>
+                      </div>
+                    )}
+                    {proposal.decodedBatch?.errorMode === 'PARTIAL' && (
+                      <div
+                        className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-950"
+                        data-testid={`proposal-${proposal.id}-partial-disclosure`}
+                      >
+                        <p className="font-semibold">
+                          Partial execution affects each payment independently.
+                        </p>
+                        <p className="mt-1">
+                          ThinBatch attempts each payment, then returns aggregate failed-payment
+                          value to the multisig within the same transaction. If that return fails,
+                          the whole call reverts, although network fees may still be charged. If the
+                          transaction succeeds, successful payments
+                          {sendFilFeeAttoFil > 0n ? '—including SendFIL fee payments—' : ' '}remain
+                          final even when another payment fails.
+                        </p>
                       </div>
                     )}
                     {hasDuplicatePayments && (
@@ -1399,6 +1493,16 @@ export function MultisigFundingPanel({
                     </div>
                     {!proposal.isSendFilCompatible && (
                       <p className="mt-2 text-xs text-amber-700">{proposal.compatibilityReason}</p>
+                    )}
+                    {proposal.isSendFilCompatible && (
+                      <p
+                        className="mt-3 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-xs leading-5 text-blue-900"
+                        data-testid={`proposal-${proposal.id}-approval-authorization`}
+                      >
+                        Approving adds this wallet&apos;s signer approval and may execute the
+                        complete batch immediately if the multisig threshold is reached. Verify
+                        every payment, fee, network, method, and error mode above before approving.
+                      </p>
                     )}
                     <div className="mt-3 flex gap-2">
                       <button
@@ -1601,9 +1705,11 @@ export function MultisigFundingPanel({
                         ? 'Inspect submitted create'
                         : isCreateRetryBlocked
                           ? 'Resolve pending multisig action'
-                          : canCreateMultisig
-                            ? 'Create multisig'
-                            : 'Connect signer to create'}
+                          : !canSubmitTransactions
+                            ? 'Accept Terms to create'
+                            : canCreateMultisig
+                              ? 'Create multisig'
+                              : 'Connect signer to create'}
               </button>
             </div>
           )}

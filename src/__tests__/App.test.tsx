@@ -5,6 +5,12 @@ import { createRoot, type Root } from 'react-dom/client';
 import { getAddress } from 'viem';
 import { CoinType, newActorAddress, newSecp256k1Address } from '@glif/filecoin-address';
 import App from '../App';
+import {
+  TERMS_ACCEPTANCE_STORAGE_KEY,
+  TERMS_LAST_UPDATED,
+  TERMS_VERSION,
+  recordCurrentTermsAcceptance,
+} from '../legal/termsAcceptance';
 import type {
   MultisigActorState,
   MultisigProposalOutcome,
@@ -555,6 +561,7 @@ describe('App confirm flow', () => {
     dom = new JSDOM('<!doctype html><html><body></body></html>', {
       url: 'http://localhost',
     });
+    recordCurrentTermsAcceptance(dom.window.localStorage);
 
     vi.stubGlobal('window', dom.window);
     vi.stubGlobal('document', dom.window.document);
@@ -592,6 +599,98 @@ describe('App confirm flow', () => {
     click(getElementByTestId(container, 'review-batch-button'));
     await flushAsyncWork();
   }
+
+  it('requires an auto-connected wallet to accept the current Terms before review', async () => {
+    dom.window.localStorage.removeItem(TERMS_ACCEPTANCE_STORAGE_KEY);
+
+    await act(async () => {
+      root.render(<App />);
+    });
+
+    const reviewButton = getElementByTestId(container, 'review-batch-button') as HTMLButtonElement;
+
+    expect(getElementByTestId(container, 'terms-acceptance-notice')).toBeInstanceOf(HTMLElement);
+    expect(reviewButton.disabled).toBe(true);
+    expect(container.textContent).toContain('Accept the Terms of Service before continuing.');
+    expect(container.textContent).toContain(`effective ${TERMS_LAST_UPDATED}`);
+    expect(container.textContent).toContain(
+      'Confirm that you have a valid written beta invitation, meet its eligibility and geographic restrictions, and will use only the fee-free Calibration beta for business purposes.',
+    );
+    expect(getElementByTestId(container, 'terms-acceptance-notice').textContent).not.toMatch(
+      /Louisiana/i,
+    );
+    expect(getElementByTestId(container, 'accept-terms-button').textContent).toContain(
+      'I confirm my eligibility and agree to the Terms of Service',
+    );
+
+    click(getElementByTestId(container, 'accept-terms-button'));
+
+    expect(reviewButton.disabled).toBe(false);
+    expect(container.querySelector('[data-testid="terms-acceptance-notice"]')).toBeNull();
+    expect(
+      JSON.parse(dom.window.localStorage.getItem(TERMS_ACCEPTANCE_STORAGE_KEY) ?? '{}'),
+    ).toEqual(expect.objectContaining({ version: TERMS_VERSION }));
+  });
+
+  it('keeps working when browser storage access is blocked', async () => {
+    Object.defineProperty(dom.window, 'localStorage', {
+      configurable: true,
+      get: () => {
+        throw new Error('Browser storage is blocked.');
+      },
+    });
+
+    await act(async () => {
+      root.render(<App />);
+    });
+
+    expect(getElementByTestId(container, 'terms-acceptance-notice')).toBeInstanceOf(HTMLElement);
+    expect((getElementByTestId(container, 'review-batch-button') as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+
+    click(getElementByTestId(container, 'accept-terms-button'));
+
+    expect(container.querySelector('[data-testid="terms-acceptance-notice"]')).toBeNull();
+    expect((getElementByTestId(container, 'review-batch-button') as HTMLButtonElement).disabled).toBe(
+      false,
+    );
+  });
+
+  it('opens the Terms from a direct query link and keeps the URL in sync', async () => {
+    dom.window.history.replaceState(
+      dom.window.history.state,
+      '',
+      '/?source=legal-review&terms=1#terms',
+    );
+
+    await act(async () => {
+      root.render(<App />);
+    });
+
+    expect(document.body.querySelector('[aria-labelledby="terms-modal-title"]')).toBeInstanceOf(
+      HTMLElement,
+    );
+
+    const closeButton = document.body.querySelector(
+      'button[aria-label="Close Terms of Service"]',
+    ) as HTMLButtonElement;
+    click(closeButton);
+
+    expect(document.body.querySelector('[aria-labelledby="terms-modal-title"]')).toBeNull();
+    expect(new URL(window.location.href).searchParams.get('terms')).toBeNull();
+    expect(new URL(window.location.href).searchParams.get('source')).toBe('legal-review');
+    expect(window.location.hash).toBe('#terms');
+
+    act(() => {
+      window.history.replaceState(window.history.state, '', '/?source=legal-review&terms=1#terms');
+      window.dispatchEvent(new Event('popstate'));
+    });
+
+    expect(document.body.querySelector('[aria-labelledby="terms-modal-title"]')).toBeInstanceOf(
+      HTMLElement,
+    );
+  });
 
   it('cycles manual address placeholders by row and restarts for added rows', async () => {
     await act(async () => {
@@ -898,6 +997,7 @@ describe('App confirm flow', () => {
       getBalance: vi.fn(async () => 1000n * 10n ** 18n),
     };
     getNativeProvidersMock.mockReturnValue([provider]);
+    dom.window.localStorage.removeItem(TERMS_ACCEPTANCE_STORAGE_KEY);
 
     await act(async () => {
       root.render(<App />);
@@ -913,11 +1013,15 @@ describe('App confirm flow', () => {
       `https://calibration.filfox.info/en/message/${cid}`,
     );
 
-    // The default EVM path remains usable; selecting Multi-sig enters native
-    // recovery mode and then requires the exact recorded identity.
+    // New submissions remain Terms-gated, while the exact recorded recovery
+    // becomes inspectable without acceptance once its identity is restored.
     expect(
       (getElementByTestId(container, 'review-batch-button') as HTMLButtonElement).disabled,
-    ).toBe(false);
+    ).toBe(true);
+    expect(getElementByTestId(container, 'review-batch-button').textContent).toContain(
+      'Accept Terms to Review',
+    );
+    expect(getElementByTestId(container, 'terms-acceptance-notice')).toBeInstanceOf(HTMLElement);
     click(getElementByTestId(container, 'sender-wallet-multi-sig'));
     expect(getElementByTestId(container, 'review-batch-button').textContent).toContain(
       'Restore Submitted Proposal',
@@ -937,6 +1041,7 @@ describe('App confirm flow', () => {
     expect(
       (getElementByTestId(container, 'review-batch-button') as HTMLButtonElement).disabled,
     ).toBe(false);
+    expect(getElementByTestId(container, 'terms-acceptance-notice')).toBeInstanceOf(HTMLElement);
     expect(getElementByTestId(container, 'review-batch-button').textContent).toContain(
       'Inspect Submitted Proposal',
     );

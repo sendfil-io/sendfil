@@ -72,13 +72,34 @@ export interface ReviewTransactionModalProps {
   feeLabel: string;
 }
 
-// Format FIL amounts for display
+const ATTOFIL_PER_FIL = 10n ** 18n;
+
+function filNumberToAttoFil(amount: number): bigint {
+  if (!Number.isFinite(amount) || amount < 0) {
+    throw new Error('FIL amount must be a nonnegative finite number.');
+  }
+
+  const match = amount.toString().match(/^(\d+)(?:\.(\d+))?(?:e([+-]?\d+))?$/i);
+
+  if (!match) {
+    throw new Error('FIL amount could not be represented for review.');
+  }
+
+  const fraction = match[2] ?? '';
+  const exponent = Number(match[3] ?? '0') - fraction.length;
+  const digits = BigInt(`${match[1]}${fraction}`);
+  const ratio =
+    exponent >= 0
+      ? { numerator: digits * 10n ** BigInt(exponent), denominator: 1n }
+      : { numerator: digits, denominator: 10n ** BigInt(-exponent) };
+
+  return (ratio.numerator * ATTOFIL_PER_FIL) / ratio.denominator;
+}
+
+// Format the decimal number representation used by the current transaction pipeline
+// without summary rounding or binary floating-point addition artifacts.
 function formatFil(amount: number): string {
-  if (amount === 0) return '0 FIL';
-  if (amount < 0.000001) return '< 0.000001 FIL';
-  if (amount < 0.001) return amount.toFixed(6) + ' FIL';
-  if (amount < 1) return amount.toFixed(4) + ' FIL';
-  return amount.toLocaleString(undefined, { maximumFractionDigits: 2 }) + ' FIL';
+  return formatExactAttoFil(filNumberToAttoFil(amount).toString());
 }
 
 function formatExactAttoFil(attoFil: string): string {
@@ -90,12 +111,6 @@ function formatExactAttoFil(attoFil: string): string {
     .replace(/0+$/, '');
 
   return `${whole.toString()}${fraction ? `.${fraction}` : ''} FIL`;
-}
-
-// Truncate addresses for display
-function truncateAddress(address: string): string {
-  if (address.length <= 16) return address;
-  return `${address.slice(0, 8)}...${address.slice(-6)}`;
 }
 
 // Convert attoFIL string to nanoFIL for display
@@ -137,7 +152,6 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
   recipients,
   validationErrors,
   validationWarnings,
-  recipientTotal,
   feeTotal,
   gasEstimate,
   isEstimatingGas,
@@ -173,11 +187,18 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
 
   // Calculate totals
   const estimatedNetworkFee = gasEstimate?.estimatedFeeInFil || 0;
-  const fundingRequiredTotal =
+  const recipientTotalAttoFil = recipients.reduce(
+    (total, recipient) => total + filNumberToAttoFil(recipient.amount),
+    0n,
+  );
+  const feeTotalAttoFil = filNumberToAttoFil(feeTotal);
+  const estimatedNetworkFeeAttoFil = filNumberToAttoFil(estimatedNetworkFee);
+  const fundingRequiredTotalAttoFil =
     fundingMode === 'native-multisig'
-      ? recipientTotal + feeTotal
-      : recipientTotal + feeTotal + estimatedNetworkFee;
-  const grandTotal = recipientTotal + feeTotal + estimatedNetworkFee;
+      ? recipientTotalAttoFil + feeTotalAttoFil
+      : recipientTotalAttoFil + feeTotalAttoFil + estimatedNetworkFeeAttoFil;
+  const grandTotalAttoFil =
+    recipientTotalAttoFil + feeTotalAttoFil + estimatedNetworkFeeAttoFil;
   const duplicateRecipientWarnings = getDuplicateRecipientWarnings(validationWarnings);
   const otherValidationWarnings = validationWarnings.filter(
     (warning) => !isDuplicateRecipientWarning(warning),
@@ -185,6 +206,7 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
   const duplicateWarningsSignature = duplicateRecipientWarnings.join('|');
   const requiresDuplicateConfirmation = duplicateRecipientWarnings.length > 0;
   const isAtomicMode = batchConfiguration.errorHandling === 'ATOMIC';
+  const isPartialMode = batchConfiguration.errorHandling === 'PARTIAL';
   const errorModeCopy = ERROR_MODE_COPY[batchConfiguration.errorHandling];
   const hasBlockingAtomicPreflightError = isAtomicMode && Boolean(gasEstimationError);
 
@@ -344,8 +366,8 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
             {fundingMode === 'native-multisig'
               ? `${fundingSourceLabel} spendable balance (${formatFil(
                   walletBalance,
-                )}) must cover ${formatFil(
-                  fundingRequiredTotal,
+                )}) must cover ${formatExactAttoFil(
+                  fundingRequiredTotalAttoFil.toString(),
                 )}, and the connected signer must cover the estimated gas${
                   signerGasBalance !== undefined
                     ? ` (${formatFil(signerGasBalance)} available)`
@@ -353,7 +375,9 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
                 }.`
               : `Your wallet balance (${formatFil(
                   walletBalance,
-                )}) is less than the required amount (${formatFil(grandTotal)}).`}
+                )}) is less than the required amount (${formatExactAttoFil(
+                  grandTotalAttoFil.toString(),
+                )}).`}
           </p>
         </div>
       )}
@@ -486,14 +510,32 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
           )}
         </div>
 
+        {isPartialMode && (
+          <div
+            className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"
+            data-testid="partial-fee-disclosure"
+          >
+            <p className="font-semibold">Partial execution affects payments independently</p>
+            <p className="mt-1 leading-6">
+              ThinBatch attempts each payment, then returns aggregate failed-payment value to the
+              on-chain caller within the same transaction. If that return fails, the whole call
+              reverts, although network fees may still be charged. If the transaction succeeds,
+              successful payments{feeTotal > 0 ? '—including SendFIL fee payments—' : ' '}remain
+              final even when another payment fails.
+            </p>
+          </div>
+        )}
+
         <div className="flex justify-between items-center">
           <span className="text-gray-600">Total to send:</span>
-          <span className="font-semibold text-lg">{formatFil(recipientTotal)}</span>
+          <span className="font-semibold text-lg">
+            {formatExactAttoFil(recipientTotalAttoFil.toString())}
+          </span>
         </div>
 
         <div className="flex justify-between items-center">
           <span className="text-gray-600">{feeLabel}:</span>
-          <span className="font-medium">{formatFil(feeTotal)}</span>
+          <span className="font-medium">{formatExactAttoFil(feeTotalAttoFil.toString())}</span>
         </div>
 
         <div className="flex justify-between items-center">
@@ -512,9 +554,7 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
               </button>
               {showFeeTooltip && (
                 <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-800 text-white text-xs rounded-md whitespace-nowrap z-10">
-                  Network fee is estimated and may vary slightly.
-                  <br />
-                  Actual fee is typically lower than this estimate.
+                  Network fee is estimated and may be higher or lower when submitted.
                   <div className="absolute top-full left-1/2 transform -translate-x-1/2 border-4 border-transparent border-t-gray-800" />
                 </div>
               )}
@@ -524,7 +564,7 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
             {isEstimatingGas ? (
               <span className="text-gray-400">Estimating...</span>
             ) : gasEstimationError ? (
-              <span className="text-yellow-600">~ {formatFil(0.01)}</span>
+              <span className="text-yellow-600">Unavailable</span>
             ) : (
               formatFil(estimatedNetworkFee)
             )}
@@ -534,14 +574,20 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
         <div className="border-t border-gray-200 pt-3">
           <div className="flex justify-between items-center">
             <span className="font-semibold">
-              {fundingMode === 'native-multisig' ? 'Multisig required:' : 'Grand Total:'}
+              {fundingMode === 'native-multisig'
+                ? 'Multisig required:'
+                : gasEstimationError
+                  ? 'Transfer value (network fee unavailable):'
+                  : 'Grand Total:'}
             </span>
-            <span className="font-bold text-xl">{formatFil(fundingRequiredTotal)}</span>
+            <span className="font-bold text-xl">
+              {formatExactAttoFil(fundingRequiredTotalAttoFil.toString())}
+            </span>
           </div>
           {fundingMode === 'native-multisig' && (
             <div className="mt-2 flex justify-between text-sm text-gray-600">
               <span>Signer gas required:</span>
-              <span>{formatFil(estimatedNetworkFee)}</span>
+              <span>{gasEstimationError ? 'Unavailable' : formatFil(estimatedNetworkFee)}</span>
             </div>
           )}
         </div>
@@ -604,13 +650,30 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
                   index % 2 === 0 ? 'bg-gray-50' : 'bg-white'
                 }`}
               >
-                <span className="font-mono text-gray-600">
-                  #{index + 1}: {truncateAddress(recipient.address)}
+                <span className="min-w-0 break-all font-mono text-gray-600">
+                  #{index + 1}: {recipient.address}
                 </span>
                 <span className="font-medium">{formatFil(recipient.amount)}</span>
               </div>
             ))}
           </div>
+        )}
+      </div>
+
+      <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-xs leading-5 text-blue-900">
+        {fundingMode === 'native-multisig' ? (
+          <p>
+            By selecting <strong>Propose batch</strong> and approving the wallet request, you
+            authorize this proposal and the connected signer&apos;s approval. The underlying batch
+            may execute immediately if the multisig threshold is reached.
+          </p>
+        ) : (
+          <p>
+            By selecting <strong>Send</strong> and approving the wallet request, you instruct your
+            wallet to submit the transaction shown in this review. Expand <strong>View details</strong>{' '}
+            and verify each full recipient address and amount first. Blockchain transfers may be
+            irreversible.
+          </p>
         )}
       </div>
     </>
@@ -692,12 +755,12 @@ export const ReviewTransactionModal: React.FC<ReviewTransactionModalProps> = ({
           : isAtomicMode
             ? submissionSummary
               ? `The stored atomic batch for ${submissionSummary.recipientCount} recipients was confirmed on-chain.`
-              : `Successfully finalized ${formatFil(
-                  recipientTotal,
+              : `Successfully finalized ${formatExactAttoFil(
+                  recipientTotalAttoFil.toString(),
                 )} to ${recipients.length} recipients in one atomic batch.`
             : submissionSummary
-              ? `The stored batch for ${submissionSummary.recipientCount} recipients was confirmed on-chain.`
-              : `Successfully sent ${formatFil(recipientTotal)} to ${recipients.length} recipients.`}
+              ? `The stored Partial batch for ${submissionSummary.recipientCount} recipients was confirmed on-chain. Inspect its per-payment results before assuming every recipient was paid.`
+              : 'The ThinBatch transaction was confirmed on-chain. Inspect its per-payment results and events before assuming every recipient was paid.'}
       </p>
       {renderStoredSubmissionDetails()}
       {transactionHash && (
